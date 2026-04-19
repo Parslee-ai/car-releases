@@ -126,6 +126,10 @@ See [`examples/`](./examples/):
 - [`examples/python/hello_car.py`](./examples/python/hello_car.py) — state, facts, verify, execute
 - [`examples/node/hello-car.js`](./examples/node/hello-car.js) — same idea in JS
 - [`examples/python/inference.py`](./examples/python/inference.py) — local inference + streaming
+- [`examples/python/agent_with_tools.py`](./examples/python/agent_with_tools.py) — real filesystem tools + policies, a runnable end-to-end agent
+- [`examples/python/memory_and_skills.py`](./examples/python/memory_and_skills.py) — facts, 4-layer context, skills with triggers, persist + reload
+- [`examples/python/multi_agent.py`](./examples/python/multi_agent.py) — pipeline of agents, trace collection, skill distillation + evolution loop
+- [`examples/node/multi-agent.js`](./examples/node/multi-agent.js) — JS version of the multi-agent + evolution flow
 
 ## Build your first agent (copy/paste into an LLM)
 
@@ -267,6 +271,168 @@ For a TypeScript version of this prompt, swap:
 - `rt.register_tool` / `register_policy` → `await rt.registerTool` / `registerPolicy`
 - `rt.execute_proposal(json, fn)` → `await executeProposal(rt, json, fn)` (standalone)
 - `rt.infer_tracked` → `await rt.inferTracked`
+
+## Build a multi-agent system (copy/paste into an LLM)
+
+For systems with more than one agent — a pipeline, a swarm, a supervisor — or
+anything that should learn from its own traces, paste this into Claude / ChatGPT
+/ Cursor with the `TASK:` line filled in.
+
+````markdown
+I want to build a multi-agent system using **Common Agent Runtime (CAR)** that
+also learns skills from its own execution traces and evolves them over time.
+
+TASK: <DESCRIBE WHAT THE SYSTEM SHOULD DO — e.g. "given a repo URL, use a
+scraper agent to pull the README, a reviewer agent to identify the 3 biggest
+risks, and a writer agent to draft an executive summary">
+
+Use the Python binding `car_runtime` (pip install car-runtime — import name is
+`car_native`). One file. No mocks.
+
+## CAR's multi-agent building blocks
+
+Five coordination patterns are exposed as standalone functions. You pick the
+one that matches the shape of the work:
+
+- `run_pipeline(stages_json, task, agent_fn)` — linear chain, each stage's
+  output feeds the next. Use for staged refinement.
+- `run_swarm(mode, agents_json, task, agent_fn, synthesizer_json=None)` — mode
+  is `"parallel"` (independent), `"sequential"`, or `"debate"`. Use for
+  exploration or multi-perspective synthesis.
+- `run_supervisor(workers_json, supervisor_json, task, max_rounds, agent_fn)` —
+  a supervisor agent routes subtasks to workers over several rounds. Use for
+  long-horizon planning.
+- `run_map_reduce(mapper_json, reducer_json, task, items_json, agent_fn)` —
+  map `items_json` in parallel, reduce to one answer. Use for batch work.
+- `run_vote(agents_json, task, agent_fn, synthesizer_json=None)` — parallel +
+  voted/synthesized result. Use for higher-confidence answers.
+
+You can call `register_agent_runner(agent_fn)` once instead of passing `agent_fn`
+to every call; subsequent run_* invocations use the stored callback.
+
+## AgentSpec + AgentOutput shape
+
+```python
+spec = {
+    "name": "reviewer",
+    "system_prompt": "You review code for the 3 biggest risks.",
+    "tools": ["grep", "read_file"],
+    "max_turns": 5,
+    "metadata": {"model": "claude-opus-4-7", "temperature": 0.3},
+}
+```
+
+The `agent_fn(spec_json, task)` callback is YOUR code. It MUST return a JSON
+string with this shape:
+
+```python
+{
+    "name": spec["name"],
+    "answer": "...final answer text...",
+    "turns": 1,
+    "tool_calls": 0,
+    "duration_ms": 100.0,
+    "error": None,        # or a string if the agent failed
+}
+```
+
+The runtime doesn't care how you produce `answer` — Anthropic API, OpenAI,
+local Qwen3 via `rt.infer_tracked`, a deterministic tool chain, whatever.
+
+## Learning loop: trace → distill → evolve
+
+After running agents, collect `TraceEvent` objects and feed them back:
+
+```python
+trace = [
+    {"kind": "action_succeeded", "action_id": "step1", "tool": "scraper",
+     "data": {"task": task, "domain": "web"}, "reward": 1.0},
+    {"kind": "action_failed", "action_id": "step2", "tool": "scraper",
+     "data": {"task": task, "domain": "web"}, "reward": 0.0},
+    # ...
+]
+
+# Extract skills from successful traces (requires configured inference).
+skills_json = rt.distill_skills(json.dumps(trace))
+rt.ingest_distilled_skills(skills_json)
+
+# Track per-skill outcomes — this is what makes domains look weak.
+rt.report_outcome("scrape_and_summarize", "success")
+rt.report_outcome("scrape_and_summarize", "fail")
+
+# Find domains below the success threshold.
+weak = rt.domains_needing_evolution(threshold=0.6)
+
+# Evolve new skill variants for weak domains (requires inference).
+for domain in weak:
+    rt.evolve_skills(json.dumps(trace), domain)
+
+# Repair a specific degraded skill.
+repaired = rt.repair_skill("scrape_and_summarize")
+```
+
+Skills that degrade past a threshold get auto-marked for repair. See
+[`examples/python/multi_agent.py`](./examples/python/multi_agent.py) for a
+reference implementation.
+
+## Skeleton to fill in
+
+```python
+import json
+import car_native
+
+def main():
+    rt = car_native.CarRuntime()
+
+    def agent_fn(spec_json: str, task: str) -> str:
+        spec = json.loads(spec_json)
+        # CALL YOUR LLM HERE. Build a system prompt from spec["system_prompt"],
+        # optionally enrich with rt.build_context(task), optionally stream via
+        # rt.infer_stream. Must return the AgentOutput JSON shape.
+        return json.dumps({
+            "name": spec["name"],
+            "answer": "IMPLEMENT ME",
+            "turns": 1, "tool_calls": 0, "duration_ms": 1.0,
+        })
+
+    car_native.register_agent_runner(agent_fn)
+
+    # Define your agents — pick fields that match what your agent_fn uses.
+    agents = json.dumps([
+        {"name": "<AGENT_1>", "system_prompt": "<ROLE>",
+         "tools": [], "max_turns": 5, "metadata": {"domain": "<DOMAIN>"}},
+        # ...
+    ])
+
+    # Pick the coordination pattern that fits the task.
+    result = json.loads(car_native.run_pipeline(agents, "<TASK>"))
+    print(json.dumps(result, indent=2))
+
+    # Collect a trace from the result, call rt.distill_skills / evolve_skills
+    # as shown above. Repeat on subsequent runs to close the learning loop.
+
+if __name__ == "__main__":
+    main()
+```
+
+## Rules for the code you generate
+
+- **Pick one coordination pattern** and justify it in a comment.
+- **agent_fn does the LLM work.** Don't try to make CAR call an LLM directly.
+- **AgentOutput shape is strict:** `name`, `answer`, `turns`, `tool_calls`
+  (integer count — NOT an array), `duration_ms`, `error`. Missing fields break
+  deserialization silently.
+- **Synthesize traces from pipeline/swarm output** if you want to feed the
+  learning loop — convert each stage's success/error into a `TraceEvent`.
+- **Report outcomes** (`rt.report_outcome`) as agents succeed or fail in
+  production — that's what drives `domains_needing_evolution`.
+- **Skip distill_skills / evolve_skills if no inference is configured** —
+  they'll hang waiting for a model otherwise. Use hand-coded skills +
+  `ingest_distilled_skills` as a bootstrap.
+- **One file. Print the final result as JSON.**
+
+Now write the multi-agent system for my TASK above.
+````
 
 ## What's in the box
 
