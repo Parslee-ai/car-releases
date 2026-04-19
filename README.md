@@ -27,10 +27,25 @@ A single binary with:
   evolve when they degrade
 - **Tools** — callback-based; the runtime owns the DAG, you own the tool
   implementations
-- **Local inference** — Candle + MLX backends for Qwen3, Gemma, Flux, LTX,
-  Parakeet, Whisper, Kokoro
+- **Local inference** — Candle + MLX backends. Text (Qwen3, Gemma 4),
+  vision (Qwen2.5-VL), embeddings + reranking (Qwen3-Embedding,
+  Qwen3-Reranker), image gen (Flux), video gen (LTX-2.3)
+- **Voice I/O** — speech-to-text via Whisper / Parakeet, text-to-speech
+  via Kokoro / Qwen3-TTS, in-process (no Python server)
+- **Browser automation** — Chromium control with accessibility-tree
+  perception, authenticated sessions, screenshot capture, tool surface
+  for click / type / keypress / scroll / wait (CLI + server; Chromium
+  backend ships with the runtime)
+- **Desktop automation** — macOS window enumeration, screen capture,
+  accessibility-tree walk, input synthesis with TCC permission preflight
+  (macOS only; CLI + server)
 - **Multi-agent** — swarm, pipeline, supervisor, map-reduce, vote patterns
 - **Scheduler** — background task execution with triggers and schedules
+
+**What's exposed where.** The Python and Node bindings cover state, memory,
+skills, tools, policies, verification, inference (including voice), and
+multi-agent. Browser and macOS desktop automation ship with the `car` CLI
+and WebSocket server — use those when your agent needs to drive a real UI.
 
 ## What using it looks like
 
