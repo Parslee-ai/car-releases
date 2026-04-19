@@ -50,20 +50,28 @@ A single binary with:
   truncates
 - **Voice I/O** — speech-to-text via Whisper / Parakeet, text-to-speech
   via Kokoro / Qwen3-TTS, in-process (no Python server)
-- **Browser automation** — Chromium control with accessibility-tree
-  perception, authenticated sessions, screenshot capture, tool surface
-  for click / type / keypress / scroll / wait (CLI + server; Chromium
-  backend ships with the runtime)
-- **Desktop automation** — macOS window enumeration, screen capture,
-  accessibility-tree walk, input synthesis with TCC permission preflight
-  (macOS only; CLI + server)
 - **Multi-agent** — swarm, pipeline, supervisor, map-reduce, vote patterns
 - **Scheduler** — background task execution with triggers and schedules
 
-**What's exposed where.** The Python and Node bindings cover state, memory,
-skills, tools, policies, verification, inference (including voice), and
-multi-agent. Browser and macOS desktop automation ship with the `car` CLI
-and WebSocket server — use those when your agent needs to drive a real UI.
+### Coming to the release contract
+
+The runtime has more in the source tree than it ships through the release
+boundary today. These are implemented and tested, but not yet exposed via
+the CLI, server, or bindings — `car-releases` will wire them up in upcoming
+versions. Track on the issue tracker if any of them are blocking for you:
+
+- **Browser automation** — Chromium control with accessibility-tree
+  perception, auth/session injection, screenshot capture, tool surface
+  for navigate / click / type / keypress / scroll / wait (in `car-browser`
+  crate; release surface TBD)
+- **macOS desktop automation** — window enumeration, screen capture,
+  accessibility-tree walk, input synthesis with TCC permission preflight
+  (in `car-desktop` crate; release surface TBD)
+
+**What's exposed where today.** The Python and Node bindings cover state,
+memory, skills, tools, policies, verification, unified inference (local +
+remote), the adaptive router, voice I/O, and multi-agent. The `car` CLI
+and `car-server` wrap the same surfaces.
 
 ## What using it looks like
 
@@ -142,18 +150,28 @@ pip install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/
 
 ### Node.js
 
+The `car-runtime` npm package is not yet published to the public registry —
+the package is ready, publishing is pending registry account setup. For now,
+point npm at the GitHub tarball:
+
 ```bash
-npm install car-runtime
+npm install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.1/car-runtime-0.3.1.tgz
 ```
 
-The install step auto-downloads the matching native binary for your platform.
-Node 18+.
+Or load the platform `.node` module directly (they ship as standalone
+release assets):
 
-```typescript
-import { CarRuntime } from 'car-runtime';
-const rt = new CarRuntime();
-rt.stateSet('project', JSON.stringify('my-agent'));
+```bash
+curl -OL https://github.com/Parslee-ai/car-releases/releases/latest/download/car-runtime.darwin-arm64.node
 ```
+
+```javascript
+const native = require('./car-runtime.darwin-arm64.node');
+const rt = new native.CarRuntime();
+```
+
+Public npm distribution will land in a point release — `npm install car-runtime`
+will then just work. Track [issue #1](https://github.com/Parslee-ai/car-releases/issues/1).
 
 <details>
 <summary>Tarball (no npm, just the CLI + native .node file)</summary>
