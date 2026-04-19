@@ -27,6 +27,17 @@ A single binary with:
   evolve when they degrade
 - **Tools** — callback-based; the runtime owns the DAG, you own the tool
   implementations
+- **Planner** — generate, score, and rank candidate proposals using static
+  verification + cost estimation + inference. Pick the best plan before
+  executing any of them (`rank_proposals`, `car-active-planner`)
+- **Code reasoning** — adaptive, graph-driven reasoning engine (`car-reason`)
+  that accumulates structure from a codebase to answer why-questions and
+  propose edits
+- **Workflows** — declarative multi-stage pipelines with conditional edges
+  and saga-style compensation for rollback on failure (`car-workflow`)
+- **Conformance tests** — RuntimeBench suite verifies every runtime
+  capability against spec, so the execution semantics are portable across
+  implementations (`car-conformance`)
 - **Unified inference** — local backends (Candle + MLX) for text (Qwen3,
   Gemma 4), vision (Qwen2.5-VL), embeddings + reranking (Qwen3-Embedding,
   Qwen3-Reranker), image (Flux), video (LTX-2.3), plus remote providers
