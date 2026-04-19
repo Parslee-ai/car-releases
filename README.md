@@ -131,4 +131,15 @@ this repo's issue tracker. Source-related issues stay with the maintainers.
 
 ## License
 
-Apache-2.0
+Two licenses, depending on what you're using — see [LICENSE](./LICENSE) for the
+authoritative text.
+
+- **Binaries** (tarballs, wheels, `.node` modules, CLI) — free for any use
+  including commercial, free to redistribute unmodified. Modification, reverse
+  engineering, and derivative works are not permitted. Copyright © 2026
+  Parslee AI. Source is not published under an open license.
+- **Repository contents** (README, examples, install scripts, workflows) —
+  Apache-2.0. Copy, modify, and reuse freely.
+
+If you need terms beyond those — source access, modification rights, a
+commercial redistribution agreement — contact Parslee AI.

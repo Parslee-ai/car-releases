@@ -1,3 +1,65 @@
+Common Agent Runtime — License
+==============================
+
+This repository's contents fall under two different licenses. The applicable
+license depends on the file.
+
+
+1. BINARIES — free to use and redistribute, NOT free to modify
+---------------------------------------------------------------
+
+Applies to: the compiled artifacts distributed via GitHub Releases on this
+repository — platform tarballs (car-*.tar.gz), Node.js native modules
+(car-runtime.*.node), Python wheels (car_runtime-*.whl), the CLI binaries
+they contain (car, car-server, car-memgine-eval), and any other pre-built
+binary shipped under this repository's releases.
+
+Copyright © 2026 Parslee AI. All rights reserved.
+
+Subject to your agreement with these terms, Parslee AI grants you a
+worldwide, royalty-free, non-exclusive, non-transferable license to:
+
+  (a) download, install, and use the Binaries for any lawful purpose,
+      including commercial use;
+  (b) redistribute the Binaries in their original, unmodified form,
+      provided this license is included.
+
+You may NOT:
+
+  (c) modify, translate, adapt, or create derivative works of the Binaries;
+  (d) decompile, disassemble, reverse engineer, or otherwise attempt to
+      derive the source code of the Binaries, except to the extent that
+      applicable law expressly permits despite this limitation;
+  (e) remove, alter, or obscure any copyright, trademark, or other
+      proprietary notices on or in the Binaries;
+  (f) circumvent or disable any license-enforcement, anti-tamper, or
+      similar mechanism in the Binaries.
+
+If you need rights beyond those granted above — including modification,
+derivative works, source access, or a commercial redistribution agreement —
+contact Parslee AI.
+
+THE BINARIES ARE PROVIDED "AS IS" AND WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+PARSLEE AI BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING
+FROM THE USE OF, INABILITY TO USE, OR DISTRIBUTION OF THE BINARIES.
+
+
+2. REPOSITORY CONTENTS (documentation, examples, scripts) — Apache-2.0
+----------------------------------------------------------------------
+
+Applies to: the text files in this repository — README.md, CHANGELOG.md,
+the `examples/` directory, install and mirror scripts, workflow files, and
+any other source published under this repository's git tree (EXCLUDING the
+Binaries described in Section 1).
+
+These files are licensed under the Apache License, Version 2.0. The full
+text is reproduced below. You may copy, modify, and redistribute them
+under those terms.
+
+
+================================================================================
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -174,17 +236,6 @@
       of your accepting any such warranty or support.
 
    END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
 
    Copyright 2026 Parslee AI
 
