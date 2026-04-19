@@ -50,6 +50,10 @@ A single binary with:
   truncates
 - **Voice I/O** — speech-to-text via Whisper / Parakeet, text-to-speech
   via Kokoro / Qwen3-TTS, in-process (no Python server)
+- **Browser automation** — Chromium control via `car browse run`.
+  Accessibility-tree perception, element-ID resolution across ops,
+  JSON script in → JSON trace out. Navigate / observe / click / type /
+  scroll / keypress / wait
 - **Multi-agent** — swarm, pipeline, supervisor, map-reduce, vote patterns
 - **Scheduler** — background task execution with triggers and schedules
 
@@ -57,21 +61,18 @@ A single binary with:
 
 The runtime has more in the source tree than it ships through the release
 boundary today. These are implemented and tested, but not yet exposed via
-the CLI, server, or bindings — `car-releases` will wire them up in upcoming
-versions. Track on the issue tracker if any of them are blocking for you:
+the CLI, server, or bindings:
 
-- **Browser automation** — Chromium control with accessibility-tree
-  perception, auth/session injection, screenshot capture, tool surface
-  for navigate / click / type / keypress / scroll / wait (in `car-browser`
-  crate; release surface TBD)
 - **macOS desktop automation** — window enumeration, screen capture,
   accessibility-tree walk, input synthesis with TCC permission preflight
   (in `car-desktop` crate; release surface TBD)
+- **Browser via bindings + server** — the CLI ships now; Python / Node
+  bindings and the `car-server` RPC surface for browser are next
 
 **What's exposed where today.** The Python and Node bindings cover state,
 memory, skills, tools, policies, verification, unified inference (local +
 remote), the adaptive router, voice I/O, and multi-agent. The `car` CLI
-and `car-server` wrap the same surfaces.
+wraps the same surfaces plus browser automation (`car browse`).
 
 ## What using it looks like
 
