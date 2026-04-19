@@ -1,14 +1,84 @@
-# Common Agent Runtime — Binary Releases
+# Common Agent Runtime (CAR)
 
-Pre-built binaries, Python wheels, Node.js native modules, and examples for
-**Common Agent Runtime (CAR)** — a deterministic execution layer for AI agents,
-written in Rust.
+A deterministic execution layer for AI agents, written in Rust.
+**Models propose. The runtime validates, verifies, and executes.**
 
-Models propose. The runtime validates, verifies, and executes.
+Agents that pass raw LLM output straight into tool calls fail unpredictably —
+unsafe actions, hallucinated tool names, state drift. CAR treats plans as
+first-class data: verify before executing, enforce policies in Rust before
+any side effect, track memory as a graph, and learn reusable skills from
+execution traces.
 
-> **Source code** lives in a private repository. This repo is the public
-> distribution channel: install instructions, examples, release artifacts,
-> issue tracker for binary consumers.
+This repo ships the public binary distribution — install docs, examples,
+issue tracker. Source is private.
+
+## What you get
+
+A single binary with:
+
+- **Verification** — prove plan properties (`verify`, `simulate`,
+  `equivalent`, `optimize`) before anything side-effecting runs
+- **Policies** — Rust-enforced on every action (`deny_tool`,
+  `deny_tool_param`, `require_state`)
+- **State** — typed key/value store with snapshotting and rollback
+- **Graph memory** — spreading activation, 4-layer context assembly for
+  grounding LLM calls, persistence
+- **Skills** — save learned procedures with triggers, distill from traces,
+  evolve when they degrade
+- **Tools** — callback-based; the runtime owns the DAG, you own the tool
+  implementations
+- **Local inference** — Candle + MLX backends for Qwen3, Gemma, Flux, LTX,
+  Parakeet, Whisper, Kokoro
+- **Multi-agent** — swarm, pipeline, supervisor, map-reduce, vote patterns
+- **Scheduler** — background task execution with triggers and schedules
+
+## What using it looks like
+
+```python
+import json
+import car_native
+
+rt = car_native.CarRuntime()
+
+# Tools are callbacks — you own the implementation.
+rt.register_tool("shell")
+
+# Policies are enforced in Rust before any tool fires.
+rt.register_policy("no_rm", "deny_tool_param",
+                   target="shell", key="command", pattern="rm -rf")
+
+# A proposal is a DAG of actions with dependencies.
+proposal = json.dumps({"actions": [
+    {"id": "a1", "type": "tool_call", "tool": "shell",
+     "parameters": {"command": "ls"}, "dependencies": []},
+]})
+
+# Verify first — catches bad plans before any side effect.
+check = json.loads(rt.verify_proposal(proposal))
+if not check["valid"]:
+    raise RuntimeError(check["issues"])
+
+# Execute with your tool dispatch.
+def tool_fn(tool, params_json):
+    return json.dumps({"stdout": "..."})
+
+result = json.loads(rt.execute_proposal(proposal, tool_fn))
+```
+
+Equivalents exist for Node.js (`car-runtime` on npm) and as a standalone
+`car` CLI.
+
+## Platforms
+
+| Platform | Binaries | Python wheel |
+|----------|----------|--------------|
+| macOS ARM64 (14+) | `car-darwin-arm64.tar.gz` | `macosx_14_0_arm64` |
+| macOS x86_64 (14+) | `car-darwin-x64.tar.gz` | `macosx_14_0_x86_64` |
+| Linux x86_64 | `car-linux-x64-gnu.tar.gz` | `manylinux_2_17_x86_64` |
+| Linux aarch64 | `car-linux-arm64-gnu.tar.gz` | `manylinux_2_28_aarch64` |
+| Windows x86_64 | `car-win32-x64-msvc.zip` | `win_amd64` |
+
+Windows aarch64 pending.
 
 ## Install
 
@@ -433,31 +503,6 @@ if __name__ == "__main__":
 
 Now write the multi-agent system for my TASK above.
 ````
-
-## What's in the box
-
-A deterministic DAG executor with built-in:
-
-- **State** — typed key/value store with snapshotting
-- **Memory** — graph-based (`car-memgine`) with spreading activation, 4-layer context assembly, and skill learning
-- **Tools** — callback-based execution (the runtime doesn't own tools; you wire them up)
-- **Policies** — Rust-enforced on every action (`deny_tool`, `deny_tool_param`, `require_state`)
-- **Verification** — prove plan properties (`verify`, `simulate`, `equivalent`, `optimize`) before executing
-- **Local inference** — Candle + MLX backends for Qwen3, Gemma, Flux, LTX, Parakeet, Whisper, Kokoro
-- **Multi-agent coordination** — swarm, pipeline, supervisor, map-reduce, vote patterns
-- **Scheduler** — background task execution with triggers and schedules
-
-## Platforms
-
-| Platform | Binaries | Python wheel |
-|----------|----------|--------------|
-| macOS ARM64 (14+) | `car-darwin-arm64.tar.gz` | `macosx_14_0_arm64` |
-| macOS x86_64 (14+) | `car-darwin-x64.tar.gz` | `macosx_14_0_x86_64` |
-| Linux x86_64 | `car-linux-x64-gnu.tar.gz` | `manylinux_2_17_x86_64` |
-| Linux aarch64 | `car-linux-arm64-gnu.tar.gz` | `manylinux_2_28_aarch64` |
-| Windows x86_64 | `car-win32-x64-msvc.zip` | `win_amd64` |
-
-Windows aarch64 is not yet built — follows once the x64 path has soaked.
 
 ## Versioning
 
