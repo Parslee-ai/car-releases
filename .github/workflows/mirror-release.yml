@@ -1,0 +1,63 @@
+name: Mirror release from Parslee-ai/car
+
+# Manually triggered. Downloads all assets from a tag in the private
+# Parslee-ai/car repo and publishes them here as a public release.
+#
+# Requires a repo secret MIRROR_TOKEN — a PAT with `repo` scope on the
+# private Parslee-ai/car repository.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to mirror (e.g. v0.3.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download assets from private repo
+        env:
+          GH_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p artifacts
+          cd artifacts
+          gh release download "$TAG" --repo Parslee-ai/car --pattern '*'
+          ls -lh
+
+      - name: Read release notes
+        env:
+          GH_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        id: notes
+        run: |
+          body=$(gh release view "$TAG" --repo Parslee-ai/car --json body --jq .body)
+          # Write to file to preserve multiline — feeds the next step via file ref.
+          printf '%s\n' "$body" > release-notes.md
+          echo "notes-file=release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Publish public release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          # Create or reuse the tag on this public repo, pointing at current HEAD.
+          # Users install from this repo's releases, so the tag's commit is
+          # cosmetic — the real source-of-truth tag lives on Parslee-ai/car.
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            artifacts/*
