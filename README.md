@@ -27,9 +27,16 @@ A single binary with:
   evolve when they degrade
 - **Tools** — callback-based; the runtime owns the DAG, you own the tool
   implementations
-- **Local inference** — Candle + MLX backends. Text (Qwen3, Gemma 4),
-  vision (Qwen2.5-VL), embeddings + reranking (Qwen3-Embedding,
-  Qwen3-Reranker), image gen (Flux), video gen (LTX-2.3)
+- **Unified inference** — local backends (Candle + MLX) for text (Qwen3,
+  Gemma 4), vision (Qwen2.5-VL), embeddings + reranking (Qwen3-Embedding,
+  Qwen3-Reranker), image (Flux), video (LTX-2.3), plus remote providers
+  (OpenAI, Anthropic, Google) through one provider-agnostic protocol
+- **Adaptive router** — `route_model` picks local vs. remote by task
+  complexity, context-window headroom, and per-model latency/cost
+  profiles built from real call history. Semantic conversation
+  compaction kicks in automatically when a call would exceed budget —
+  clusters older turns, scores by importance, summarizes rather than
+  truncates
 - **Voice I/O** — speech-to-text via Whisper / Parakeet, text-to-speech
   via Kokoro / Qwen3-TTS, in-process (no Python server)
 - **Browser automation** — Chromium control with accessibility-tree
