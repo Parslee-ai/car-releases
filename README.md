@@ -78,7 +78,20 @@ The CAR CLI (`car`), server (`car-server`), and evaluation bridge
 brew install Parslee-ai/car/car
 ```
 
-Tap source: https://github.com/Parslee-ai/homebrew-car
+Tap: https://github.com/Parslee-ai/homebrew-car
+
+**Scoop (Windows):**
+
+```powershell
+scoop bucket add car https://github.com/Parslee-ai/scoop-car
+scoop install car
+```
+
+Bucket: https://github.com/Parslee-ai/scoop-car
+
+**Winget (Windows):** Submission in progress — manifest lives at
+[`winget/manifests/p/Parslee/Car/`](./winget). Will be `winget install Parslee.Car`
+once the PR to `microsoft/winget-pkgs` lands.
 
 **Install script (macOS + Linux, no Homebrew):**
 
@@ -87,21 +100,23 @@ curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/instal
 ```
 
 Installs to `~/.car/bin/` and prints the PATH snippet to add. Pin a version
-with `CAR_VERSION=v0.3.0`, override the install dir with `CAR_INSTALL=...`.
+with `CAR_VERSION=v0.3.1`, override the install dir with `CAR_INSTALL=...`.
 
-**Manual tarball:**
+**Manual tarball / zip:**
 
 ```bash
 # Apple Silicon
 curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/car-darwin-arm64.tar.gz | tar -xz
-./car --help
 
 # Linux x86_64
 curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/car-linux-x64-gnu.tar.gz | tar -xz
-./car --help
+
+# Windows x86_64 (PowerShell)
+Invoke-WebRequest -Uri https://github.com/Parslee-ai/car-releases/releases/latest/download/car-win32-x64-msvc.zip -OutFile car.zip
+Expand-Archive car.zip -DestinationPath .
 ```
 
-Each tarball also contains the Node.js native module
+Each tarball / zip also contains the Node.js native module
 (`car-runtime.{platform}.node`) for users who prefer not to use npm.
 
 ## Quickstart
@@ -133,10 +148,9 @@ A deterministic DAG executor with built-in:
 | macOS x86_64 (14+) | `car-darwin-x64.tar.gz` | `macosx_14_0_x86_64` |
 | Linux x86_64 | `car-linux-x64-gnu.tar.gz` | `manylinux_2_17_x86_64` |
 | Linux aarch64 | `car-linux-arm64-gnu.tar.gz` | `manylinux_2_28_aarch64` |
+| Windows x86_64 | `car-win32-x64-msvc.zip` | `win_amd64` |
 
-Windows is not currently supported. When Windows builds land, distribution
-via [Winget](https://github.com/microsoft/winget-pkgs) and
-[Scoop](https://scoop.sh) will follow.
+Windows aarch64 is not yet built — follows once the x64 path has soaked.
 
 ## Versioning
 
