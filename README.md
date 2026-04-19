@@ -69,12 +69,27 @@ always resolves to the newest.
 
 ### CLI + server
 
-Each platform tarball includes:
+The CAR CLI (`car`), server (`car-server`), and evaluation bridge
+(`car-memgine-eval`) ship as native binaries.
 
-- `car` — the CLI
-- `car-server` — WebSocket server exposing the runtime over JSON-RPC
-- `car-memgine-eval` — StateBench evaluation bridge
-- `car-runtime.{platform}.node` — Node.js native module
+**Homebrew (macOS + Linux):**
+
+```bash
+brew install Parslee-ai/car/car
+```
+
+Tap source: https://github.com/Parslee-ai/homebrew-car
+
+**Install script (macOS + Linux, no Homebrew):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/install.sh | sh
+```
+
+Installs to `~/.car/bin/` and prints the PATH snippet to add. Pin a version
+with `CAR_VERSION=v0.3.0`, override the install dir with `CAR_INSTALL=...`.
+
+**Manual tarball:**
 
 ```bash
 # Apple Silicon
@@ -85,6 +100,9 @@ curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/car
 curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/car-linux-x64-gnu.tar.gz | tar -xz
 ./car --help
 ```
+
+Each tarball also contains the Node.js native module
+(`car-runtime.{platform}.node`) for users who prefer not to use npm.
 
 ## Quickstart
 
@@ -116,7 +134,9 @@ A deterministic DAG executor with built-in:
 | Linux x86_64 | `car-linux-x64-gnu.tar.gz` | `manylinux_2_17_x86_64` |
 | Linux aarch64 | `car-linux-arm64-gnu.tar.gz` | `manylinux_2_28_aarch64` |
 
-Windows is not currently supported.
+Windows is not currently supported. When Windows builds land, distribution
+via [Winget](https://github.com/microsoft/winget-pkgs) and
+[Scoop](https://scoop.sh) will follow.
 
 ## Versioning
 
