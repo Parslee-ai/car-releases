@@ -14,40 +14,58 @@ Models propose. The runtime validates, verifies, and executes.
 
 ### Python
 
-Download a wheel from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest):
-
 ```bash
-# Apple Silicon
-pip install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car_runtime-0.3.0-cp39-abi3-macosx_14_0_arm64.whl
-
-# Intel Mac
-pip install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car_runtime-0.3.0-cp39-abi3-macosx_14_0_x86_64.whl
-
-# Linux x86_64
-pip install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car_runtime-0.3.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-
-# Linux aarch64
-pip install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car_runtime-0.3.0-cp39-abi3-manylinux_2_28_aarch64.whl
+pip install car-runtime
 ```
 
-Python 3.9+, single wheel per platform (abi3). The import name is `car_native`.
+PyPI auto-resolves to the right wheel for your platform. Python 3.9+, abi3.
+Import name is `car_native`.
+
+<details>
+<summary>Direct wheel download (if PyPI isn't available)</summary>
+
+Pick the wheel for your platform from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest):
+
+- `car_runtime-*-cp39-abi3-macosx_14_0_arm64.whl` — Apple Silicon (macOS 14+)
+- `car_runtime-*-cp39-abi3-macosx_14_0_x86_64.whl` — Intel Mac (macOS 14+)
+- `car_runtime-*-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl` — Linux x86_64
+- `car_runtime-*-cp39-abi3-manylinux_2_28_aarch64.whl` — Linux aarch64
+
+```bash
+pip install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car_runtime-0.3.0-cp39-abi3-macosx_14_0_arm64.whl
+```
+
+</details>
 
 ### Node.js
 
-Native modules are bundled in the platform tarballs below. `npm` package
-publishing on a public registry is planned — for now, extract and load manually:
-
 ```bash
-# Pick the tarball for your platform (see Binary tarballs below).
-tar -xzf car-darwin-arm64.tar.gz
-# The NAPI module is at: ./car-runtime.darwin-arm64.node
+npm install car-runtime
 ```
 
-```javascript
-const native = require('./car-runtime.darwin-arm64.node');
-const rt = new native.CarRuntime();
+The install step auto-downloads the matching native binary for your platform.
+Node 18+.
+
+```typescript
+import { CarRuntime } from 'car-runtime';
+const rt = new CarRuntime();
 rt.stateSet('project', JSON.stringify('my-agent'));
 ```
+
+<details>
+<summary>Tarball (no npm, just the CLI + native .node file)</summary>
+
+Platform tarballs ship the CLI, server, and the Node.js `.node` binary:
+
+```bash
+curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/car-darwin-arm64.tar.gz | tar -xz
+./car --help
+```
+
+Tarball filenames are stable across versions — `/releases/latest/download/...`
+always resolves to the newest.
+
+</details>
 
 ### CLI + server
 
@@ -60,11 +78,11 @@ Each platform tarball includes:
 
 ```bash
 # Apple Silicon
-curl -sL https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car-darwin-arm64.tar.gz | tar -xz
+curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/car-darwin-arm64.tar.gz | tar -xz
 ./car --help
 
 # Linux x86_64
-curl -sL https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car-linux-x64-gnu.tar.gz | tar -xz
+curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/car-linux-x64-gnu.tar.gz | tar -xz
 ./car --help
 ```
 
