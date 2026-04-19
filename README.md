@@ -127,6 +127,147 @@ See [`examples/`](./examples/):
 - [`examples/node/hello-car.js`](./examples/node/hello-car.js) — same idea in JS
 - [`examples/python/inference.py`](./examples/python/inference.py) — local inference + streaming
 
+## Build your first agent (copy/paste into an LLM)
+
+Paste everything in the block below into Claude / ChatGPT / Cursor and fill in
+the `TASK:` line. The model has enough context to produce a working agent on
+first try.
+
+````markdown
+I want to build an AI agent using **Common Agent Runtime (CAR)**, a Rust-native
+runtime where models propose actions and the runtime validates + executes them
+deterministically.
+
+TASK: <DESCRIBE WHAT YOU WANT THE AGENT TO DO — e.g. "read a directory of PDFs,
+extract titles + abstracts, produce a JSON report">
+
+Use the Python binding `car_runtime` (pip install car-runtime — import name is
+`car_native`) unless I tell you otherwise. Keep everything in one file.
+
+## What CAR gives you
+
+- `CarRuntime()` — a stateful runtime. Exposes `state_*`, `add_fact`,
+  `register_tool`, `register_policy`, `verify_proposal`, `execute_proposal`,
+  `infer_tracked`, `infer_stream`, plus persistence + memory graph.
+- **You write the tools.** Tools are Python functions dispatched by a callback.
+  The runtime owns the DAG, state, policies, verification — not the tools.
+- **Proposals are plans.** A proposal is JSON describing a list of actions and
+  their dependencies. Verify before executing.
+
+## Action / proposal shape
+
+```json
+{
+  "actions": [
+    {
+      "id": "a1",
+      "type": "tool_call",
+      "tool": "read_file",
+      "parameters": {"path": "/tmp/foo.txt"},
+      "dependencies": []
+    },
+    {
+      "id": "a2",
+      "type": "tool_call",
+      "tool": "summarize",
+      "parameters": {"text_ref": "$a1.output"},
+      "dependencies": ["a1"]
+    }
+  ]
+}
+```
+
+Valid `type` values: `tool_call`, `state_write`, `state_read`, `assertion`.
+
+## Tool callback contract
+
+```python
+def tool_fn(tool: str, params_json: str) -> str:
+    params = json.loads(params_json)
+    # dispatch to your real implementation
+    if tool == "read_file":
+        return json.dumps({"content": open(params["path"]).read()})
+    # ...
+    return json.dumps({"error": f"unknown tool: {tool}"})
+```
+
+Return a JSON string. Errors are just a `{"error": "..."}` payload — the
+runtime handles retries + replans if configured.
+
+## Skeleton to fill in
+
+```python
+import json
+import car_native
+
+def build_agent():
+    rt = car_native.CarRuntime()
+
+    # 1. Register the tools your agent will use.
+    for tool_name in ["<TOOL_1>", "<TOOL_2>"]:
+        rt.register_tool(tool_name)
+
+    # 2. Add safety policies. Examples:
+    rt.register_policy("no_rm", "deny_tool_param",
+                       target="shell", key="command", pattern="rm -rf")
+
+    # 3. Seed facts the agent should know (optional).
+    rt.add_fact("goal", "<WHAT THE AGENT IS TRYING TO DO>", "pattern")
+
+    # 4. Build a proposal (hand-written for deterministic flows, or generated
+    #    by infer_tracked for model-driven ones).
+    proposal = {"actions": [ ... ]}
+
+    # 5. Verify first — cheap, catches bad plans before any tool runs.
+    check = json.loads(rt.verify_proposal(json.dumps(proposal)))
+    if not check["valid"]:
+        raise SystemExit(f"invalid plan: {check['issues']}")
+
+    # 6. Execute.
+    def tool_fn(tool, params_json):
+        params = json.loads(params_json)
+        # IMPLEMENT ME
+        return json.dumps({"ok": True})
+
+    result = json.loads(rt.execute_proposal(json.dumps(proposal), tool_fn))
+    print(json.dumps(result, indent=2))
+
+if __name__ == "__main__":
+    build_agent()
+```
+
+## Model-driven proposals (optional)
+
+If the plan itself should come from an LLM, use `infer_tracked`:
+
+```python
+out = json.loads(rt.infer_tracked(
+    f"Propose a JSON action plan for: {task}. "
+    f"Return ONLY a JSON object with an `actions` array.",
+    max_tokens=2048,
+))
+proposal = json.loads(out["text"])
+```
+
+## Rules for the code you generate
+
+- **No mocks.** Use real filesystem, real HTTP, real subprocess calls.
+- **Verify before execute.** Every proposal goes through `verify_proposal`
+  first — show the check in the output.
+- **One file.** Put everything in a single runnable `.py`.
+- **Fail loud.** Don't swallow errors. Raise `SystemExit` with a useful message.
+- **Print the final result as JSON** so it's easy to diff / test.
+
+Now write the agent for my TASK above.
+````
+
+For a TypeScript version of this prompt, swap:
+
+- `car_runtime` / `car_native` → `car-runtime` (npm)
+- `rt.register_tool` / `register_policy` → `await rt.registerTool` / `registerPolicy`
+- `rt.execute_proposal(json, fn)` → `await executeProposal(rt, json, fn)` (standalone)
+- `rt.infer_tracked` → `await rt.inferTracked`
+
 ## What's in the box
 
 A deterministic DAG executor with built-in:
