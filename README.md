@@ -562,6 +562,15 @@ CAR is pre-1.0. Breaking changes between minor versions are possible — pin to
 exact versions until the API stabilizes. Each release lists breaking changes
 in the GitHub release notes.
 
+## Releases
+
+Releases in this repo are auto-mirrored from the private `Parslee-ai/car`
+source repo via its `.github/workflows/build.yml` workflow (job
+`mirror-to-car-releases`), which runs on every `v*` tag push. The manual
+`mirror-release.yml` workflow in this repo is a fallback for backfilling
+older tags or recovering from a failed auto-mirror — it is not the primary
+path.
+
 ## Issues
 
 Report binary-side problems (install, crashes, platform support, docs) on
