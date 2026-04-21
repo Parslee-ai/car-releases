@@ -1,7 +1,19 @@
 name: Mirror release from Parslee-ai/car
 
-# Manually triggered. Downloads all assets from a tag in the private
-# Parslee-ai/car repo and publishes them here as a public release.
+# MANUAL FALLBACK ONLY.
+#
+# The primary, automated mirror lives in the private repo:
+#   Parslee-ai/car -> .github/workflows/build.yml -> job `mirror-to-car-releases`
+# That job runs on every `v*` tag push and copies every asset into this repo's
+# GitHub Releases automatically. 99% of the time you do not need this workflow.
+#
+# Use this manual workflow when:
+#   - Backfilling a tag that predates the auto-mirror job (e.g. v0.4.1-v0.4.3).
+#   - Re-mirroring a tag after the auto-mirror job failed (expired PAT,
+#     network flake, partial upload). Re-running here is safe — `gh release
+#     create` will refuse to clobber, so delete the broken release first or
+#     swap to `gh release upload --clobber` manually.
+#   - Ad-hoc cleanup / asset replacement for an already-published tag.
 #
 # Requires a repo secret MIRROR_TOKEN — a PAT with `repo` scope on the
 # private Parslee-ai/car repository.
