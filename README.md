@@ -114,13 +114,14 @@ Equivalents exist for Node.js (`car-runtime` on npm) and as a standalone
 
 | Platform | Binaries | Python wheel |
 |----------|----------|--------------|
-| macOS ARM64 (14+) | `car-darwin-arm64.tar.gz` | `macosx_14_0_arm64` |
-| macOS x86_64 (14+) | `car-darwin-x64.tar.gz` | `macosx_14_0_x86_64` |
-| Linux x86_64 | `car-linux-x64-gnu.tar.gz` | `manylinux_2_17_x86_64` |
-| Linux aarch64 | `car-linux-arm64-gnu.tar.gz` | `manylinux_2_28_aarch64` |
+| macOS ARM64 (15+) | `car-darwin-arm64.tar.gz` | `macosx_15_0_arm64` |
+| macOS x86_64 (15+) | `car-darwin-x64.tar.gz` | `macosx_15_0_x86_64` |
+| Linux x86_64 | `car-linux-x64-gnu.tar.gz` | `manylinux_2_28_x86_64` |
+| Linux aarch64 | `car-linux-arm64-gnu.tar.gz` | (no wheel — use tarball) |
 | Windows x86_64 | `car-win32-x64-msvc.zip` | `win_amd64` |
 
-Windows aarch64 pending.
+Windows aarch64 pending. Linux aarch64 ships a CLI / server / `.node`
+tarball but no Python wheel.
 
 ## Install
 
@@ -138,26 +139,28 @@ Import name is `car_native`.
 
 Pick the wheel for your platform from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest):
 
-- `car_runtime-*-cp39-abi3-macosx_14_0_arm64.whl` — Apple Silicon (macOS 14+)
-- `car_runtime-*-cp39-abi3-macosx_14_0_x86_64.whl` — Intel Mac (macOS 14+)
-- `car_runtime-*-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl` — Linux x86_64
-- `car_runtime-*-cp39-abi3-manylinux_2_28_aarch64.whl` — Linux aarch64
+- `car_runtime-*-cp39-abi3-macosx_15_0_arm64.whl` — Apple Silicon (macOS 15+)
+- `car_runtime-*-cp39-abi3-macosx_15_0_x86_64.whl` — Intel Mac (macOS 15+)
+- `car_runtime-*-cp39-abi3-manylinux_2_28_x86_64.whl` — Linux x86_64
+- `car_runtime-*-cp39-abi3-win_amd64.whl` — Windows x86_64
+
+Linux aarch64 has no wheel — use the platform tarball below.
 
 ```bash
-pip install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car_runtime-0.3.0-cp39-abi3-macosx_14_0_arm64.whl
+pip install https://github.com/Parslee-ai/car-releases/releases/latest/download/car_runtime-0.6.1-cp39-abi3-macosx_15_0_arm64.whl
 ```
 
 </details>
 
 ### Node.js
 
-The `car-runtime` npm package is not yet published to the public registry —
-the package is ready, publishing is pending registry account setup. For now,
-point npm at the GitHub tarball:
-
 ```bash
-npm install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.1/car-runtime-0.3.1.tgz
+npm install car-runtime
 ```
+
+The post-install hook downloads the platform `.node` module from the latest
+GitHub release. Air-gapped installs can set `CAR_RUNTIME_SKIP_DOWNLOAD=1` and
+drop the `.node` file in by hand.
 
 Or load the platform `.node` module directly (they ship as standalone
 release assets):
@@ -170,9 +173,6 @@ curl -OL https://github.com/Parslee-ai/car-releases/releases/latest/download/car
 const native = require('./car-runtime.darwin-arm64.node');
 const rt = new native.CarRuntime();
 ```
-
-Public npm distribution will land in a point release — `npm install car-runtime`
-will then just work. Track [issue #1](https://github.com/Parslee-ai/car-releases/issues/1).
 
 <details>
 <summary>Tarball (no npm, just the CLI + native .node file)</summary>
@@ -222,7 +222,7 @@ curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/instal
 ```
 
 Installs to `~/.car/bin/` and prints the PATH snippet to add. Pin a version
-with `CAR_VERSION=v0.3.1`, override the install dir with `CAR_INSTALL=...`.
+with `CAR_VERSION=v0.6.1`, override the install dir with `CAR_INSTALL=...`.
 
 **Manual tarball / zip:**
 
@@ -566,6 +566,30 @@ in the GitHub release notes.
 
 Report binary-side problems (install, crashes, platform support, docs) on
 this repo's issue tracker. Source-related issues stay with the maintainers.
+
+## Why the runtime ships as a sealed binary
+
+Two reasons, both load-bearing.
+
+**1. The runtime is the agent's guardrail.** CAR validates and verifies what
+models propose before any side-effect runs. If an agent operating in your
+environment can rewrite the validator, the validator stops being a check on
+the model — it becomes a suggestion the agent can edit out. Distributing
+the runtime as a sealed binary means agents can call into CAR but cannot
+patch their own guardrails. Verification stays a property of the substrate.
+
+**2. A stable signed identity unlocks privileged OS surfaces.** On macOS in
+particular, the things users actually want from an agent — microphone /
+screen-capture / accessibility access, App Intents registration, Apple
+Translation XPC, Keychain-stored secrets, notarized framework calls — are
+bound to a code-signed binary identity. A user-rebuildable runtime resets
+TCC permissions on every build and can't carry entitlements that the OS
+gates behind notarized signatures. Shipping one signed binary lets the user
+grant permission once to "Common Agent Runtime" and have it persist across
+upgrades, and lets CAR reach OS capabilities a from-source build can't.
+
+Source access for vendors, integrators, and research collaborations is
+available under separate terms — see License below.
 
 ## License
 
