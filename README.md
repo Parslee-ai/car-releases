@@ -56,31 +56,41 @@ A single binary with:
   scroll / keypress / wait
 - **Multi-agent** — swarm, pipeline, supervisor, map-reduce, vote patterns
 - **Scheduler** — background task execution with triggers and schedules
-
-### Coming to the release contract
-
-The runtime has more in the source tree than it ships through the release
-boundary today. These are implemented and tested, but not yet exposed via
-the CLI, server, or bindings:
-
-- **macOS desktop automation** — window enumeration, screen capture,
-  accessibility-tree walk, input synthesis with TCC permission preflight
-  (in `car-desktop` crate; release surface TBD)
-- **Browser via bindings + server** — the CLI ships now; Python / Node
-  bindings and the `car-server` RPC surface for browser are next
+- **WebSocket server** — `car-server` exposes the runtime over JSON-RPC.
+  Bidirectional callbacks let JS / Python / Swift / Kotlin clients act
+  as tool dispatchers, agent runners, and voice-event sinks
+- **Mobile bindings** — Swift / Kotlin via UniFFI; ships as
+  `CarFfi.xcframework` (iOS / macOS) and an `.aar` archive (Android).
+  Same runtime, native idioms on each platform
+- **Apple framework providers** (macOS) — `Speech` for STT,
+  `AVSpeechSynthesizer` for TTS, on-device `FoundationModels` LLM
+  (macOS 26+), `Vision` (OCR / faces / barcodes / image classification),
+  `NaturalLanguage` (lang ID / NER / lemmatize / tokenize),
+  `Translation` (headless XPC, macOS 26+), `SoundAnalysis`
+  (ambient audio-event classification)
+- **Meeting capture** (`car-meeting`) — multi-speaker transcription with
+  diarization, voiceprint enrollment, optional summarization
+- **A2A bridge** (`car-a2a`) — exposes CAR as an Agent2Agent v1.0 agent
+  for cross-runtime interoperation
 
 **What's exposed where today.** The Python and Node bindings cover state,
 memory, skills, tools, policies, verification, unified inference (local +
-remote), the adaptive router, voice I/O, and multi-agent. The `car` CLI
-wraps the same surfaces plus browser automation (`car browse`).
+remote), the adaptive router, voice I/O, multi-agent, workflows, code
+reasoning, the active planner, browser automation, and meeting capture.
+The `car` CLI wraps the same surfaces. **Swift / Kotlin bindings via
+UniFFI** cover a runtime-construction subset (health, agent listing,
+capability invocation, voice-turn dispatch) for iOS / macOS / Android
+hosts — shipped as `CarFfi.xcframework` and an `.aar` archive.
+**`car-server`** exposes everything over JSON-RPC WebSocket, the
+language-agnostic surface other bindings build on.
 
 ## What using it looks like
 
 ```python
 import json
-import car_native
+import car_runtime
 
-rt = car_native.CarRuntime()
+rt = car_runtime.CarRuntime()
 
 # Tools are callbacks — you own the implementation.
 rt.register_tool("shell")
@@ -107,8 +117,10 @@ def tool_fn(tool, params_json):
 result = json.loads(rt.execute_proposal(proposal, tool_fn))
 ```
 
-Equivalents exist for Node.js (`car-runtime` on npm) and as a standalone
-`car` CLI.
+Equivalents exist for Node.js (`car-runtime` on npm), Swift / Kotlin
+(UniFFI bindings shipped as `CarFfi.xcframework` / `.aar`), the
+standalone `car` CLI, and the `car-server` JSON-RPC WebSocket protocol
+for any other language.
 
 ## Platforms
 
@@ -132,7 +144,7 @@ pip install car-runtime
 ```
 
 PyPI auto-resolves to the right wheel for your platform. Python 3.9+, abi3.
-Import name is `car_native`.
+Import name is `car_runtime`.
 
 <details>
 <summary>Direct wheel download (if PyPI isn't available)</summary>
@@ -268,7 +280,7 @@ TASK: <DESCRIBE WHAT YOU WANT THE AGENT TO DO — e.g. "read a directory of PDFs
 extract titles + abstracts, produce a JSON report">
 
 Use the Python binding `car_runtime` (pip install car-runtime — import name is
-`car_native`) unless I tell you otherwise. Keep everything in one file.
+`car_runtime`) unless I tell you otherwise. Keep everything in one file.
 
 ## What CAR gives you
 
@@ -324,10 +336,10 @@ runtime handles retries + replans if configured.
 
 ```python
 import json
-import car_native
+import car_runtime
 
 def build_agent():
-    rt = car_native.CarRuntime()
+    rt = car_runtime.CarRuntime()
 
     # 1. Register the tools your agent will use.
     for tool_name in ["<TOOL_1>", "<TOOL_2>"]:
@@ -389,7 +401,7 @@ Now write the agent for my TASK above.
 
 For a TypeScript version of this prompt, swap:
 
-- `car_runtime` / `car_native` → `car-runtime` (npm)
+- `car_runtime` (Python import) → `car-runtime` (npm)
 - `rt.register_tool` / `register_policy` → `await rt.registerTool` / `registerPolicy`
 - `rt.execute_proposal(json, fn)` → `await executeProposal(rt, json, fn)` (standalone)
 - `rt.infer_tracked` → `await rt.inferTracked`
@@ -409,7 +421,7 @@ scraper agent to pull the README, a reviewer agent to identify the 3 biggest
 risks, and a writer agent to draft an executive summary">
 
 Use the Python binding `car_runtime` (pip install car-runtime — import name is
-`car_native`). One file. No mocks.
+`car_runtime`). One file. No mocks.
 
 ## CAR's multi-agent building blocks
 
@@ -501,10 +513,10 @@ reference implementation.
 
 ```python
 import json
-import car_native
+import car_runtime
 
 def main():
-    rt = car_native.CarRuntime()
+    rt = car_runtime.CarRuntime()
 
     def agent_fn(spec_json: str, task: str) -> str:
         spec = json.loads(spec_json)
@@ -517,7 +529,7 @@ def main():
             "turns": 1, "tool_calls": 0, "duration_ms": 1.0,
         })
 
-    car_native.register_agent_runner(agent_fn)
+    car_runtime.register_agent_runner(agent_fn)
 
     # Define your agents — pick fields that match what your agent_fn uses.
     agents = json.dumps([
@@ -527,7 +539,7 @@ def main():
     ])
 
     # Pick the coordination pattern that fits the task.
-    result = json.loads(car_native.run_pipeline(agents, "<TASK>"))
+    result = json.loads(car_runtime.run_pipeline(agents, "<TASK>"))
     print(json.dumps(result, indent=2))
 
     # Collect a trace from the result, call rt.distill_skills / evolve_skills
