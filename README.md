@@ -40,16 +40,36 @@ A single binary with:
   implementations (`car-conformance`)
 - **Unified inference** — local backends (Candle + MLX) for text (Qwen3,
   Gemma 4), vision (Qwen2.5-VL), embeddings + reranking (Qwen3-Embedding,
-  Qwen3-Reranker), image (Flux), video (LTX-2.3), plus remote providers
-  (OpenAI, Anthropic, Google) through one provider-agnostic protocol
+  Qwen3-Reranker), image (Flux), video (LTX-2.3, Yume), plus remote
+  providers (OpenAI, Anthropic, Google) through one provider-agnostic
+  protocol
+- **Delegated wire formats** — host-registered inference runner. When a
+  model schema declares `source: ModelSource::Delegated`, CAR routes
+  the request through your host-side runner (Anthropic / OpenAI /
+  Vercel AI SDK / GitHub Models) instead of any native backend; CAR
+  stays in the policy + eventlog + replay path. "JS owns the wire,
+  CAR owns the policy."
 - **Adaptive router** — `route_model` picks local vs. remote by task
   complexity, context-window headroom, and per-model latency/cost
-  profiles built from real call history. Semantic conversation
-  compaction kicks in automatically when a call would exceed budget —
-  clusters older turns, scores by importance, summarizes rather than
-  truncates
-- **Voice I/O** — speech-to-text via Whisper / Parakeet, text-to-speech
-  via Kokoro / Qwen3-TTS, in-process (no Python server)
+  profiles built from real call history. Caller-side `IntentHint`
+  (`task`, `prefer_local`, `prefer_fast`, `require: ModelCapability[]`)
+  threads through every infer surface so callers express what they
+  need without pinning a model id. Semantic conversation compaction
+  kicks in automatically when a call would exceed budget — clusters
+  older turns, scores by importance, summarizes rather than truncates
+- **Voice I/O** — speech-to-text via Whisper / Parakeet / ElevenLabs
+  Realtime (`provider: 'elevenlabs'` on `transcribeStream`),
+  text-to-speech via Kokoro / Qwen3-TTS, in-process (no Python server)
+- **Voice-sidecar dispatch** — two-track conversation pattern for
+  sub-500-ms first audio. The fast LLM streams audio while a heavier
+  sidecar runs in parallel for the substantive answer; barge-in
+  cancels both tracks and bumps the turn id so stale results are
+  dropped. Optional `DirectDataFetcher` bypasses the LLM entirely
+  for tool-likely utterances (calendar / email / search) on hit.
+  Periodic progress phrases keep the user informed when a sidecar
+  takes longer than expected. `dispatch_voice_turn` + `cancel_voice_turn`
+  + `prewarm_voice_turn` on every binding (NAPI / PyO3 / UniFFI /
+  WebSocket); voice-track telemetry in the eventlog
 - **Browser automation** — Chromium control via `car browse run`.
   Accessibility-tree perception, element-ID resolution across ops,
   JSON script in → JSON trace out. Navigate / observe / click / type /
