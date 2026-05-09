@@ -23,7 +23,7 @@ Run:
 import json
 import random
 
-import car_native
+import car_runtime
 
 random.seed(42)
 
@@ -76,7 +76,7 @@ def run_round() -> list[dict]:
     trace = []
     for i in range(6):
         task = f"research topic #{i}"
-        result = json.loads(car_native.run_pipeline(stages, task))
+        result = json.loads(car_runtime.run_pipeline(stages, task))
         for stage_name, domain in [("web_scraper", "web"), ("summarizer", "text")]:
             stage = next(
                 (s for s in result.get("stages", []) if s.get("name") == stage_name),
@@ -135,8 +135,8 @@ DEMO_SKILLS = [
 
 
 def main() -> None:
-    rt = car_native.CarRuntime()
-    car_native.register_agent_runner(agent_fn)
+    rt = car_runtime.CarRuntime()
+    car_runtime.register_agent_runner(agent_fn)
 
     print("round 1: pipeline runs")
     trace = run_round()

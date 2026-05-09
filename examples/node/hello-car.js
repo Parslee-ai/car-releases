@@ -3,7 +3,10 @@
 // Prereq: download a platform tarball from this repo's latest release and
 // extract. Adjust the require() path below to the matching .node file.
 //
-//   curl -sL https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/car-darwin-arm64.tar.gz | tar -xz
+//   curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/car-darwin-arm64.tar.gz | tar -xz
+//
+// Or via npm (handles platform resolution automatically):
+//   npm install car-runtime
 //
 // Run:
 //   node hello-car.js

@@ -18,7 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-import car_native
+import car_runtime
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ def main() -> None:
     target = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     print(f"target directory: {target}")
 
-    rt = car_native.CarRuntime()
+    rt = car_runtime.CarRuntime()
 
     # 1. Tools.
     for name in TOOLS:

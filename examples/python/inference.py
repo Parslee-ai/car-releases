@@ -3,7 +3,7 @@
 Uses CAR's managed local model registry. The first run will download weights.
 
 Prereq:
-    pip install <car_runtime wheel>
+    pip install car-runtime
 
 Run:
     python inference.py
@@ -12,11 +12,11 @@ Run:
 import json
 import sys
 
-import car_native
+import car_runtime
 
 
 def main() -> None:
-    rt = car_native.CarRuntime()
+    rt = car_runtime.CarRuntime()
 
     # Streaming — token-by-token.
     def on_event(event_json: str) -> None:
@@ -36,7 +36,7 @@ def main() -> None:
 
     # One-shot tracked call returns usage + tool_calls.
     tracked = json.loads(
-        rt.infer_tracked("Say 'CAR v0.3 online' and nothing else.", max_tokens=32)
+        rt.infer_tracked("Say 'CAR online' and nothing else.", max_tokens=32)
     )
     print("\ntracked:", tracked.get("text"))
     print("usage:", tracked.get("usage"))

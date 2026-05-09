@@ -284,6 +284,8 @@ See [`examples/`](./examples/):
 - [`examples/python/memory_and_skills.py`](./examples/python/memory_and_skills.py) — facts, 4-layer context, skills with triggers, persist + reload
 - [`examples/python/multi_agent.py`](./examples/python/multi_agent.py) — pipeline of agents, trace collection, skill distillation + evolution loop
 - [`examples/node/multi-agent.js`](./examples/node/multi-agent.js) — JS version of the multi-agent + evolution flow
+- [`examples/python/voice_turn.py`](./examples/python/voice_turn.py) — voice-sidecar dispatch (two-track conversation, conversational vs tool-likely classification, barge-in cancel) — v0.7.0
+- [`examples/node/voice-turn.js`](./examples/node/voice-turn.js) — same voice-sidecar pattern in JS — v0.7.0
 
 ## Build your first agent (copy/paste into an LLM)
 

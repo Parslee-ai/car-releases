@@ -18,11 +18,11 @@ Run:
 import json
 import tempfile
 
-import car_native
+import car_runtime
 
 
 def main() -> None:
-    rt = car_native.CarRuntime()
+    rt = car_runtime.CarRuntime()
 
     # ---- Facts ----
     print("seeding facts")
@@ -91,7 +91,7 @@ def main() -> None:
     rt.persist_memory(path)
     print(f"  persisted to {path}")
 
-    rt2 = car_native.CarRuntime()
+    rt2 = car_runtime.CarRuntime()
     loaded = rt2.load_memory(path)
     print(f"  reloaded into a fresh runtime: {loaded} facts")
     print(f"  roundtrip fact_count matches: {rt2.fact_count() == loaded}")

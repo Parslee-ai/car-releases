@@ -1,7 +1,7 @@
 """Minimal CAR example: state, facts, verify + execute a proposal.
 
 Prereq:
-    pip install https://github.com/Parslee-ai/car-releases/releases/download/v0.3.0/<your-platform>.whl
+    pip install car-runtime
 
 Run:
     python hello_car.py
@@ -9,11 +9,11 @@ Run:
 
 import json
 
-import car_native
+import car_runtime
 
 
 def main() -> None:
-    rt = car_native.CarRuntime()
+    rt = car_runtime.CarRuntime()
 
     # 1. Register a tool (you provide the implementation via callback).
     rt.register_tool("echo")
