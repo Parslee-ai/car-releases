@@ -254,7 +254,7 @@ curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/instal
 ```
 
 Installs to `~/.car/bin/` and prints the PATH snippet to add. Pin a version
-with `CAR_VERSION=v0.6.1`, override the install dir with `CAR_INSTALL=...`.
+with `CAR_VERSION=v0.7.0`, override the install dir with `CAR_INSTALL=...`.
 
 **Manual tarball / zip:**
 
