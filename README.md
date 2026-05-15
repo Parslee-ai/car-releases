@@ -147,13 +147,13 @@ for any other language.
 | Platform | Binaries | Python wheel |
 |----------|----------|--------------|
 | macOS ARM64 (15+) | `car-darwin-arm64.tar.gz` | `macosx_15_0_arm64` |
-| macOS x86_64 (15+) | `car-darwin-x64.tar.gz` | `macosx_15_0_x86_64` |
 | Linux x86_64 | `car-linux-x64-gnu.tar.gz` | `manylinux_2_28_x86_64` |
 | Linux aarch64 | `car-linux-arm64-gnu.tar.gz` | (no wheel — use tarball) |
 | Windows x86_64 | `car-win32-x64-msvc.zip` | `win_amd64` |
 
-Windows aarch64 pending. Linux aarch64 ships a CLI / server / `.node`
-tarball but no Python wheel.
+Intel Macs (`x86_64-apple-darwin`) are not supported — macOS is
+Apple Silicon only. Windows aarch64 pending. Linux aarch64 ships a
+CLI / server / `.node` tarball but no Python wheel.
 
 ## Install
 
@@ -172,14 +172,17 @@ Import name is `car_runtime`.
 Pick the wheel for your platform from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest):
 
 - `car_runtime-*-cp39-abi3-macosx_15_0_arm64.whl` — Apple Silicon (macOS 15+)
-- `car_runtime-*-cp39-abi3-macosx_15_0_x86_64.whl` — Intel Mac (macOS 15+)
 - `car_runtime-*-cp39-abi3-manylinux_2_28_x86_64.whl` — Linux x86_64
 - `car_runtime-*-cp39-abi3-win_amd64.whl` — Windows x86_64
 
 Linux aarch64 has no wheel — use the platform tarball below.
 
+Wheel filenames carry the version, so there is no version-independent
+`latest` URL — substitute the current release:
+
 ```bash
-pip install https://github.com/Parslee-ai/car-releases/releases/latest/download/car_runtime-0.6.1-cp39-abi3-macosx_15_0_arm64.whl
+VERSION=0.13.0  # current release
+pip install "https://github.com/Parslee-ai/car-releases/releases/download/v${VERSION}/car_runtime-${VERSION}-cp39-abi3-macosx_15_0_arm64.whl"
 ```
 
 </details>
@@ -254,7 +257,7 @@ curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/instal
 ```
 
 Installs to `~/.car/bin/` and prints the PATH snippet to add. Pin a version
-with `CAR_VERSION=v0.7.0`, override the install dir with `CAR_INSTALL=...`.
+with `CAR_VERSION=v0.13.0`, override the install dir with `CAR_INSTALL=...`.
 
 **Manual tarball / zip:**
 
@@ -272,6 +275,27 @@ Expand-Archive car.zip -DestinationPath .
 
 Each tarball / zip also contains the Node.js native module
 (`car-runtime.{platform}.node`) for users who prefer not to use npm.
+
+### CAR Host.app (macOS menu bar)
+
+A signed, notarized SwiftUI menubar app — dashboard (agents, chat,
+approvals, diagnostics) plus the approval UI for high-risk calls. It
+embeds and supervises `car-server`, so it's the no-terminal way to
+run CAR on macOS (Apple Silicon, macOS 26+).
+
+**Homebrew Cask:**
+
+```bash
+brew install --cask Parslee-ai/car/car-host
+```
+
+**Or the installer — no Homebrew:** download `CAR-darwin-arm64.pkg`
+from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest)
+and double-click. It installs `CAR Host.app` → `/Applications` and
+the `car` CLI → `/usr/local/bin`.
+
+Either way the app keeps itself up to date automatically (built-in
+Sparkle updater) — no `brew upgrade` needed for the app.
 
 ## Quickstart
 
