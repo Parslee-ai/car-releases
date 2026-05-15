@@ -6,6 +6,18 @@
         <link>https://parslee-ai.github.io/car-releases/appcast.xml</link>
         <description>CAR Common Agent Runtime in-app updates</description>
         <language>en</language>
+                <item>
+                    <title>Version 0.13.0</title>
+                    <pubDate>Fri, 15 May 2026 14:55:00 +0000</pubDate>
+                    <sparkle:version>0.13.0</sparkle:version>
+                    <sparkle:shortVersionString>0.13.0</sparkle:shortVersionString>
+                    <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+                    <sparkle:releaseNotesLink>https://github.com/Parslee-ai/car-releases/releases/tag/v0.13.0</sparkle:releaseNotesLink>
+                    <enclosure
+                        url="https://github.com/Parslee-ai/car-releases/releases/download/v0.13.0/CAR-Host-darwin-arm64.zip"
+                        type="application/octet-stream"
+                        sparkle:edSignature="JtL5DpvTPwb9TGHGQTFMXH8Q8nc4n62RRy4B+VcCViLzjHFQq1x+UmQ5lqkvkL/BRvF0NptKOryXOBkjVlmfBw==" length="48887714" />
+                </item>
         <!-- Per-release item entries are appended here by scripts/publish-appcast-entry.sh in Parslee-ai/car. Newest first; Sparkle treats the most recent pubDate as latest. -->
     </channel>
 </rss>
