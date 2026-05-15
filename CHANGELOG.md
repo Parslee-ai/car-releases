@@ -3,6 +3,36 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.13.0] — 2026-05-15
+`host.resolve_approval` fans out to the owning session (cross-session approval UIs no longer error) + `release.sh` auto-publishes the Sparkle appcast entry. See the [release notes][v0.13.0].
+
+## [v0.12.0] — 2026-05-14
+**Portable release path via Azure Key Vault** — any authorized operator can cut a release, not just the cert-owner's machine. `car-runtime` umbrella crate (#205), menubar badge, CI hardening. See the [release notes][v0.12.0].
+
+## [v0.11.1] — 2026-05-13
+A2UI Text renders Markdown. See the [release notes][v0.11.1].
+
+## [v0.11.0] — 2026-05-13
+agent-chat protocol, Chat tab, External streaming, Settings IA. See the [release notes][v0.11.0].
+
+## [v0.10.1] — 2026-05-12
+CAR Host.app via Homebrew Cask. See the [release notes][v0.10.1].
+
+## [v0.10.0] — 2026-05-12
+observe-only fallback (#44), dashboard productionization, AudioRefVideo. See the [release notes][v0.10.0].
+
+## [v0.9.0] — 2026-05-12
+multi-tenant scoping (car#187 phase 3), daemon-routed inference + reasoning, contributed agents GA, Homebrew tap automation. See the [release notes][v0.9.0].
+
+## [v0.8.2] — 2026-05-11
+macOS npm hotfix (continued). See the [release notes][v0.8.2].
+
+## [v0.8.1] — 2026-05-11
+macOS npm hotfix. See the [release notes][v0.8.1].
+
+## [v0.8.0] — 2026-05-10
+daemon-only FFI, macOS host overhaul, external-agent orchestration, MCP server foundation. See the [release notes][v0.8.0].
+
 ## [v0.7.0] — 2026-05-09
 **Voice sidecar shipped end-to-end, mobile platform scaffolds, FFI parity story complete.** Two-track voice dispatch (fast LLM streams audio while sidecar runs the substantive turn in parallel) with `IntentHint::prefer_fast`, classifier, telemetry, and `DirectDataFetcher` fast-data bypass. Per-session policy scoping. Host-registered inference runner for delegated wire formats (Anthropic / OpenAI / Vercel AI SDK). ElevenLabs Realtime STT streaming. iOS host scaffold + Android AAR build chain. crates.io publishing of 36 library crates. See the [release notes][v0.7.0].
 
@@ -48,6 +78,16 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.13.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.13.0
+[v0.12.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.12.0
+[v0.11.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.11.1
+[v0.11.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.11.0
+[v0.10.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.10.1
+[v0.10.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.10.0
+[v0.9.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.9.0
+[v0.8.2]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.8.2
+[v0.8.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.8.1
+[v0.8.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.8.0
 [v0.7.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.7.0
 [v0.6.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.6.1
 [v0.6.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.6.0

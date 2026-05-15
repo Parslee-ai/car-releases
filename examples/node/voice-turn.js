@@ -1,6 +1,6 @@
 // Voice-sidecar dispatch (two-track conversation) — Node.js.
 //
-// Demonstrates the v0.7.0 voice-turn pattern:
+// Demonstrates the voice-turn pattern:
 //   1. Register a voice-event handler to receive turn events
 //   2. Dispatch an utterance — get a synchronous turn_id back
 //   3. Stream fast-track deltas (you render to audio), then sidecar result
