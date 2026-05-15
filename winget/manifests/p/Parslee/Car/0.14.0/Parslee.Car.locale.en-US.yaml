@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: Parslee.Car
+PackageVersion: 0.14.0
+PackageLocale: en-US
+Publisher: Parslee AI
+PublisherUrl: https://github.com/Parslee-ai
+PublisherSupportUrl: https://github.com/Parslee-ai/car-releases/issues
+PackageName: Common Agent Runtime
+PackageUrl: https://github.com/Parslee-ai/car-releases
+License: Proprietary
+LicenseUrl: https://github.com/Parslee-ai/car-releases/blob/main/LICENSE
+ShortDescription: Deterministic execution layer for AI agents (CLI + server).
+Description: |-
+  Common Agent Runtime (CAR) — models propose, the runtime validates,
+  verifies, and executes. Pre-built CLI (car), WebSocket server
+  (car-server), and evaluation bridge (car-memgine-eval) for Windows x64.
+  Fixed: car-server FD leak on WS peer disconnect → EMFILE (car#209); Fixed: stale approvals never reaped on agent disconnect (car-releases#48); Fixed: host.mail_send silently sent from the wrong account (car-releases#47); Added: car-auth cr…
+Tags:
+  - ai
+  - agent
+  - runtime
+  - llm
+  - cli
+ReleaseNotesUrl: https://github.com/Parslee-ai/car-releases/releases/tag/v0.14.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
