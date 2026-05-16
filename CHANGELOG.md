@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.15.0] — 2026-05-16
+Fixed: CarHost sign-in showed a cryptic error against a stale daemon (#217); Fixed: Codex/Gemini chat replies never reached the host in streaming mode (#213); Fixed: ad-hoc-signed macOS host bundle crashed at launch on Sparkle load (#212);… See the [release notes][v0.15.0].
+
 ## [v0.14.0] — 2026-05-15
 Fixed: car-server FD leak on WS peer disconnect → EMFILE (car#209); Fixed: stale approvals never reaped on agent disconnect (car-releases#48); Fixed: host.mail_send silently sent from the wrong account (car-releases#47); Added: car-auth cr… See the [release notes][v0.14.0].
 
@@ -81,6 +84,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.15.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.15.0
 [v0.14.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.14.0
 [v0.13.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.13.0
 [v0.12.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.12.0
