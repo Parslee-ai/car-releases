@@ -157,6 +157,36 @@ CLI / server / `.node` tarball but no Python wheel.
 
 ## Install
 
+**Pick the path that matches what you want:**
+
+| You want… | Do this |
+|-----------|---------|
+| **CAR on a Mac, no terminal** | Download **`CAR-darwin-arm64.pkg`** from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest) and double-click. Installs the **CAR Host** menu-bar app *and* the `car` CLI. Auto-updates. Done. |
+| **To build on CAR** in Python / Node | `pip install car-runtime` · `npm install car-runtime` |
+| **The CLI on Linux / Windows**, or scripted installs | Homebrew / Scoop / install script / tarball — see [CLI + server](#cli--server) |
+
+### macOS — download and go (no terminal, no Homebrew)
+
+CAR ships a signed, notarized installer. This is the whole setup:
+
+1. Download **`CAR-darwin-arm64.pkg`** from the
+   [latest release](https://github.com/Parslee-ai/car-releases/releases/latest).
+2. Double-click it.
+
+That installs **CAR Host.app** → `/Applications` and the **`car` CLI**
+→ `/usr/local/bin`. CAR Host is the menu-bar app — agents, chat,
+approvals, diagnostics — and it embeds and supervises `car-server`
+for you, so there's no daemon to start by hand. It keeps itself up to
+date via the built-in Sparkle updater (no `brew upgrade` for the app).
+Apple Silicon, macOS 26+.
+
+Prefer a package manager? `brew install --cask Parslee-ai/car/car-host`
+does the same thing. Either way you also get the `car` CLI.
+
+> The rest of this section is for **developers embedding CAR** or
+> installing the CLI on **Linux / Windows**. If you just did the two
+> steps above, skip to [Quickstart](#quickstart).
+
 ### Python
 
 ```bash
@@ -278,24 +308,14 @@ Each tarball / zip also contains the Node.js native module
 
 ### CAR Host.app (macOS menu bar)
 
-A signed, notarized SwiftUI menubar app — dashboard (agents, chat,
-approvals, diagnostics) plus the approval UI for high-risk calls. It
-embeds and supervises `car-server`, so it's the no-terminal way to
-run CAR on macOS (Apple Silicon, macOS 26+).
-
-**Homebrew Cask:**
-
-```bash
-brew install --cask Parslee-ai/car/car-host
-```
-
-**Or the installer — no Homebrew:** download `CAR-darwin-arm64.pkg`
-from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest)
-and double-click. It installs `CAR Host.app` → `/Applications` and
-the `car` CLI → `/usr/local/bin`.
-
-Either way the app keeps itself up to date automatically (built-in
-Sparkle updater) — no `brew upgrade` needed for the app.
+The no-terminal way to run CAR on macOS — a signed, notarized SwiftUI
+menu-bar app (dashboard: agents, chat, approvals, diagnostics; plus
+the approval UI for high-risk calls) that embeds and supervises
+`car-server`. **Setup is covered at the top of this section** —
+[macOS — download and go](#macos--download-and-go-no-terminal-no-homebrew):
+double-click `CAR-darwin-arm64.pkg`, or
+`brew install --cask Parslee-ai/car/car-host`. Either route also
+installs the `car` CLI; the app self-updates via Sparkle.
 
 ## Quickstart
 
