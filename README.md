@@ -319,7 +319,19 @@ installs the `car` CLI; the app self-updates via Sparkle.
 
 ## Quickstart
 
-See [`examples/`](./examples/):
+### Just installed the Mac app? Start here (no code)
+
+If you installed `CAR-darwin-arm64.pkg` and want to *use* CAR — not
+write code against it — read
+**[`examples/macos-getting-started.md`](./examples/macos-getting-started.md)**.
+It's a plain-English walkthrough: find it in the menu bar, sign in,
+open Chat, ask for things, approve the actions that matter. No
+terminal, no programming.
+
+### Embedding CAR in code
+
+The rest of [`examples/`](./examples/) is for developers building on
+the Python / Node bindings:
 
 - [`examples/python/hello_car.py`](./examples/python/hello_car.py) — state, facts, verify, execute
 - [`examples/node/hello-car.js`](./examples/node/hello-car.js) — same idea in JS
