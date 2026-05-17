@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.15.2] — 2026-05-17
+Fixed: car-browser leaked headless Chrome subprocesses on shutdown and on panic; Fixed: task=code didn't prioritise quality over speed/cost in routing (car-releases#52); Fixed: CarHost Chat tab rendered nothing for supervised agents (#222)… See the [release notes][v0.15.2].
+
 ## [v0.15.1] — 2026-05-17
 Fixed: car start | stop | restart missing for contributed agents (#221); Fixed: car ls and car inspect mis-handled the flat agents.list response shape (#219, #220); Fixed: contributed-agent install rejected the stock template (#218); Fixed… See the [release notes][v0.15.1].
 
@@ -87,6 +90,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.15.2]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.15.2
 [v0.15.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.15.1
 [v0.15.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.15.0
 [v0.14.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.14.0
