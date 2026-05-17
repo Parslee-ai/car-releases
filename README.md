@@ -211,7 +211,7 @@ Wheel filenames carry the version, so there is no version-independent
 `latest` URL — substitute the current release:
 
 ```bash
-VERSION=0.15.1  # current release
+VERSION=0.15.2  # current release
 pip install "https://github.com/Parslee-ai/car-releases/releases/download/v${VERSION}/car_runtime-${VERSION}-cp39-abi3-macosx_15_0_arm64.whl"
 ```
 
@@ -254,6 +254,22 @@ always resolves to the newest.
 
 </details>
 
+### Swift (Apple — UniFFI)
+
+The Swift/Apple binding ships as a signed, notarized `CarFfi.xcframework`
+(macOS arm64 + iOS device + iOS simulator slices):
+
+```bash
+curl -sL https://github.com/Parslee-ai/car-releases/releases/latest/download/CarFfi.xcframework.zip -o CarFfi.xcframework.zip
+ditto -x -k CarFfi.xcframework.zip .
+```
+
+Add the unzipped `CarFfi.xcframework` to your app/target (Xcode →
+Frameworks, or a Swift Package `.binaryTarget(path:)`). The generated
+Swift glue (`CarFfiUniffi.swift`) is bundled inside. Same runtime,
+native Swift idioms. (Kotlin/Android `.aar` parity is tracked
+separately.)
+
 ### CLI + server
 
 The CAR CLI (`car`), server (`car-server`), and evaluation bridge
@@ -287,7 +303,7 @@ curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/instal
 ```
 
 Installs to `~/.car/bin/` and prints the PATH snippet to add. Pin a version
-with `CAR_VERSION=v0.15.1`, override the install dir with `CAR_INSTALL=...`.
+with `CAR_VERSION=v0.15.2`, override the install dir with `CAR_INSTALL=...`.
 
 **Manual tarball / zip:**
 
