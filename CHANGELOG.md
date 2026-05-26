@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.18.0] — 2026-05-26
+Fix: MLX backends fail cleanly when mlx.metallib is missing instead of aborting (car-inference); Fix: Host.app Chat tab renders the done.text reply from supervised agents (CarHost); Fix: verify now validates tool_call parameters against re… See the [release notes][v0.18.0].
+
 ## [v0.17.0] — 2026-05-24
 Note: car video LTX-2 multi-issue (Parslee-ai/car-releases#53); Add: images parameter on infer_tracked (NAPI + PyO3); Diagnostic: log dropped agent.chat.event forwards; Fix: CarHost dashboard window stays open when clicking away; CarHost: … See the [release notes][v0.17.0].
 
@@ -99,6 +102,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.18.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.18.0
 [v0.17.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.17.0
 [v0.16.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.16.1
 [v0.16.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.16.0
