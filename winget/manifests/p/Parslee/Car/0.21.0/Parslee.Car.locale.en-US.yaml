@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: Parslee.Car
+PackageVersion: 0.21.0
+PackageLocale: en-US
+Publisher: Parslee AI
+PublisherUrl: https://github.com/Parslee-ai
+PublisherSupportUrl: https://github.com/Parslee-ai/car-releases/issues
+PackageName: Common Agent Runtime
+PackageUrl: https://github.com/Parslee-ai/car-releases
+License: Proprietary
+LicenseUrl: https://github.com/Parslee-ai/car-releases/blob/main/LICENSE
+ShortDescription: Deterministic execution layer for AI agents (CLI + server).
+Description: |-
+  Common Agent Runtime (CAR) — models propose, the runtime validates,
+  verifies, and executes. Pre-built CLI (car), WebSocket server
+  (car-server), and evaluation bridge (car-memgine-eval) for Windows x64.
+  Calendar event mutations across the integration surface; A2UI: standard components CAR's catalog lacked — Icon, Video, AudioPlayer, DateTimeInput; Web renderer: CAR-only components rendered (A2UI component-set extend); A2UI v0.9 form-input…
+Tags:
+  - ai
+  - agent
+  - runtime
+  - llm
+  - cli
+ReleaseNotesUrl: https://github.com/Parslee-ai/car-releases/releases/tag/v0.21.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
