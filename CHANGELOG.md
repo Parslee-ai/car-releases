@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.22.0] — 2026-06-05
+Added; Fixed. See the [release notes][v0.22.0].
+
 ## [v0.21.0] — 2026-06-04
 Calendar event mutations across the integration surface; A2UI: standard components CAR's catalog lacked — Icon, Video, AudioPlayer, DateTimeInput; Web renderer: CAR-only components rendered (A2UI component-set extend); A2UI v0.9 form-input… See the [release notes][v0.21.0].
 
@@ -111,6 +114,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.22.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.22.0
 [v0.21.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.21.0
 [v0.20.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.20.0
 [v0.19.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.19.0
