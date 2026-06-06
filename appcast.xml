@@ -16,7 +16,7 @@
                     <enclosure
                         url="https://github.com/Parslee-ai/car-releases/releases/download/v0.23.0/CAR-Host-darwin-arm64.zip"
                         type="application/octet-stream"
-                        sparkle:edSignature="hAtVXL0Pm5vTKG6F1QlVObLmGPGPBjWvHpucKyNY4kh41+zpTr459Y2WqFSZHqNW7NiBV8Z4v9TV31OBrGLDCQ==" length="76225282" />
+                        sparkle:edSignature="XrAzf46dtqNTGSqSOwqTyD99baRdppymHErhLPiDKsjtQrgN4oMrW6m+QnqWaZaRIMeNZtos1zHER0FynxYXAw==" length="76483440" />
                 </item>
                 <item>
                     <title>Version 0.22.1</title>
