@@ -14,7 +14,7 @@ Description: |-
   Common Agent Runtime (CAR) — models propose, the runtime validates,
   verifies, and executes. Pre-built CLI (car), WebSocket server
   (car-server), and evaluation bridge (car-memgine-eval) for Windows x64.
-  Added: proactive model concierge (car-inference, car-server, CarHost); Fix: Apple Silicon detected as CPU, hiding MLX models from the recommender (car-inference).
+  Added: proactive model concierge (car-inference, car-server, CarHost); Fix: Apple Silicon detected as CPU, hiding MLX models from the recommender (car-inference); Agent run tracing — runs.record_turns client-narrated turn append (U1).
 Tags:
   - ai
   - agent
