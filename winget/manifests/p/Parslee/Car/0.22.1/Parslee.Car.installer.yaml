@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: Parslee.Car
+PackageVersion: 0.22.1
+InstallerType: zip
+NestedInstallerType: portable
+Commands:
+  - car
+  - car-server
+  - car-memgine-eval
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/Parslee-ai/car-releases/releases/download/v0.22.1/car-win32-x64-msvc.zip
+    InstallerSha256: C4D4E939D8393092BBD7494D8A44936976FAFE6A678781C5A97B6A1BF498FEE3
+    NestedInstallerFiles:
+      - RelativeFilePath: car.exe
+        PortableCommandAlias: car
+      - RelativeFilePath: car-server.exe
+        PortableCommandAlias: car-server
+      - RelativeFilePath: car-memgine-eval.exe
+        PortableCommandAlias: car-memgine-eval
+ReleaseDate: 2026-06-05
+ManifestType: installer
+ManifestVersion: 1.6.0
