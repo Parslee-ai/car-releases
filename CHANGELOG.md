@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.24.0] — 2026-06-14
+Fixed: resumed releases no longer break Sparkle signatures (publish-appcast-entry.sh) — closes #272; Security: Windows auth-token encrypted at rest with DPAPI (#295); A2UI Image accepts inline data: URIs (car-releases#57); Fixed: tool-call… See the [release notes][v0.24.0].
+
 ## [v0.23.0] — 2026-06-06
 Added: proactive model concierge (car-inference, car-server, CarHost); Fix: Apple Silicon detected as CPU, hiding MLX models from the recommender (car-inference). See the [release notes][v0.23.0].
 
@@ -120,6 +123,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.24.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.24.0
 [v0.23.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.23.0
 [v0.22.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.22.1
 [v0.22.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.22.0
