@@ -1,0 +1,18 @@
+Common Agent Runtime (CAR)
+Copyright © 2026 Parslee AI
+
+This repository uses two licenses:
+
+  * Repository SOURCE contents (README, CHANGELOG, examples/, install and
+    mirror scripts, workflows, winget/Scoop manifests, and any other source
+    under this git tree) are licensed under the Apache License, Version 2.0.
+    See LICENSE.
+
+  * The compiled BINARIES distributed via this repository's GitHub Releases
+    (car-*.tar.gz, car-runtime.*.node, car_runtime-*.whl, and the car /
+    car-server / car-memgine-eval executables) are proprietary: free to use
+    and redistribute unmodified, but not to modify or reverse engineer.
+    Source for the binaries is not published. See LICENSE-BINARIES.
+
+For rights beyond those — source access, modification, or a commercial
+redistribution agreement — contact Parslee AI.
