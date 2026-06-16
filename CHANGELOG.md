@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.25.0] — 2026-06-15
+Fixed: model-path follow-ups (streaming telemetry, sampler, stop sequences, etc.); Added: car run-task completion-discipline mode (experimental, opt-in); Fixed: MCP tool errors (isError: true) were silently surfaced as success; Fixed: Pars… See the [release notes][v0.25.0].
+
 ## [v0.24.1] — 2026-06-14
 Fixed: CUDA-built Linux artifacts now load on machines without CUDA installed; Fixed: McpSubstrate spoke a wire protocol no bridge implements — every VM op failed; Fixed: car run-task sent dot-named inference tools to the model, 400ing Ant… See the [release notes][v0.24.1].
 
@@ -126,6 +129,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.25.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.25.0
 [v0.24.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.24.1
 [v0.24.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.24.0
 [v0.23.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.23.0
