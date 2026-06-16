@@ -211,7 +211,7 @@ Wheel filenames carry the version, so there is no version-independent
 `latest` URL — substitute the current release:
 
 ```bash
-VERSION=0.24.1  # current release
+VERSION=0.25.0  # current release
 pip install "https://github.com/Parslee-ai/car-releases/releases/download/v${VERSION}/car_runtime-${VERSION}-cp39-abi3-macosx_15_0_arm64.whl"
 ```
 
@@ -303,7 +303,7 @@ curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/instal
 ```
 
 Installs to `~/.car/bin/` and prints the PATH snippet to add. Pin a version
-with `CAR_VERSION=v0.24.1`, override the install dir with `CAR_INSTALL=...`.
+with `CAR_VERSION=v0.25.0`, override the install dir with `CAR_INSTALL=...`.
 
 **Manual tarball / zip:**
 
