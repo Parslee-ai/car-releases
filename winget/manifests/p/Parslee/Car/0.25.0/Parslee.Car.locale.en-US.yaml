@@ -11,10 +11,11 @@ License: Proprietary
 LicenseUrl: https://github.com/Parslee-ai/car-releases/blob/main/LICENSE
 ShortDescription: Deterministic execution layer for AI agents (CLI + server).
 Description: |-
-  Common Agent Runtime (CAR) — models propose, the runtime validates,
-  verifies, and executes. Pre-built CLI (car), WebSocket server
-  (car-server), and evaluation bridge (car-memgine-eval) for Windows x64.
-  Fixed: model-path follow-ups (streaming telemetry, sampler, stop sequences, etc.); Added: car run-task completion-discipline mode (experimental, opt-in); Fixed: MCP tool errors (isError: true) were silently surfaced as success; Fixed: Pars…
+  Common Agent Runtime (CAR) — a deterministic execution layer for AI
+  agents. Models propose; the runtime validates, verifies, and executes.
+  Ships pre-built Windows x64 binaries: the CLI (car), the WebSocket server
+  (car-server), and the evaluation bridge (car-memgine-eval). Per-release
+  changes are listed in the linked release notes.
 Tags:
   - ai
   - agent
