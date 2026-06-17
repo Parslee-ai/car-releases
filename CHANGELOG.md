@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.26.0] — 2026-06-17
+Changed (breaking for external Rust consumers of car-inference); Added: stakes-aware routing for the in-process autonomous loops; Added: stakes-aware routing for the coder loop; Added: persistent outcome scoreboard (outcomes.scoreboard — t… See the [release notes][v0.26.0].
+
 ## [v0.25.0] — 2026-06-15
 Fixed: model-path follow-ups (streaming telemetry, sampler, stop sequences, etc.); Added: car run-task completion-discipline mode (experimental, opt-in); Fixed: MCP tool errors (isError: true) were silently surfaced as success; Fixed: Pars… See the [release notes][v0.25.0].
 
@@ -129,6 +132,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.26.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.26.0
 [v0.25.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.25.0
 [v0.24.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.24.1
 [v0.24.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.24.0
