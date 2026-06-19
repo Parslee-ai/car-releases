@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.27.0] — 2026-06-18
+Added: agent-chat surface — converse with create-car-agent agents (car#364, car#365); Added: local (in-process) tool-calling for Qwen3, plus honest tool-capability routing; Docs: clarify conversation persistence after the 0.25 store remova… See the [release notes][v0.27.0].
+
 ## [v0.26.0] — 2026-06-17
 Changed (breaking for external Rust consumers of car-inference); Added: stakes-aware routing for the in-process autonomous loops; Added: stakes-aware routing for the coder loop; Added: persistent outcome scoreboard (outcomes.scoreboard — t… See the [release notes][v0.26.0].
 
@@ -132,6 +135,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.27.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.27.0
 [v0.26.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.26.0
 [v0.25.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.25.0
 [v0.24.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.24.1
