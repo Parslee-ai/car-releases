@@ -708,15 +708,17 @@ available under separate terms — see License below.
 
 ## License
 
-Two licenses, depending on what you're using — see [LICENSE](./LICENSE) for the
-authoritative text.
+Two licenses, depending on what you're using — see [NOTICE](./NOTICE) for the
+summary and the two license files for the authoritative text.
 
+- **Repository contents** (README, examples, install scripts, workflows,
+  manifests) — **Apache-2.0**. Copy, modify, and reuse freely. See
+  [LICENSE](./LICENSE).
 - **Binaries** (tarballs, wheels, `.node` modules, CLI) — free for any use
   including commercial, free to redistribute unmodified. Modification, reverse
   engineering, and derivative works are not permitted. Copyright © 2026
-  Parslee AI. Source is not published under an open license.
-- **Repository contents** (README, examples, install scripts, workflows) —
-  Apache-2.0. Copy, modify, and reuse freely.
+  Parslee AI. Source is not published under an open license. See
+  [LICENSE-BINARIES](./LICENSE-BINARIES).
 
 If you need terms beyond those — source access, modification rights, a
 commercial redistribution agreement — contact Parslee AI.
