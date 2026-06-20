@@ -211,7 +211,7 @@ Wheel filenames carry the version, so there is no version-independent
 `latest` URL — substitute the current release:
 
 ```bash
-VERSION=0.27.0  # current release
+VERSION=0.28.0  # current release
 pip install "https://github.com/Parslee-ai/car-releases/releases/download/v${VERSION}/car_runtime-${VERSION}-cp39-abi3-macosx_15_0_arm64.whl"
 ```
 
@@ -303,7 +303,7 @@ curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/instal
 ```
 
 Installs to `~/.car/bin/` and prints the PATH snippet to add. Pin a version
-with `CAR_VERSION=v0.27.0`, override the install dir with `CAR_INSTALL=...`.
+with `CAR_VERSION=v0.28.0`, override the install dir with `CAR_INSTALL=...`.
 
 **Manual tarball / zip:**
 
@@ -708,17 +708,15 @@ available under separate terms — see License below.
 
 ## License
 
-Two licenses, depending on what you're using — see [NOTICE](./NOTICE) for the
-summary and the two license files for the authoritative text.
+Two licenses, depending on what you're using — see [LICENSE](./LICENSE) for the
+authoritative text.
 
-- **Repository contents** (README, examples, install scripts, workflows,
-  manifests) — **Apache-2.0**. Copy, modify, and reuse freely. See
-  [LICENSE](./LICENSE).
 - **Binaries** (tarballs, wheels, `.node` modules, CLI) — free for any use
   including commercial, free to redistribute unmodified. Modification, reverse
   engineering, and derivative works are not permitted. Copyright © 2026
-  Parslee AI. Source is not published under an open license. See
-  [LICENSE-BINARIES](./LICENSE-BINARIES).
+  Parslee AI. Source is not published under an open license.
+- **Repository contents** (README, examples, install scripts, workflows) —
+  Apache-2.0. Copy, modify, and reuse freely.
 
 If you need terms beyond those — source access, modification rights, a
 commercial redistribution agreement — contact Parslee AI.
