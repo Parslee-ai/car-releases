@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.31.0] — 2026-06-25
+Added: car purge — clean removal of a CAR install's own state; Added: car doctor — offline install diagnosis + repair; Added: self-healing model load — a corrupt cache re-pulls and retries instead of failing; Fixed: presence-only HuggingFa… See the [release notes][v0.31.0].
+
 ## [v0.30.0] — 2026-06-24
 Removed: judged task_33 (probability) — no local-tier signal (#421); Changed: judged track — better local-tier discriminators (#405); Changed: judged track no longer lets a contestant grade itself (#405); Fixed: gpt-5.5 rejected every call… See the [release notes][v0.30.0].
 
@@ -144,6 +147,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.31.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.31.0
 [v0.30.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.30.0
 [v0.29.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.29.0
 [v0.28.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.28.0
