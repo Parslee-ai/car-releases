@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.32.0] — 2026-07-02
+Added: multi-device sync B6 — the sync.* / lease.* wire surface, dispatch fence, and E2E encryption boundary; Added: multi-device sync B2 — transcript resume (car-sync); Fixed: B2 transcript resume — kernel-review hardening (car-sync) + ne… See the [release notes][v0.32.0].
+
 ## [v0.31.0] — 2026-06-25
 Added: car purge — clean removal of a CAR install's own state; Added: car doctor — offline install diagnosis + repair; Added: self-healing model load — a corrupt cache re-pulls and retries instead of failing; Fixed: presence-only HuggingFa… See the [release notes][v0.31.0].
 
@@ -147,6 +150,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.32.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.32.0
 [v0.31.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.31.0
 [v0.30.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.30.0
 [v0.29.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.29.0
