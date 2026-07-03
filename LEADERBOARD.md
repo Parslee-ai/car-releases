@@ -16,13 +16,11 @@ always read perf alongside its machine. Contribute via
 | `mlx/qwen3-0.6b:6bit` | agentic | aarch64 / 64GB / metal (Apple M4 Max) | — | — | — | 0 | 5 |
 | `mlx/qwen3-0.6b:6bit` | agentic | aarch64 / 64GB / metal (Apple M5 Pro) | — | — | — | 0 | 5 |
 | `mlx/qwen3-0.6b:6bit` | core | aarch64 / 36GB / metal (Apple M4 Max) | 1.000 | 86.0 | 21ms | 6 | 0 |
-| `mlx/qwen3-0.6b:6bit` | core | aarch64 / 64GB / metal (Apple M4 Max) | 1.000 | — | 105949ms | 6 | 0 |
 | `mlx/qwen3-0.6b:6bit` | core | aarch64 / 64GB / metal (Apple M5 Pro) | 1.000 | 107.9 | 26ms | 6 | 0 |
 | `mlx/qwen3-1.7b:3bit` | agentic | aarch64 / 36GB / metal (Apple M4 Max) | — | — | — | 0 | 5 |
 | `mlx/qwen3-1.7b:3bit` | agentic | aarch64 / 64GB / metal (Apple M4 Max) | — | — | — | 0 | 5 |
 | `mlx/qwen3-1.7b:3bit` | agentic | aarch64 / 64GB / metal (Apple M5 Pro) | — | — | — | 0 | 5 |
 | `mlx/qwen3-1.7b:3bit` | core | aarch64 / 36GB / metal (Apple M4 Max) | 1.000 | 93.7 | 46ms | 6 | 0 |
-| `mlx/qwen3-1.7b:3bit` | core | aarch64 / 64GB / metal (Apple M4 Max) | 1.000 | — | 241614ms | 6 | 0 |
 | `mlx/qwen3-1.7b:3bit` | core | aarch64 / 64GB / metal (Apple M5 Pro) | 1.000 | 85.3 | 62ms | 6 | 0 |
 | `mlx/qwen3-30b-a3b:4bit` | agentic | aarch64 / 64GB / metal (Apple M5 Pro) | 0.867 | 4.6 | 5568ms | 5 | 0 |
 | `mlx/qwen3-30b-a3b:4bit` | core | aarch64 / 64GB / metal (Apple M5 Pro) | 1.000 | 7.8 | 1576ms | 6 | 0 |
