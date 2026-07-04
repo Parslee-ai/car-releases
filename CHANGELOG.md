@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.33.0] — 2026-07-04
+Added: daemon-native deterministic scheduler (tasks.*) — car-releases#72; Fixed: car-accounts enumerated only iCloud, not all Internet Accounts — car-releases#73; Added: complete onboarding wizard + per-agent approval permissions; Changed:… See the [release notes][v0.33.0].
+
 ## [v0.32.1] — 2026-07-03
 Fixed: v0.32.0 macOS daemon dead on arrival — car-server SIGABRT at launch (missing Swift rpath). See the [release notes][v0.32.1].
 
@@ -153,6 +156,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.33.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.33.0
 [v0.32.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.32.1
 [v0.32.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.32.0
 [v0.31.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.31.0
