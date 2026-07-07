@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.35.0] — 2026-07-06
+Added: version-skew detection + car update self-updater; Fixed. See the [release notes][v0.35.0].
+
 ## [v0.34.0] — 2026-07-06
 Added: cross-device sync via the Parslee backend (#527, #528, #533); Added: Windows desktop accessibility tree via UI Automation (#530); Added: Microsoft Graph write scopes + mutations (#531); Added: cross-platform sound-event classificati… See the [release notes][v0.34.0].
 
@@ -159,6 +162,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.35.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.35.0
 [v0.34.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.34.0
 [v0.33.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.33.0
 [v0.32.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.32.1
