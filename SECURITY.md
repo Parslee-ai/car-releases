@@ -23,7 +23,7 @@ bug reports (see the README's *Issues* section), not security disclosures.
 | **macOS app + CLI** (`CAR-darwin-arm64.pkg`, `car`, `car-server`, `CAR Host.app`) | Apple **Developer ID**, **notarized** by Apple, stapled. Gatekeeper verifies on first launch. |
 | **`CarFfi.xcframework`** (Swift/Apple) | Developer ID signed + notarized. |
 | **In-app updates** (macOS) | Delivered via **Sparkle** over an **EdDSA-signed appcast** (`appcast.xml`). The app ships the public key and rejects any update whose signature doesn't verify. |
-| **Windows** (`car-server.exe`, `car.exe`, `car-tray.exe`) | Authenticode signing via **Azure Trusted Signing** (rolling out; until it lands, expect a SmartScreen prompt on first run). |
+| **Windows** (`car-server.exe`, `car.exe`, `car-tray.exe`, `CAR-setup-x64.exe`, the `.node` / `.pyd` modules) | **Not signed.** Authenticode signing via **Azure Trusted Signing** is planned but not yet live ([car#248](https://github.com/Parslee-ai/car/issues/248)) — expect a SmartScreen prompt on first run. |
 | **Linux** | No OS-level code-signing standard; verify via provenance + (roadmap) published checksums. |
 
 ### Verifying a macOS download
