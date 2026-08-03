@@ -8,18 +8,6 @@
         <language>en</language>
                 <item>
                     <title>Version 0.44.0</title>
-                    <pubDate>Mon, 03 Aug 2026 21:01:46 +0000</pubDate>
-                    <sparkle:version>0.44.0</sparkle:version>
-                    <sparkle:shortVersionString>0.44.0</sparkle:shortVersionString>
-                    <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-                    <sparkle:releaseNotesLink>https://github.com/Parslee-ai/car-releases/releases/tag/v0.45.0</sparkle:releaseNotesLink>
-                    <enclosure
-                        url="https://github.com/Parslee-ai/car-releases/releases/download/v0.45.0/CAR-Host-darwin-arm64.zip"
-                        type="application/octet-stream"
-                        sparkle:edSignature="JX1psfg6DFwsxHh7toe1/eP6A1Qk2nQy+0tHfaqA9e3o7VknVaoZ0CydQcN1uglwoiZnfbjKAzf5DnIhgEdhDw==" length="123067721" />
-                </item>
-                <item>
-                    <title>Version 0.44.0</title>
                     <pubDate>Sat, 01 Aug 2026 05:08:00 +0000</pubDate>
                     <sparkle:version>0.44.0</sparkle:version>
                     <sparkle:shortVersionString>0.44.0</sparkle:shortVersionString>
