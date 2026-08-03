@@ -86,18 +86,26 @@ standing tier with human-in-the-loop approval; per-agent postures
 (always-allow / require-approval / deny) refine this per agent. Approvals are
 recorded to a durable ledger.
 
-## Verification guarantees
+## Static verification
 
-Before executing, you can prove properties over a proposal — these are pure,
-side-effect-free, and run in milliseconds:
+Before executing, you can check properties over a proposal — these are pure,
+side-effect-free, and run in milliseconds. They are static analysis, not
+solver-backed proof. The forward walk models only the effects an action
+*declares* in `expected_effects`, so a declared effect is assumed to land and an
+undeclared one is invisible:
 
-- **`verify`** — structural + semantic validity: dependencies resolve, no
-  cycles, preconditions are establishable, tools exist, policies would permit it.
-  Returns `{ valid, issues }`.
+- **`verify`** — structural + semantic validity: dependencies resolve,
+  preconditions are establishable against the supplied state, tools exist, and
+  tool-call parameters match the registered schema. Returns `{ valid, issues }`.
+  Write conflicts are reported as *warnings* — they do not make a proposal
+  invalid. Policy is enforced separately by `car-policy`, not here.
 - **`simulate`** — forward-simulate the state transitions the plan would produce,
   without running any tool.
-- **`equivalent`** — prove two proposals produce the same effects.
-- **`optimize`** — return a cheaper proposal with the same effects.
+- **`equivalent`** — spot-check that two proposals produce the same effects over
+  a set of test states (two trivial defaults unless you supply your own). Not a
+  proof of equivalence.
+- **`optimize`** — prune phantom `state_dependencies` so independent actions can
+  run in the same DAG level. It does not reorder or remove actions.
 
 "Deterministic" means: given the same proposal, policies, and tool outputs, the
 runtime's ordering, validation, and state transitions are reproducible — the
