@@ -31,6 +31,18 @@ A batch of actions submitted to the runtime in one verify-then-execute round.
 | `actions` | `Action[]` | **yes** | non-empty for the proposal to be useful |
 | `context` | object | no | passed through to event log; not interpreted |
 
+No proposal-level `reversibility` field exists, and that is deliberate — the
+rollback contract belongs to an action, not to a batch. What a caller usually
+wants is the batch's *derived* contract, `ActionProposal::rollback_contract()`:
+the **worst** `reversibility` any of its actions declares, since a plan is only
+as recoverable as its least recoverable step and partial execution is a real
+outcome. An empty batch is `"reversible"` rather than the `"irreversible"`
+default, because "there is nothing to undo" is a different statement from "the
+author did not say". It surfaces on the wire as `permission.classify`'s
+`declared_rollback_contract` (see `docs/websocket-protocol.md`); note that it
+reads the **declared** IR fields, not `car-policy`'s classifier, so a proposal
+written before this axis existed reports `"irreversible"` for every action.
+
 ---
 
 ## Action
@@ -49,6 +61,10 @@ A single unit of agent intent. Actions form a DAG via `state_dependencies`; inde
   "expected_effects": { "deployed": true },
   "state_dependencies": ["build_artifact"],
   "invocation_mode": "one_shot",          // default; "streaming" / "long_running" detach
+  "reversibility": "compensable",          // default "irreversible"; can this be undone?
+  "compensation": {                        // required in spirit when "compensable"
+    "type": "tool", "tool": "rollback_deploy", "parameters": { "env": "staging" }
+  },
   "idempotent": true,
   "max_retries": 3,                        // default 3
   "failure_behavior": "retry",             // default "abort"
@@ -72,6 +88,8 @@ A single unit of agent intent. Actions form a DAG via `state_dependencies`; inde
 | `write_set` | string[] | no | `[]` | explicit transactional **write set**. When empty, derived from `expected_effects` (+ a `state_write`'s `key` param). Used to detect write-write races |
 | `assumptions` | `StateAssumption[]` | no | `[]` | assumptions about shared state this action did not produce — each `{ key, expected_value?, read_version? }`. A stale `read_version` (state moved past it) or mismatched `expected_value` is flagged by `transaction_check` as belief divergence |
 | `invocation_mode` | `ToolInvocationMode` | no | `"one_shot"` | how a `tool_call` runs: `"one_shot"` (dispatch awaits the result inline — unchanged default), or a detached mode (`"streaming"` / `"long_running"`) where dispatch *starts* the tool, returns `{ tool_handle, status: "running" }` as the action's output, and the DAG proceeds without blocking. Chunks/status are consumed via the handle (`tools.poll` / `tools.cancel` / `tools.stream.subscribe` on the WS, `toolPoll`/`tool_poll` + `toolCancel`/`tool_cancel` in the FFI). Detached results bypass the result cache AND the idempotency cache (a handle is a live invocation — deduping would return a stale handle instead of starting the tool) but stay rate-limited; `timeout_ms` bounds only the `execute_stream` startup, not the stream itself; requires a configured tool executor implementing `execute_stream` (the daemon's WS-callback executor does not yet — see the support-status note in `docs/websocket-protocol.md`). Ignored for non-`tool_call` actions |
+| `reversibility` | `Reversibility` | no | `"irreversible"` | the **rollback contract** for this action's effects — orthogonal to the permission tier, which answers *who may authorize this*. See below; note the conservative default |
+| `compensation` | `Compensation` | no | absent | how to undo the action once it has run. Meaningful only when `reversibility == "compensable"`; omitted from the serialized form when absent. See below |
 | `idempotent` | boolean | no | `false` | enables result caching and safe retry |
 | `max_retries` | u32 | no | `3` | only consulted when `failure_behavior == "retry"` |
 | `failure_behavior` | `FailureBehavior` | no | `"abort"` | see below |
@@ -88,6 +106,57 @@ Snake-case enum:
 | `"state_write"` | set state keys directly (no tool dispatch) |
 | `"state_read"` | read state keys; populate downstream actions |
 | `"assertion"` | check that a state predicate holds — fail the proposal if not |
+
+### `reversibility` — Reversibility
+
+Snake-case enum. Answers **can this be undone?** — a separate axis from the
+permission tier (`read_only` / `sandbox_edit` / `full_access`), which answers
+*who may authorize this*. The two were conflated until this field existed:
+`full_access` is documented as "externally-consequential **or** irreversible",
+which puts a `git push` (recoverable by force-pushing the prior ref) and a
+charged card (not recoverable at all) on the same rung.
+
+| Value | Meaning |
+|-------|---------|
+| `"reversible"` | undone by restoring the scope the action ran in — state writes, sandboxed filesystem writes. No compensating work needed |
+| `"compensable"` | undone only by running a compensating action — a DB `INSERT` needs its `DELETE`, a `git push` needs a force-push of the prior ref, a deploy needs a rollback deploy. Should carry a `compensation` |
+| `"irreversible"` (default) | cannot be undone once it reaches the world — a sent email, a charged card, `rm -rf` outside a snapshotted tree. Only the gate *before* it runs is a lever |
+
+Two things to know about the default:
+
+- **It is `"irreversible"`, deliberately.** The default is what the runtime
+  believes about an *unclassified* action, and the two directions fail
+  asymmetrically. Defaulting to `"reversible"` and being wrong means silently
+  believing a sent email can be unsent — a safety property failing quietly.
+  Defaulting to `"irreversible"` and being wrong means over-asking for approval
+  on something recoverable — annoying, visible, and locally fixable by
+  annotating the action.
+- **Nothing enforces on it yet.** This field is typed, classified, and audited;
+  it is not a gate. Deferring the materialization of an irreversible effect
+  needs machinery CAR does not have (a checkpoint coupled to the filesystem —
+  today rollback restores the state map and leaves what a tool wrote to disk
+  where it is). Do not read `"reversible"` as a promise that the runtime will
+  undo anything for you.
+
+### `compensation` — Compensation
+
+Tagged by `type`. The action-level analogue of the saga-pattern
+`CompensationHandler` `car-workflow` applies per *stage*, restated natively in
+the IR (which depends only on serde, uuid, and chrono).
+
+| Variant | Shape | Meaning |
+|---------|-------|---------|
+| `"tool"` | `{ "type": "tool", "tool": "db.delete", "parameters": { … } }` | invoke a tool that reverses the effect. `parameters` defaults to `{}` |
+| `"action_ref"` | `{ "type": "action_ref", "action_id": "undo-a1" }` | run another action from the same proposal, identified by its `id` — use this when one tool call is not enough |
+
+`reversibility == "compensable"` with no `compensation` is representable but
+incoherent; `Action::missing_required_compensation()` is the check that flags
+it. The pairing is not enforced by the type because `Reversibility` is
+deliberately a plain string enum that every binding surface mirrors.
+
+Declaring a compensation is a *claim*, not a proof: nothing in the runtime
+checks that the named tool is a true inverse of the action, exactly as nothing
+checks `expected_effects`.
 
 ### `failure_behavior` — FailureBehavior
 
@@ -256,7 +325,12 @@ Returned by `verify` (FFI standalone, WebSocket `verify`).
 {
   "valid": true,
   "issues": [
-    { "action_id": "a1", "severity": "warning", "message": "expected_effects mentions key not in any tool's schema" }
+    {
+      "action_id": "a1",
+      "severity": "warning",
+      "message": "expected_effects mentions key not in any tool's schema",
+      "tier": "decision_procedure"          // how the finding was derived
+    }
   ],
   "simulated_state": { "deployed": true },
   "execution_levels": [["a1"], ["a2", "a3"]],
@@ -267,10 +341,41 @@ Returned by `verify` (FFI standalone, WebSocket `verify`).
 | Field | Notes |
 |-------|-------|
 | `valid` | `false` if any issue has severity `"error"` |
-| `issues` | flat list; severity ∈ `"error"` / `"warning"` / `"info"` |
+| `issues` | flat list; severity ∈ `"error"` / `"warning"` / `"info"`, plus `tier` (below) |
 | `simulated_state` | post-execution state if the proposal ran with no failures |
 | `execution_levels` | DAG layered topological order — actions in the same layer are independent |
 | `conflicts` | triples `(action_a, action_b, state_key)` where two actions write the same key without ordering |
+
+### `tier` — EvidenceTier
+
+Snake-case enum on every issue. Names which **kind** of check produced the
+finding, so a consumer no longer has to recognise the message string to tell
+them apart:
+
+| Value | Meaning |
+|-------|---------|
+| `"decision_procedure"` | the check *decides* the property it reports over the inputs it was handed — set membership, graph reachability, the STRIPS-style forward walk |
+| `"heuristic"` | a proxy signal over complete inputs. In `verify` this is exactly one rule: repeated-identical-call loop detection, where the repeat count is exact but the step from "three identical calls" to "runaway loop" is a guess, so a legitimate 3× poll trips it |
+| `"sampled"` | an exact measurement over incomplete inputs — `equivalent`'s probe states, Monte Carlo rollouts. **Does not currently appear on a verification `issue`:** neither of those checks produces one, and their reports (`MonteCarloResult`, `equivalent`) carry no `tier` on the wire. The variant is defined and reachable in Rust; a client should not write a `"sampled"` branch expecting `verify` to emit it. |
+
+Three things it is **not**, all easy to get backwards:
+
+- **Not `severity`.** Severity is how bad the finding would be; the tier is how
+  it was derived. They vary independently.
+- **Not "does this block".** `car-engine`'s admission gate treats the
+  precondition and state-dependency findings as advisory *even though both are
+  `decision_procedure`*, because they are decided over a forward model that sees
+  only **declared** `expected_effects`. Whether the inputs match runtime is a
+  separate axis, carried by the `evidence` bundle's `assumptions` /
+  `untested_regions` / per-check `cannot_verify`.
+- **Not a ranking.** The Rust `EvidenceTier` derives no `Ord` on purpose — a
+  proxy over complete inputs and an exact measurement over incomplete inputs
+  fail in different directions, so neither is categorically stronger. Match on
+  the value; do not filter down to `decision_procedure`.
+
+`decision_procedure` is not a proof, not a soundness claim, and not a prediction
+that the plan will run — there is no solver in this workspace. Older daemons
+omit the field.
 
 ### What `verify` detects
 
@@ -414,6 +519,7 @@ observable at least once, after which the handle is consumed (`null`).
 |---------|------|
 | `Action`, `ActionProposal`, `ActionResult` | `car-rs/crates/car-ir/src/actions.rs` |
 | Streaming / long-running tool contract | `car-rs/crates/car-ir/src/tool_stream.rs` |
+| `Reversibility` / `Compensation` | `car-rs/crates/car-ir/src/reversibility.rs` |
 | `Precondition` operators | `car-rs/crates/car-ir/src/precondition.rs` |
 | DAG ordering / `state_dependencies` resolution | `car-rs/crates/car-ir/src/dag.rs` |
 | `verify`, `simulate`, `equivalent`, `optimize` | `car-rs/crates/car-verify/src/lib.rs` |

@@ -1591,7 +1591,7 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 
 #### `models.list_unified`
 - **Params**: `{}`
-- **Returns**: full registry — `[ { id, name, provider, capabilities, param_count, size_mb, context_length, available, is_local, max_output_tokens, public_benchmarks, cost }, ... ]`. Includes local (Qwen3, MLX, Ollama), remote (OpenAI, Anthropic, Google, OpenRouter, etc.), and any user-registered models. CAR always includes exactly eleven reviewed personal OpenRouter rows under `openrouter/<provider>/<model>` IDs; they are visible with `available: false` without a personal credential and the same rows report `available: true` when one is present. Typoed or unregistered OpenRouter IDs are absent. Parslee-managed curated entries use eleven opaque `parslee/openrouter/<alias>` IDs that never disclose the upstream provider model. `available` reflects current credential/file presence on every call, including OpenRouter pasted/OAuth changes without restart; `is_local` distinguishes local/remote without parsing `provider`. `public_benchmarks` is `[ { name, score, harness?, source_url?, measured_at? }, ... ]` with `score` on a 0.0–1.0 scale.
+- **Returns**: full registry — `[ { id, name, provider, capabilities, param_count, size_mb, context_length, available, is_local, max_output_tokens, public_benchmarks, cost }, ... ]`. Includes local (Qwen3, MLX, Ollama), remote (OpenAI, Anthropic, Google, OpenRouter, etc.), and any user-registered models. CAR always includes exactly eleven reviewed personal OpenRouter rows under `openrouter/<provider>/<model>` IDs; they are visible with `available: false` without a personal credential and the same rows report `available: true` when one is present. Typoed or unregistered OpenRouter IDs are absent. Parslee-managed curated entries use eleven opaque `parslee/openrouter/<alias>` IDs that never disclose the upstream provider model. `available` reflects current credential/file presence on every call, including OpenRouter pasted/OAuth changes without restart; `is_local` distinguishes local/remote without parsing `provider`. **One exception, and it is a correction rather than a caveat:** for the managed `parslee/openrouter/*` rows, credential presence alone is *not* sufficient. Those rows authenticate through the Parslee session, so credential presence means only "signed in" and says nothing about whether the gateway has an OpenRouter upstream to proxy to — an environment without one advertised all ten as available and then failed every request with `503 openrouter_not_configured` (car#786). There is no discovery endpoint to ask, so when the gateway reports that condition CAR records it and those rows report `available: false` until it is re-tested. The suppression is bounded (15 minutes) and cleared on sign-out, so an environment that gains OpenRouter recovers on its own; expect these rows to read available again after that window even with no client action. `public_benchmarks` is `[ { name, score, harness?, source_url?, measured_at? }, ... ]` with `score` on a 0.0–1.0 scale.
 - **`cost`** is the model's declared price structure: `{ input_per_mtok, output_per_mtok, cache_read_input_per_mtok, cache_write_input_per_mtok, pricing_tiers, size_mb, ram_mb }`. The four rates are USD per 1M tokens for uncached input, output, cache-read input and cache-write input. `pricing_tiers` is `[ { min_prompt_tokens, input_per_mtok?, output_per_mtok?, cache_read_input_per_mtok?, cache_write_input_per_mtok? }, ... ]` — prompt-size overrides where the highest `min_prompt_tokens` not greater than the prompt wins, and a tier only overrides the components it declares. Every rate is nullable, and `null` means **unpriced, not free**: local/downloaded models declare no prices, and a consumer that reads `null` as `0` publishes a fabricated cost. The managed `parslee/openrouter/<alias>` rows publish the same prices as the personal row they front; a `CostModel` carries no identifiers, so adding `cost` to this response discloses nothing new about the upstream model. Note the scope: **`models.list_unified` carries no upstream identifier for a managed alias, but `models.search` does** — its entries add a `family` field, which for these rows is the upstream model family (e.g. `claude-4.8`), and it matches queries against that field. That is pre-existing and unchanged here; treat the non-disclosure guarantee as holding on `models.list_unified`, not registry-wide. The field is additive: a client built against this version parsing a response from a daemon that predates it sees `cost` absent and defaults it to all-`null`, rather than failing the whole catalog.
 
 #### `models.route_provenance`
@@ -3166,9 +3166,34 @@ default_max_iterations = 8                               # coder.start fallback 
   request omits `max_iterations`. Default `8`; a value of `0` is ignored.
 
 #### `coder.start`
-- **Params**: `{ repo?: string, project?: string, intent: string, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, model?: string, repair_invokes?: number, transient_retries?: number }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `8`). `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis.
+- **Params**: `{ repo?: string, project?: string, intent: string, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, model?: string, repair_invokes?: number, transient_retries?: number, discussion_id?: string }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `8`). `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis.
 - **Returns**: `{ session_id, state: "contract_proposed", engine, worktree, contract: { description, checks: [{ name, command, expect_exit_zero, output_contains?, timeout_secs }] }, baseline, baseline_gates_nothing, journal_path, model }` — `journal_path` is the `car_eventlog` JSONL this session journals its actions to (per-tool `action_id`, `ActionFailed`/`TurnCompleted`/…), so a caller (e.g. `car coder-ab`) can attribute the run's failure mechanisms via `harness_adapt::diagnose` without guessing the state dir. `model` is the **effective** native-loop pin (the per-session request, else the config, else `null` = adaptive routing) — surfaced so a caller can verify the coder is on the intended backbone rather than silently falling back to a local model.
 - **Red-green baseline** (car#707): before returning, the contract is evaluated once against the **unmodified** worktree. `baseline` is a `CheckResult[]` in check order, and `baseline_gates_nothing` is true when *every* check already passed — meaning the contract verifies nothing for this task and there is nothing to turn red-to-green. Only an all-green baseline sets the flag: individual passing checks are ordinary (a refactor's checks are green before and after by design), so flagging one would abort sessions over a non-fault. `validate()` already rejects contracts that gate nothing *structurally* (assertion-less checks, toolchain-only no-ops); this catches the semantic case that clears validation. Skipped for `agent`-kind projects, whose synthesized check is an in-daemon scenario run rather than a shell command. Costs one contract evaluation, bounded by the checks' own `timeout_secs`. The same results are pushed as a `coder.contract_baseline` event.
+- **Visible while drafting.** The session is registered at `created` **before**
+  contract derivation begins, so it appears in `coder.list` / `coder.watch` (and
+  fans out a `coder.session_changed`) for the whole 3-5 minute drafting window,
+  with `needs_you: null` — nothing is being asked of the operator yet. It is
+  also **cancellable** there: `coder.cancel` aborts the derivation, reaps the
+  worktree, and lands the session at `abandoned`, and the abandon sticks (the
+  contract is never proposed into existence afterwards, and no
+  `contract_proposed` reaches a subscriber). `coder.start`'s own return shape
+  and timing are unchanged — it still returns after drafting with the same keys;
+  this is purely additive visibility. Previously the session was registered only
+  once drafting finished, so it existed on disk but was absent from the wire:
+  unaddressable, uncancellable, and invisible to every other client.
+- **Survives the calling connection.** `coder.start` runs on a daemon-owned
+  task, not on the connection that asked for it. Every other method is
+  dispatched on a per-connection task set that is aborted the moment the
+  WebSocket closes; for `coder.start` that was wrong, because the session is
+  registered and its worktree provisioned *before* the multi-minute contract
+  derivation — so a client that disconnected while drafting left a `created`
+  session row, a provisioned worktree, no contract and no driver until the
+  daemon restarted. Disconnecting now abandons only your own response: the
+  derivation, the red-green baseline and the transition to `contract_proposed`
+  all complete, and any client can pick the session up from `coder.list` /
+  `coder.watch`. A connection that stays open sees the same response at the
+  same time as before. The only supported way to stop a drafting session
+  remains `coder.cancel`.
 - Provisions the worktree, resolves the engine (auto = complexity assessment + detected-CLI preference, default claude-code → codex → gemini but overridable via `~/.car/coder.toml`'s `engine_preference`, delegating foreman-first for broad tasks), and derives the contract with a bounded model repair loop. Foreman's gates split regression vs goal (#275): each subtask worktree runs a build-system regression check detected from the repo (`cargo check` / `go build ./...` / `swift build`; unknown build systems decline to single-session), while the integrated union runs the contract's plain exit-zero checks as the goal leg (`sh -lc "<check> && …"`). Output-substring checks are enforced only by the coder's final contract evaluation. Synchronous — expect seconds while the model drafts the contract.
 
 #### `coder.confirm_contract`
@@ -3178,7 +3203,188 @@ default_max_iterations = 8                               # coder.start fallback 
 
 #### `coder.list`
 - **Params**: `{}`
-- **Returns**: `{ sessions: [{ session_id, state, intent, repo, engine, iterations, updated_at, live, error? }] }` — live sessions plus persisted snapshots from prior daemon lifetimes (`live: false`), newest first.
+- **Returns**: `{ sessions: [session_summary] }` — live sessions plus persisted snapshots from prior daemon lifetimes (`live: false`), newest first.
+
+##### `session_summary`
+
+The row shape shared by `coder.list`, `coder.watch`, and the
+`coder.session_changed` notification. Every pre-existing key keeps its name and
+type; the rest is additive.
+
+```jsonc
+{
+  // --- existing ---
+  "session_id": "coder-…", "state": "running", "intent": "…", "repo": "/abs/path",
+  "engine": "native", "iterations": 3, "updated_at": 1781234567, "live": true, "error": null,
+  // `iterations` tracks the run live (the last `iteration_started.n`) and settles
+  // to the loop's final count when it finishes — it previously read 0 until then.
+
+  // --- what the session is waiting on a human for ---
+  "needs_you": "contract" | "question" | "approval" | "auth" | null,
+  "needs_you_label": "contract awaiting confirmation" | "question waiting"
+                   | "diff ready for approval" | "sign-in needed" | null,
+  "question_prompt": "…" | null,      // set iff needs_you == "question"
+  "auth_message": "…" | null,         // set iff needs_you == "auth"
+  "auth_wait_secs": 120 | null,       // set iff needs_you == "auth"
+
+  // --- outcome + provenance ---
+  "failure_kind": "budget_exhausted" | "auth_required" | "error" | null, // set iff state == "failed"
+  "worktree": "/abs/path" | null,     // only when the directory still exists on disk
+  "project": "slug" | null,
+  "result_branch": "car/coder/ab12cd34" | null,
+  "model": "…" | null,
+  "discussion_id": "disc-…" | null,
+  "next_seq": 42 | null               // live sessions only; the coder.subscribe cursor
+}
+```
+
+`needs_you` is **always `null` for a non-live session** (`live: false`), even a
+`needs_approval` snapshot preserved across a daemon restart. Such a session is
+genuinely not approvable — `coder.approve_merge` requires a live registry entry,
+which orphan adoption deliberately does not rehydrate — so advertising it as
+actionable lit up a board row whose action returned a protocol error. A board
+renders those from `state` plus the retained `worktree` path, and
+`coder.approve_merge` / `coder.cancel` on one answer with the already-happened
+wording (naming the surviving worktree so it can be merged by hand).
+
+For a live session `needs_you` is derived **server-side** by one function, and
+`needs_you_label` is a fixed daemon-owned string — the same precedent as `diff_ready`'s
+`overlap_disclosure`, so two clients can never say different words about the
+same state:
+
+| value | condition |
+|---|---|
+| `"contract"` | `state == contract_proposed` |
+| `"approval"` | `state == needs_approval` |
+| `"question"` | `state == running` AND a mid-session question is parked on the input gate |
+| `"auth"` | `state == running` AND an `auth_required` event is the latest unresolved auth event (cleared by any subsequent event) |
+| `null` | otherwise |
+
+`failure_kind` is `"budget_exhausted"` when the session hit its wall-clock
+ceiling, `"auth_required"` when it ended waiting on a sign-in nobody supplied,
+and `"error"` otherwise. It, `needs_you`, `worktree`, `result_branch`,
+`project`, `model` and `discussion_id` are all **persisted on the session
+snapshot**, so a summary read after a daemon restart still carries them —
+otherwise the distinction between "ran out of clock", "nobody signed in" and
+"the work was judged red" would go blank exactly when the operator comes back to
+look. `worktree` is reported only when the directory still exists (the
+`keep_workspace_on_failure` / preserved-orphan cases): a path whose tree was
+reaped is a snapshot detail, not a place to send someone.
+
+#### `coder.watch` / `coder.unwatch`
+- **Params**: `{ renew?: boolean }` (default `false`) / `{}`
+- **Returns**: `{ sessions: [session_summary] }` (newest `updated_at` first) — or,
+  when `renew: true`, `{ was_registered: boolean }` / `{ ok: true }`
+- The board's **one** subscription. `coder.subscribe` is per-session, which is
+  exactly what a board cannot use: it has to learn about sessions started by
+  *any* client (`car code`, CarHost, milo) without polling and without
+  restarting. `coder.watch` answers with the current full list **and** registers
+  the caller for change notifications, atomically — registration happens under
+  the same `coder_sessions` lock the snapshot is taken under, so a session
+  created between the two cannot slip through the gap and go unrendered until
+  some later unrelated change.
+- Watchers are keyed by `client_id` and dropped on disconnect, exactly like
+  `coder.subscribe`rs. **Lock order:** a session's `events` buffer →
+  `coder_subscribers` → `coder_watchers`; never the reverse.
+- **Idempotent, and meant to be re-called on a timer.** Registration is keyed by
+  `client_id`, so a second call is a no-op on the registration and answers with
+  a fresh snapshot. Because a shed is silent and the connection survives it (see
+  `coder.session_changed` below), a client with no periodic re-watch can render
+  a permanently frozen list with nothing on the wire to tell it — the reference
+  board renews every **4 s**.
+- **Renew on the timer, not the full call.** `{ renew: true }` re-registers
+  idempotently and returns `{ was_registered }` and nothing else: `true` if a
+  live registration was already present, `false` if this call had to create one
+  — i.e. the client had been shed or dropped and has missed changes, so it
+  should follow up with a default `coder.watch` to resync. A renewal builds **no
+  summaries**, which is the point: the default call lists every persisted
+  session from disk, and that scan grows with accumulated history rather than
+  with what is live. A daemon predating `renew` ignores the unknown param and
+  answers with the full list — clients should treat a missing `was_registered`
+  as "old daemon, this reply is the snapshot".
+- Each registration is stamped internally, so a registration **created** while a
+  shed is timing out on a previous one (an unwatch/reconnect) is not removed by
+  that shed's cleanup. A bare re-watch or renewal from a connection that already
+  has a live registration keeps that registration's stamp — deliberately: with a
+  new stamp per call, a client renewing faster than the 10 s write deadline
+  could never be shed at all.
+
+#### `coder.session_changed` (notification)
+- **Payload**: `{ summary: session_summary }`
+- Pushed to every `coder.watch`er when a session is created, changes `state`,
+  changes `needs_you`, changes `error`, or reaches a terminal state. Emitted
+  **synchronously from the event path, never from a poller**, so an
+  operator-attention transition reaches an open board in well under 5 s. Two
+  boards — one open the whole time, one that just called `coder.watch` —
+  converge to the same list.
+- Fanned out on **one** daemon-wide drain, coalesced per session, so a board
+  that stops reading cannot slow the others down. A watcher whose socket does
+  not take a frame within **10 s** is **deregistered** — its
+  `coder.session_changed` stream ends and it must call `coder.watch` again to
+  resume (which also re-answers with the full current list).
+
+#### `coder.revise_contract`
+- **Params**: `{ session_id: string, request: string }` — `request` is plain English, e.g. `"also verify the Windows path"`.
+- **Returns**: `{ state: "contract_proposed", revised: boolean, contract: OutcomeContract, baseline: CheckResult[], baseline_gates_nothing: boolean, message: string | null }`
+- Redrafts a **proposed** contract from the operator's reply instead of making
+  them hand-edit JSON or reject and start over. Legal **only** in
+  `contract_proposed`; any other state returns the already-happened error below.
+  **Nothing executes** — the session stays at the gate awaiting a fresh
+  confirm/reject either way. **Unlimited rounds**; there is no principled cap,
+  since each round costs one derivation and the alternative (reject and restart)
+  costs strictly more.
+- On success: `revised: true`, a re-run red-green `baseline` for the new checks,
+  and fresh `contract_proposed` + `contract_baseline` events so **every**
+  subscribed client re-renders the new draft and cannot confirm the stale one.
+- On failure to honor (the redraft does not validate, or the request is not
+  expressible as checks): `revised: false`, the previously drafted contract
+  returned **byte-identical** together with **its own stored `baseline` and
+  `baseline_gates_nothing`**, `message` explaining why, and a
+  `contract_revision_rejected { request, reason }` event. A revision that
+  silently passed as applied would let an operator confirm a contract they
+  believe says something it does not — the one outcome this must never produce,
+  so read `revised` before trusting `contract`. The baseline is returned rather
+  than blanked because a board renders it beside the contract: an empty
+  `baseline` would read as a change to the very draft this reply promises is
+  unchanged. (The baseline is persisted on the session snapshot for exactly this
+  reason, and moves with the contract it describes on every successful
+  revision.)
+- "Expressible as checks" is judged on the **checks alone**. A redraft that
+  changes only `description` gates nothing new, so it comes back
+  `revised: false` — restating an unverifiable requirement in prose is exactly
+  the case this rejection exists for. `output_contains` is compared
+  byte-for-byte, so tightening `"0 failures"` to `" 0 failures "` (so it can no
+  longer match `"10 failures"`) *is* a revision.
+- **Two revisions racing**: the write is conditional on the stored contract
+  still being the one this redraft was derived from. If another revision landed
+  first, this one is **not applied** and returns `revised: false` with the
+  **current** contract and baseline plus a `message` beginning `another revision
+  of this contract landed while yours was being drafted` — re-read it and revise
+  again if you still need your change. Both revisions previously reported
+  `revised: true` and the second silently discarded the first.
+
+#### Already-happened errors (confirm / approve / revise)
+
+Acting on a session that is past (or not yet at) the gate returns a JSON-RPC
+error whose `message` names what already happened and the current state — never
+a panic, never a silent `{ok: true}`:
+
+- `contract already confirmed for coder-ab12cd34 (state: running)`
+- `coder-ab12cd34 was already merged — nothing left to approve`
+- `coder-ab12cd34 was already merged — nothing left to revise`
+- `coder-ab12cd34 is not ready to approve yet (state: running, expected needs_approval)`
+
+These three are exactly the gates a second operator can wrongly believe they
+just passed — two boards racing on one session is the normal case now, and a
+bare success for "confirm this contract" or "approve this merge" would tell them
+their decision took effect when it did not.
+
+**`coder.cancel` is deliberately excluded** and reports the same information
+without erroring — see its section below. Cancelling a stopped session is the
+outcome the caller wanted, and `car code`'s one-shot Ctrl-C path calls it
+unconditionally, so making it an error would change the frozen one-shot flow.
+Every pre-existing `coder.*` method keeps its parameters **and its return
+shapes**; the already-happened information arrives in additive keys there.
 
 #### `coder.get`
 - **Params**: `{ session_id: string }`
@@ -3186,7 +3392,16 @@ default_max_iterations = 8                               # coder.start fallback 
 
 #### `coder.subscribe` / `coder.unsubscribe`
 - **Params**: `{ session_id: string, from_seq?: number }` / `{ session_id: string }`
-- **Returns**: `{ state, events_replayed }` / `{ ok: true }`
+- **Returns**: `{ state, events_replayed, live, replay_available }` / `{ ok: true }`
+- A session that is **not live but has a persisted snapshot** (the daemon
+  restarted under it) succeeds with `{ state, events_replayed: 0, live: false,
+  replay_available: false }` rather than erroring. Erroring made every
+  pre-restart session unopenable from a board — precisely when an operator goes
+  looking for it. There is no event history for those sessions (full pre-restart
+  replay is deferred), and the reply says so instead of implying an empty stream
+  is the whole stream. Only an id with neither a live entry nor a snapshot is an
+  error. `coder.unsubscribe` on a non-live session is a no-op returning
+  `{ ok: true }`.
 **`coder.diff_ready` payload** (car#706): `{ stat, patch, patch_truncated: boolean, patch_full_bytes: number, changed_paths: number, overlap_disclosure: string | null, contract_overlap: [{ check, paths }] }`. `stat` is the full `git diff --cached --stat`, never truncated. `patch` is tail-capped to `~/.car/coder.toml`'s `approval_patch_bytes` (default 512 KB, previously a hardcoded 32 KB), and `patch_truncated` says so as a field rather than only via the `…[truncated]…` marker inside the string — a reviewer must be able to tell they are approving against a partial diff without string-matching. `changed_paths` counts every path the diff touches, including BOTH endpoints of a rename — one moved file is two paths, because a file moved out of a directory is a change to that directory, and reporting only the destination made a rename look like a creation. `overlap_disclosure` is the rendered sentence, or `null` when nothing overlaps; it is on the wire so every surface prints the same words rather than hand-rolling copies that drift. `contract_overlap` lists contract checks whose commands execute a path this diff modified: **disclosure, never denial**, since editing tests is frequently the task and `coder::policy` deliberately does not block test-adjacent edits. Path extraction from a shell command is heuristic and biased toward flagging — a false positive costs one line a human dismisses, a false negative silently restores the gap.
 
 - Subscribes this connection to the session's `coder.event` stream. Buffered events with `seq >= from_seq` are replayed before live delivery (no gap, no dup), so a reconnecting client resumes from its cursor. Subscriptions are per-connection and dropped on disconnect; the session keeps running.
@@ -3203,8 +3418,139 @@ default_max_iterations = 8                               # coder.start fallback 
 
 #### `coder.cancel`
 - **Params**: `{ session_id: string }`
-- **Returns**: `{ state: "abandoned" }`
+- **Returns**: `{ state: "abandoned", already_terminal: false, message: null }`
 - Flags the loop, aborts its task (in-flight shell processes are killed), abandons the session, removes the worktree. Valid from any non-terminal state. Note: an in-flight **external** CLI invocation cannot be killed mid-run yet (same limitation as `agents.chat`); its own timeout bounds the wait.
+- Cancelling an **already-terminal** session **succeeds** — same `state` key, same
+  type — with `already_terminal: true` and an operator-readable `message`, e.g.
+  `{ state: "merged", already_terminal: true, message: "coder-ab12cd34 was already merged — nothing left to cancel" }`.
+  Deliberately not an error, unlike the confirm/approve/revise gates below, for
+  two reasons: `car code`'s one-shot Ctrl-C path calls `coder.cancel`
+  unconditionally, so a session that raced to terminal first would turn a quiet
+  exit into a protocol error; and "stop this" on a session that already stopped
+  is the outcome the caller wanted, so the honest answer is "yes, it's stopped,
+  and here is why nothing happened just now". The `state` key and its type are
+  unchanged for every input — the two new keys are purely additive.
+
+#### `coder.discuss.*`
+
+A repo-grounded, strictly **read-only** conversation that can be distilled into
+a run intent. The gap it closes: `coder.start` demands a well-formed intent
+before anything exists to react to, so an operator still working out *what* they
+want either guesses (and burns a session on a badly-aimed contract) or goes and
+thinks somewhere without the repo in front of them.
+
+Grounding reuses the same `AssistantService` that backs `car do`, bound with
+`bind_default_substrate(prefer_local = true, full_access = false, repo, None)` —
+`PermissionTier::ReadOnly`, where every write and every shell escalates to an
+approval gate. **This surface auto-DENIES those escalations** rather than
+prompting: a discussion is a thinking surface, and the one property that must
+hold unconditionally is that it never touches the repo. The refusal is visible
+as a `tool_result { ok: false }` rather than silent. `coder.start` is the only
+thing that starts work.
+
+Discussions are **in-memory only** and do not survive a daemon restart: the model
+thread, the bound runtime and the substrate are process-local, and persisting the
+transcript alone would resume a conversation whose grounding no longer exists.
+They are also **owned by the connection that opened them** — closing that
+connection closes the discussion and cancels any in-flight turn, because a
+detached turn keeps billing model tokens to nobody. Bounded four ways: at most
+**8 open discussions** per daemon (a slot is reserved before the runtime is
+built, so pipelined starts cannot exceed it), a **1-hour idle TTL** reaped on the
+next `coder.discuss.start`, per-discussion caps on the replay buffer (2000
+events, oldest dropped) and the distillation transcript (40 turns retained, the
+most recent 12 handed to `promote`), and a **64 KiB cap on one `send`**.
+
+**Ownership is enforced, not merely recorded.** `send`, `subscribe`, `promote`,
+`close` and `coder.start { discussion_id }` all refuse a caller that is not the
+opening connection, with
+`discussion '<id>' belongs to another connection — a discussion is owned by the
+connection that opened it and closes with it; start your own with
+coder.discuss.start`. `coder.discuss.list` returns only the caller's own
+discussions. Resolving by id alone let any connected client drive — or close
+mid-turn — a discussion it did not open.
+
+**One wedged subscriber cannot stall a discussion.** Each subscriber owns a
+bounded outbound queue drained by its own task, so the discussion's event drain
+never awaits a socket: a subscriber that stops reading (queue full, or a write
+that does not complete within 10s) is **dropped from the fanout**, and its
+`coder.discuss.event` stream simply ends. Re-`subscribe` with `from_seq` to
+resume. The turn itself is unaffected either way.
+
+**Read scope.** As well as auto-denying every write/shell escalation, the
+discussion's bound environment pins the read tools (`read_file`, `list_dir`,
+`find_files`, `grep_files`) inside the repo root. Mutation-gating alone left
+those pointed at the whole filesystem, and their output streams to every
+subscriber — so a prompt-injected repo file could ask for
+`grep_files {"path":"/Users/<user>","pattern":"sk-ant-"}` and exfiltrate the
+hits. Scoped to this surface; the general assistant's read reach is unchanged.
+
+- `coder.discuss.start` — **Params** `{ repo: string }`. **Returns**
+  `{ discussion_id: "disc-…", repo, repo_summary }`. A non-git path errors with
+  `"<path> is not a git repository — discuss needs a repo to ground itself in"`
+  (the same git check `coder.start` uses).
+- `coder.discuss.send` — **Params** `{ discussion_id, text }`. **Returns**
+  `{ ok: true, seq }`, where `seq` is the sequence number of the FIRST event
+  this turn emits (the `user_message`), so a caller that has not yet subscribed
+  can resume from exactly there without missing or replaying a frame. The reply
+  streams as `coder.discuss.event`.
+  **Returns as soon as the turn is dispatched** — it never waits on the model,
+  and it never waits on a subscriber's socket, so a stalled board cannot delay
+  it. **One turn at a time.** A `send` arriving while a turn is in flight is
+  **refused** with `<id> is still answering the previous message — wait for
+  \`turn_complete\` before sending another`, not queued: two overlapping turns
+  clone the same model thread and the last to finish overwrites the other, so
+  an exchange would vanish from the conversation *and* from what `promote`
+  later distills. Wait for `turn_complete`. That in-flight latch is released on
+  every exit path including a cancelled request, so a `send` that is abandoned
+  mid-flight leaves the discussion answerable rather than stuck reporting "still
+  answering" with nothing running.
+  A message over **64 KiB** is refused naming its size and the limit; a `close`
+  that lands while a `send` is still being dispatched refuses the `send` with
+  `<id> was closed while your message was being dispatched` and starts no turn.
+- `coder.discuss.subscribe` / `coder.discuss.unsubscribe` — **Params**
+  `{ discussion_id, from_seq?: number }` / `{ discussion_id }`. **Returns**
+  `{ events_replayed }` / `{ ok: true }`. Same replay-then-register-under-the-
+  buffer-lock discipline as `coder.subscribe` (no gap, no dup). Owner-only.
+  WS-only.
+- `coder.discuss.promote` — **Params** `{ discussion_id }`. **Returns**
+  `{ discussion_id, proposed_intent, constraints: string[] }`. **Starts
+  nothing** — no worktree, no branch, no session. It is a pure distillation
+  call: the caller shows `proposed_intent` (a distilled instruction, never the
+  transcript) to the operator, who may edit it before calling `coder.start`.
+  Callable repeatedly on an open discussion. **Refused while a turn is
+  streaming** (`<id> is still answering — try again in a moment`): distilling
+  then would run on the operator's question with no answer beside it, and the
+  model would return a confident intent invented from an unanswered question —
+  which then feeds `coder.start { discussion_id }` and contract derivation.
+- `coder.discuss.close` — **Params** `{ discussion_id }`. **Returns**
+  `{ ok: true }`. Frees the in-memory discussion and drops its subscribers.
+  Owner-only.
+- `coder.discuss.list` — **Params** `{}`. **Returns**
+  `{ discussions: [{ discussion_id, repo, created_at, turns }] }` — **this
+  connection's** discussions only. Also serves
+  as the **capability probe**: a daemon predating this work answers JSON-RPC
+  `-32601` (method not found), which a client maps to a plain "this daemon is
+  too old for discuss / promote / revise" message rather than a raw protocol
+  error or a hang.
+
+`coder.start` accepts `discussion_id`: the discussion's agreed `constraints` are
+appended to the repo/intent context handed to contract derivation — so a
+constraint stated only in the discussion lands in the drafted contract without
+the operator restating it — and the session records the id, which `coder.get`
+and every session summary surface as provenance. An unknown `discussion_id` is a
+clear error; it never silently starts an ungrounded run. It must be **your own**
+discussion, and it must not be mid-turn — starting while it is still answering
+is refused, because the constraints would be distilled from a question with no
+answer beside it.
+
+Carry-through is **verified against the checks, not the prose.** Each constraint
+is judged against the drafted contract, and a constraint counts as captured only
+when some check's command would fail if it were violated. A constraint that
+reaches only the contract's `description` drives the repair loop like a dropped
+one; if the attempt budget runs out with it still ungated, the contract comes
+back with a `NOT VERIFIED BY THIS CONTRACT` block in its `description` naming
+it. Render that block — it is the difference between a constraint the run
+enforces and one it merely narrates.
 
 #### Managed projects (`coder.projects.*`)
 
@@ -3459,7 +3805,8 @@ Declarative multi-stage orchestration with conditional edges and saga compensati
 - **Returns**: `{ valid: boolean, issues: VerifyIssue[], simulated_state: object, execution_levels: string[][], conflicts: [string, string, string][], evidence: VerificationEvidence }`
 - Static verification only — no tools are called. 30s timeout.
 - Each `tool_call` is checked against the session's registered tool schemas (those declared via `register_tool_schema`): unknown tools, and — since car-releases#56 — `parameters` that violate the schema's declared `type`s or omit a `required` field, are reported as `error` issues with `valid: false`.
-- `evidence` is the verifier's **declared scope** (survey "Code as Agent Harness" §5.2.2 — execution feedback is only as trustworthy as the oracle's scope): `{ checks: [{ name, ran, verifies, cannot_verify, findings }], assumptions: string[], untested_regions: string[], residual_risks: string[], confidence: number }`. Each `CheckRecord` declares what a pass establishes (`verifies`), what it does **not** even on a pass (`cannot_verify`), and whether it `ran` (e.g. `param_schema` is skipped when no schemas are registered). `confidence` is a 0–1 **coverage** signal (how completely the applicable checks covered the proposal), not a probability of runtime success. This lets a `valid: true` verdict be consumed with its blind spots visible rather than as a blanket guarantee — important for self-repair and harness-evolution loops that must not optimize against a weak oracle.
+- Each `VerifyIssue` is `{ action_id, severity, message, tier }`. **`tier` is the evidence tier** — `"decision_procedure"` | `"heuristic"` | `"sampled"` — saying which *kind* of check produced the finding, so a consumer no longer has to recognise the message string to tell them apart. Today `verify`'s findings are all `decision_procedure` (set membership, the STRIPS-style forward walk, write-conflict detection) except the repeated-identical-call loop rule, which is `heuristic`: the repeat count is exact but the step from "three identical calls" to "runaway loop" is a proxy, so a legitimate 3× poll trips it. The tier is **orthogonal to `severity`** (how bad, not how derived) and orthogonal to whether a finding blocks admission — `car_engine`'s gate treats the precondition and state-dependency findings as advisory even though both are `decision_procedure`, because they are decided over a forward model that sees only *declared* effects. A `decision_procedure` tier is not a proof, a soundness claim, or a prediction that the plan will run: it means the check decides the property it reports over the inputs it was given. Older daemons omit the field.
+- `evidence` is the verifier's **declared scope** (survey "Code as Agent Harness" §5.2.2 — execution feedback is only as trustworthy as the oracle's scope): `{ checks: [{ name, ran, verifies, cannot_verify, findings, tier }], assumptions: string[], untested_regions: string[], residual_risks: string[], confidence: number }`. Each `CheckRecord` declares what a pass establishes (`verifies`), what it does **not** even on a pass (`cannot_verify`), its `tier` (the same one every finding it contributed carries), and whether it `ran` (e.g. `param_schema` is skipped when no schemas are registered). `confidence` is a 0–1 **coverage** signal (how completely the applicable checks covered the proposal), not a probability of runtime success. This lets a `valid: true` verdict be consumed with its blind spots visible rather than as a blanket guarantee — important for self-repair and harness-evolution loops that must not optimize against a weak oracle.
 - `execution_levels` are the DAG's parallelizable batches (action IDs); `conflicts` are undeclared concurrent writes `(action1, action2, key)`.
 
 #### `verify.monte_carlo`
@@ -3482,9 +3829,14 @@ A per-session permission gate classifies each action's risk into `read_only` / `
 
 - **`permission.get_tier`** — Returns `{ granted_tier }`.
 - **`permission.set_tier`** — Params `{ tier: "read_only"|"sandbox_edit"|"full_access" }`. Returns `{ granted_tier }`.
-- **`permission.classify`** — Params `{ proposal: ActionProposal }`. Returns `{ classifications: [{ action_id, tool, required_tier }] }` — the minimum tier each action needs.
-- **`permission.evaluate`** — Params `{ proposal, skill? }`. Returns `{ decisions: [{ action_id, fingerprint, decision: "allow"|"needs_approval"|"deny", required, granted?, reason? }], skill_ceiling? }`. A `full_access` action always yields `needs_approval` (mandatory HITL) unless previously approved; a prior rejection yields `deny`. When `skill` names a governed skill (arXiv 2602.12430 "Agent Skills"), its persisted `deployment_tier` caps the session's standing authority for this evaluation — the effective tier is `min(granted, deployment_tier)`, so an action driven by a `read_only`-capped skill escalates instead of running even in a `full_access` session. The applied ceiling is echoed as `skill_ceiling`. This is the join from skill-trust governance to the action-level gate: the caller already knows which skill drove the actions, so it names it; the gate honours the ceiling without inventing action→skill provenance.
-- **`permission.pending`** — Params `{ proposal, skill? }`. Returns `{ pending: [...] }` — only the `needs_approval` decisions (the approval work-queue). Honours the same optional `skill` ceiling as `permission.evaluate`.
+- **`permission.classify`** — Params `{ proposal: ActionProposal }`. Returns `{ classifications: [{ action_id, tool, required_tier, reversibility, missing_compensation }], declared_rollback_contract }`.
+  - `required_tier` is the minimum tier each action needs — *who may authorize this*.
+  - **`reversibility`** — `"reversible" | "compensable" | "irreversible"` — is the orthogonal second axis, *can this be undone*, from `car_policy::classify_reversibility` over the tool name and flattened parameters. It is classified **independently** of the tier, not derived from it, because deriving it would rebuild the conflation the axis exists to remove: `PermissionTier` used to describe `full_access` as "externally-consequential **or** irreversible", collapsing a `git push` (force-push the prior ref), a production `INSERT` (delete the row) and a charged card onto one rung. The two disagree in both directions — `read_secret` is `full_access` + `reversible` (a read leaves nothing to undo), `db_insert` is `sandbox_edit` + `compensable`.
+  - **`missing_compensation`** is `true` when the action *declares* `reversibility: "compensable"` but carries no `compensation` — an incoherent rollback plan, visible before execution instead of at the point someone needs the undo. It reads the declared IR fields, not the classifier.
+  - **`declared_rollback_contract`** is the whole proposal's contract: the **worst** of its actions' declared `reversibility` values, since a plan is only as recoverable as its least recoverable step (an empty batch is `"reversible"` — nothing to undo is not the same as unclassified). Note this envelope field and the per-row `reversibility` answer different questions: the envelope reports what the *author declared* in the IR, the rows report what the *classifier inferred*. A proposal written before this axis existed declares nothing, so its actions default to `irreversible` and the envelope reads `"irreversible"` even where the rows classify individual actions as `reversible`.
+  - Both are conservative keyword heuristics — an unrecognized tool comes back `irreversible` — and **nothing in the runtime gates on either field yet**: they are classified, reported, and audited (`PermissionDecision` events carry `reversibility` too), not enforced. Older daemons omit all three fields.
+- **`permission.evaluate`** — Params `{ proposal, skill? }`. Returns `{ decisions: [{ action_id, fingerprint, decision: "allow"|"needs_approval"|"deny", required, reversibility, granted?, reason? }], skill_ceiling? }`. **`reversibility`** is on *every* row, `allow` rows included, and is orthogonal to `decision`: the gate's verdict says whether the action may run, not whether it could be taken back afterwards. Two actions that both escalate to `needs_approval` are not the same decision for a human if one of them is the one there is no undoing, and a trail that records the rollback contract only for actions the gate *stopped* is missing the rows an incident review reads first. Same classifier, same values, and the same "classified, not enforced" caveat as `permission.classify` above; older daemons omit the field. A `full_access` action always yields `needs_approval` (mandatory HITL) unless previously approved; a prior rejection yields `deny`. When `skill` names a governed skill (arXiv 2602.12430 "Agent Skills"), its persisted `deployment_tier` caps the session's standing authority for this evaluation — the effective tier is `min(granted, deployment_tier)`, so an action driven by a `read_only`-capped skill escalates instead of running even in a `full_access` session. The applied ceiling is echoed as `skill_ceiling`. This is the join from skill-trust governance to the action-level gate: the caller already knows which skill drove the actions, so it names it; the gate honours the ceiling without inventing action→skill provenance.
+- **`permission.pending`** — Params `{ proposal, skill? }`. Returns `{ pending: [...] }` — only the `needs_approval` decisions (the approval work-queue), each row identical in shape to `permission.evaluate`'s, `reversibility` included. Honours the same optional `skill` ceiling as `permission.evaluate`. The field matters most here: this queue is where a human decides, and "can this be undone?" is the question they are actually weighing.
 - **`permission.approve`** / **`permission.reject`** — Params `{ fingerprint, required_tier, reason?, evidence? }` (from a prior `evaluate`) **or** `{ action, reason?, evidence? }`. Records a durable decision on the **shared daemon ledger** (visible to every connection, restart-surviving) that overrides future evaluations of the same operation, and audits it as `ApprovalRecorded`. The `reviewer` is **stamped server-side** from the authenticated principal (bound `agent:<id>` or `conn:<id>`) — it is not a caller param, so the audit's "who decided" can't be forged. An under-scoped `required_tier` cannot widen access: the gate re-classifies the action and only honors an approval at or above its true tier. Returns the stored `ApprovalRecord`.
 - **Authority**: when the daemon runs under a host token (CarHost), the mutating methods (`set_tier`/`approve`/`reject`) require the host-management role — a registered agent connection can classify/evaluate/pending but can't self-elevate or self-approve. In tokenless dev/embedder mode the connection governs its own session.
 
@@ -3521,6 +3873,7 @@ Orthogonal to the per-session standing tier above: a durable **per-agent** postu
   prompt footprint. They do not alter the provider payload and are not actual
   usage telemetry.
 - `usage` carries the prompt-cache split when the provider reports it: `{ prompt_tokens, completion_tokens, total_tokens, cache_read_input_tokens, cache_creation_input_tokens }`. `prompt_tokens` is the **uncached** prefix only; `cache_read_input_tokens` (hit) and `cache_creation_input_tokens` (write) account for the cached portion, so true input is the sum of all three. Both cache fields are `0` for uncached calls and non-caching providers. This is normalized across providers: Anthropic reports the uncached tail directly, while OpenAI's `cached_tokens` (Chat Completions `prompt_tokens_details` / Responses `input_tokens_details`) is subtracted out of `prompt_tokens` so the cached part isn't double-counted. The durable cost view (`outcomes.scoreboard`) prices each bucket at the provider's own cache rate — Anthropic ~0.1× read / ~1.25×–2× write, OpenAI ~0.5× read with no write charge.
+- **Local models report `usage` too.** The in-process MLX and Candle paths report the post-truncation prompt length and the number of tokens they sampled; the mlx-vlm CLI path reports the counts the CLI prints (image patches included). Both cache fields are always `0` — on-device inference has no remote prompt cache. `usage` is `null` only when nobody could produce a count: Apple FoundationModels (the framework exposes none), a delegated runner that emits no `usage` stream event, and an mlx-vlm build whose performance summary doesn't parse. `null` is deliberate rather than a zeroed struct — a consumer summing `total_tokens` can't distinguish a fabricated `0` from a real "this used no tokens", so treat `null` as "estimate it yourself" (car#795).
 
 #### `infer_stream`
 - **Params**: same `GenerateRequest` shape as `infer` (including the `context_query` and `memory_intervention` conveniences).
@@ -3530,7 +3883,7 @@ Orthogonal to the per-session standing tier above: a durable **per-agent** postu
   - `{ "type": "text", "data": "<chunk>" }`
   - `{ "type": "tool_start", "name": "<tool>", "index": <int> }`
   - `{ "type": "tool_delta", "index": <int>, "data": "<json fragment>" }`
-  - `{ "type": "usage", "input_tokens": <n>, "output_tokens": <n>, "cache_read_input_tokens": <n>, "cache_creation_input_tokens": <n> }` — `input_tokens` is the uncached prefix; the cache fields carry the prompt-cache split decoded from the stream (Anthropic `message_start`, OpenAI final usage chunk). `0` when uncached / non-caching. Streamed calls now price cache identically to non-streaming.
+  - `{ "type": "usage", "input_tokens": <n>, "output_tokens": <n>, "cache_read_input_tokens": <n>, "cache_creation_input_tokens": <n> }` — `input_tokens` is the uncached prefix; the cache fields carry the prompt-cache split decoded from the stream (Anthropic `message_start`, OpenAI final usage chunk). `0` when uncached / non-caching. Streamed calls now price cache identically to non-streaming. **Local (in-process MLX/Candle) streams emit this event too**, once at end of generation with the counts their decode loop observed — before car#795 they emitted none, so every streamed local turn ended with `usage: null` while the non-streaming call for the same model returned real numbers. `context_window` is absent from the stream event and therefore `0` in the accumulated `usage`: stream events carry no model metadata. Non-streaming `infer` populates it.
   - `{ "type": "stop_reason", "data": "<provider termination reason>" }` — raw provider string (`"length"`/`"max_tokens"` ⇒ truncated at the token cap)
   - `{ "type": "provider_output_item", "item": { ... } }` — an opaque OpenAI Responses continuity item. Managed reasoning items preserve `id`, `status`, `summary`, and `encrypted_content` verbatim so the caller can replay them as `Message::ProviderOutputItems` on the next turn. Personal OpenRouter's Chat Completions path never emits this event.
   - `{ "type": "error", "message": "<sanitized provider failure>" }` — terminal failure, including an OpenRouter error frame delivered inside an HTTP-200 SSE response. The final JSON-RPC response is an error (never a successful `result`), and the trace is booked as a failure with no inference-metered success telemetry.
@@ -3629,6 +3982,13 @@ iteration may legitimately show two runs), `plan_text {text}`,
 `check_completed {result}`, `external_event {raw}` (forwarded external-CLI
 stream event), `diff_ready {stat, patch, patch_truncated, patch_full_bytes, changed_paths, contract_overlap}` (`changed_paths` counts BOTH endpoints of a rename, so one moved file is two paths; `contract_overlap` lists checks whose commands execute paths this diff also modified — disclosure, not a denial),
 `user_input_requested {prompt}` (reserved),
+`user_input_expired {prompt, waited_secs}` (the answer window closed
+server-side without an answer and the loop carried on without one — the prompt
+is DEAD). A client has no other way to learn this: the gate simply stops being
+pending, which is only discoverable by asking again, so a board kept rendering
+the question as live and counting it under "needs you" until the operator
+refreshed. It also drives the `coder.session_changed` that drops `needs_you`
+back to `null`,
 `auth_required {message, wait_secs}` (the run is blocked on **sign-in** and is
 waiting rather than failing — **not terminal**: if a credential appears within
 `wait_secs` the session resumes where it stopped, worktree intact, and no
@@ -3641,7 +4001,55 @@ own credentials, so CAR has nothing to re-authenticate on its behalf. If nobody
 signs in within the window the session ends with a distinct `needs_auth`
 failure rather than `infrastructure`, and its worktree is retained, so re-running
 after `car auth login` resumes from the work already done.
+`contract_revision_rejected {request, reason}` (a `coder.revise_contract`
+request could NOT be honored — the redraft did not validate, or the request was
+not expressible as checks — and the session is still sitting on the PREVIOUS
+contract; its own event rather than a generic `error` because an operator has to
+know the contract in front of them is the old one),
 `merge_completed {branch}`, `error {message}`.
+
+### `coder.session_changed`
+Pushed to `coder.watch`ing connections whenever any session is created, changes
+`state`, changes `needs_you`, changes `error`, or reaches a terminal state.
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "coder.session_changed",
+  "params": { "summary": { "session_id": "coder-…", "state": "needs_approval", "needs_you": "approval", "needs_you_label": "diff ready for approval", "…": "…" } }
+}
+```
+`summary` is the full `session_summary` documented under `coder.list`. Emitted
+from the event path rather than a poller, so an operator-attention transition
+reaches an open board in well under 5 s. It is a *notification*, not a stream
+with a cursor: a client that missed frames re-derives the whole list from
+`coder.watch`.
+
+### `coder.discuss.event`
+Pushed to `coder.discuss.subscribe`d connections during a discussion. `seq` is
+monotonic per discussion (the resume cursor for
+`coder.discuss.subscribe { from_seq }`).
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "coder.discuss.event",
+  "params": { "discussion_id": "disc-…", "seq": 7, "ts": 1781234567, "type": "assistant_delta", "text": "…" }
+}
+```
+`type` values and their payload fields: `user_message {text}`,
+`assistant_delta {text}` (streaming chunk), `assistant_message {text}`
+(the complete turn), `tool_call {tool, params_preview}`,
+`tool_result {tool, ok, preview}` — **`ok` is always `false` today**: the underlying loop does not surface successful tool results as their own event (the model's following text conveys them), so the only `tool_result` emitted is the auto-denied write/shell refusal below. Treat a success row as reserved, not as something to wait for.
+`turn_complete {}`, `error {message}`.
+
+A `tool_result` with `ok: false` is how the no-mutation boundary surfaces: a
+discussion's write/shell attempt is auto-denied and reported, never silently
+dropped and never parked as a human approval prompt.
+
+Each subscriber is fanned to through its own bounded queue, so a subscriber that
+stops reading is **dropped from the fanout** (queue full, or a write that does
+not complete within 10 s) rather than being allowed to delay the discussion's
+turn. Its stream just ends; re-`subscribe` with `from_seq` to resume from the
+last `seq` seen, up to the 2000-event buffer.
 
 When the **Foreman (parallel)** engine runs, it reports its pipeline through
 `external_event` payloads whose `raw` object is tagged `foreman`. Run-level
