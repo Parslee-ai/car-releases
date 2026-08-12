@@ -329,6 +329,8 @@ h2{
   font-size:12.5px;
   color:var(--grey);
   overflow-x:auto;
+  min-width:0;
+  flex:1;
   white-space:nowrap;
   flex:1;
   scrollbar-width:thin;
@@ -374,8 +376,9 @@ h2{
 
 /* Responsive */
 @media (max-width:900px){
-  .hero .wrap{grid-template-columns:1fr;gap:48px;padding-top:64px;padding-bottom:72px}
-  .cards,.steps,.install-grid{grid-template-columns:1fr}
+  .hero .wrap{grid-template-columns:minmax(0,1fr);gap:48px;padding-top:64px;padding-bottom:72px}
+  .cards,.steps,.install-grid{grid-template-columns:minmax(0,1fr)}
+  .install-card,.card{min-width:0}
   .steps{gap:32px}
   .section-pad{padding:64px 0}
   .site-nav{gap:16px}
