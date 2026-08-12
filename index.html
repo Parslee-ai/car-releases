@@ -1,0 +1,315 @@
+<!-- CAR — Owner Workshop Manual — car.parslee.ai — 2026-08-11 -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CAR — Agent Runtime | Owner Workshop Manual</title>
+  <meta name="description" content="CAR is a supervised runtime you install on your own computer that runs AI agents, guards risky actions behind your approval, and refuses to call work done until real checks pass.">
+  <link rel="canonical" href="https://car.parslee.ai/">
+  <meta property="og:title" content="CAR — Agent Runtime | Owner Workshop Manual">
+  <meta property="og:description" content="CAR is a supervised runtime you install on your own computer that runs AI agents, guards risky actions behind your approval, and refuses to call work done until real checks pass.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://car.parslee.ai/">
+  <meta property="og:image" content="https://car.parslee.ai/img/hero.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20fill='%23f0e6d2'/%3E%3Cg%20fill='%23de5b1f'%3E%3Crect%20x='13'%20y='2'%20width='6'%20height='28'%20rx='1'/%3E%3Crect%20x='2'%20y='13'%20width='28'%20height='6'%20rx='1'/%3E%3Crect%20x='13'%20y='2'%20width='6'%20height='28'%20rx='1'%20transform='rotate(45%2016%2016)'/%3E%3Crect%20x='2'%20y='13'%20width='28'%20height='6'%20rx='1'%20transform='rotate(45%2016%2016)'/%3E%3Ccircle%20cx='16'%20cy='16'%20r='10'/%3E%3C/g%3E%3Ccircle%20cx='16'%20cy='16'%20r='3.6'%20fill='%23f0e6d2'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --paper:#f0e6d2; --paper-2:#e7d9bd; --panel:#dcccad; --board:#4a3526; --board-2:#34261d; --ink:#16263a; --ink-soft:#39485b; --orange:#de5b1f; --blue:#3e5f7e; --rule:#26394e; --shadow:rgba(22,38,58,.22); --hair:rgba(22,38,58,.32); --cream:#fff4dc; --warning:#f6d3ae; --ok:#536b45;
+      --font-body:Arial, Helvetica, sans-serif; --font-condensed:"Arial Narrow","Helvetica Neue Condensed","Roboto Condensed",Arial,sans-serif; --font-mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+      --step--1:clamp(.78rem,.74rem + .15vw,.88rem); --step-0:clamp(.94rem,.9rem + .25vw,1.08rem); --step-1:clamp(1.13rem,1.04rem + .42vw,1.38rem); --step-2:clamp(1.45rem,1.24rem + .9vw,2rem); --step-3:clamp(2rem,1.42rem + 2vw,3.3rem); --step-4:clamp(2.7rem,1.56rem + 4.1vw,5.8rem);
+      --page:1120px; --gutter:42px; --radius:2px;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;min-width:320px;color:var(--ink);font-family:var(--font-body);font-size:var(--step-0);line-height:1.62;background:var(--board-2);overflow-x:hidden}
+    body::before{content:"";position:fixed;inset:0;z-index:-2;background:radial-gradient(circle at 18% 12%,rgba(115,75,34,.15),transparent 18rem),radial-gradient(circle at 86% 28%,rgba(222,91,31,.1),transparent 22rem),radial-gradient(circle at 44% 84%,rgba(62,95,126,.11),transparent 24rem),linear-gradient(90deg,#2f231b,#5a412c 12%,#efe0c2 12%,#f6ecd8 88%,#5a412c 88%,#2a211b)}
+    a{color:inherit;text-decoration-thickness:2px;text-underline-offset:.18em}
+    img{display:block;width:100%;height:100%;object-fit:cover}
+    button{font:inherit;color:inherit}
+    .manual{width:min(var(--page),100% - 20px);margin:18px auto 36px;position:relative;background:var(--paper);box-shadow:inset var(--gutter) 0 0 rgba(57,38,25,.38),inset calc(var(--gutter) + 5px) 0 0 rgba(255,255,255,.18),18px 18px 44px rgba(0,0,0,.38),-6px 0 0 rgba(0,0,0,.12);overflow:clip}
+    .manual::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(22,38,58,.035) 0 1px,transparent 1px 4px),repeating-linear-gradient(90deg,rgba(222,91,31,.03) 0 1px,transparent 1px 7px),radial-gradient(circle,rgba(22,38,58,.08) 0 1px,transparent 1.4px) 0 0/12px 12px;mix-blend-mode:multiply}
+    .manual::after{content:"";position:absolute;right:0;top:0;bottom:0;width:22px;background:linear-gradient(90deg,transparent,rgba(39,30,22,.28));pointer-events:none}
+    .page{position:relative;padding:34px 44px 42px calc(var(--gutter) + 34px);border-bottom:2px solid rgba(22,38,58,.2);isolation:isolate}
+    .page::before,.page::after{content:"";position:absolute;width:34px;height:34px;pointer-events:none;background:linear-gradient(var(--ink),var(--ink)) center/100% 1px no-repeat,linear-gradient(90deg,var(--ink),var(--ink)) center/1px 100% no-repeat;opacity:.42}
+    .page::before{top:18px;right:18px}.page::after{bottom:18px;right:18px}
+    .running{display:flex;justify-content:space-between;gap:16px;border-top:3px solid var(--ink);border-bottom:1px solid var(--hair);padding:7px 0 6px;margin-bottom:24px;font-family:var(--font-condensed);font-weight:800;text-transform:uppercase;letter-spacing:.06em;font-size:var(--step--1)}
+    .folio{display:flex;justify-content:space-between;gap:16px;margin-top:26px;padding-top:7px;border-top:1px solid var(--hair);font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft)}
+    .cover{min-height:92vh;display:grid;align-items:stretch;padding:30px 42px 38px calc(var(--gutter) + 34px);background:linear-gradient(90deg,rgba(52,38,29,.18),transparent 10%),radial-gradient(circle at 76% 22%,rgba(222,91,31,.14),transparent 16rem),var(--paper)}
+    .cover-shell{display:grid;grid-template-rows:auto 1fr auto;border:5px solid var(--ink);background:linear-gradient(180deg,var(--board) 0 34%,var(--paper) 34% 100%);box-shadow:inset 0 0 0 2px var(--orange),0 10px 0 rgba(22,38,58,.18)}
+    .cover-top{padding:18px 20px 14px;color:var(--cream);border-bottom:5px solid var(--orange)}
+    .publine{display:flex;justify-content:space-between;gap:16px;align-items:center;font-family:var(--font-mono);font-size:.78rem;letter-spacing:.12em;text-transform:uppercase}
+    .badge{border:2px solid var(--cream);padding:5px 8px;color:var(--cream);transform:rotate(2deg)}
+    .cover-title{position:relative;margin:20px 0 8px;font-family:var(--font-condensed);font-size:var(--step-4);line-height:.88;text-transform:uppercase;letter-spacing:.02em;color:var(--cream)}
+    .cover-title .plate{position:absolute;left:0;top:0;width:100%;transform:translate(3px,2px);border:0;padding:0;background:transparent;text-align:inherit;color:var(--orange);mix-blend-mode:screen;opacity:.9}
+    .cover-title .ink{position:relative;display:block}
+    .model{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:end;font-family:var(--font-condensed);text-transform:uppercase;letter-spacing:.05em;font-weight:900}
+    .model strong{font-size:var(--step-3);color:var(--cream)} .model span{font-size:var(--step-1);color:var(--cream)}
+    .cover-body{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(280px,.92fr);gap:24px;padding:24px 24px 18px}
+    .cover-blurb{border:2px solid var(--ink);background:rgba(255,244,220,.48);padding:18px;box-shadow:7px 7px 0 rgba(22,38,58,.18)}
+    .cover-blurb p{margin:0 0 13px;max-width:66ch}.cover-blurb p:last-child{margin-bottom:0}
+    .stamp{align-self:start;border:4px solid var(--orange);color:var(--orange);padding:15px 16px;font-family:var(--font-condensed);font-weight:900;text-transform:uppercase;letter-spacing:.05em;transform:rotate(-2deg);background:rgba(240,230,210,.78);box-shadow:6px 6px 0 rgba(222,91,31,.18)}
+    .stamp a{display:block;margin-top:9px;font-family:var(--font-mono);font-size:.82rem;text-transform:none;letter-spacing:.02em;color:var(--ink);overflow-wrap:anywhere}
+    .hero-figure{grid-column:1/-1}
+    .figure-frame{position:relative;aspect-ratio:3/2;border:2px solid var(--ink);background:linear-gradient(135deg,rgba(62,95,126,.18),transparent 30%),repeating-linear-gradient(45deg,rgba(22,38,58,.06) 0 1px,transparent 1px 9px),var(--panel);overflow:hidden}
+    .figure-frame::before{content:"";position:absolute;inset:10px;border:1px dashed rgba(22,38,58,.38);pointer-events:none;z-index:3}
+    .figure-frame::after{content:"IMAGE PLATE PENDING";position:absolute;right:16px;bottom:13px;font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;color:rgba(22,38,58,.6);z-index:1}
+    .figure-frame img{display:block;width:100%;height:100%;object-fit:cover;position:relative;z-index:2;filter:sepia(.18) saturate(.92) contrast(1.03)}
+    .figcap{display:flex;gap:12px;align-items:flex-start;border-top:3px solid var(--ink);margin-top:8px;padding-top:7px;font-family:var(--font-condensed);text-transform:uppercase;font-style:italic;font-weight:800;letter-spacing:.04em}
+    .figcap b{color:var(--orange)}
+    .tabs{position:fixed;right:max(0px,calc((100vw - var(--page))/2 - 56px));top:90px;z-index:10;display:flex;flex-direction:column;gap:4px}
+    .tabs a{writing-mode:vertical-rl;transform:rotate(180deg);display:block;min-height:96px;padding:12px 8px;background:var(--panel);border:2px solid var(--ink);font-family:var(--font-condensed);font-weight:900;text-transform:uppercase;text-decoration:none;letter-spacing:.05em;box-shadow:4px 0 0 rgba(22,38,58,.2)}
+    .tabs a.active,.tabs a:hover{background:var(--orange);color:#fff2df;box-shadow:6px 0 0 var(--ink)}
+    h1,h2,h3{font-family:var(--font-condensed);text-transform:uppercase;letter-spacing:.04em;line-height:1.02;margin:0;color:var(--ink)}
+    h2{font-size:var(--step-3);display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+    h2 .num{color:var(--orange)}
+    h3{font-size:var(--step-1);margin:18px 0 6px}
+    p{max-width:70ch}
+    .section-kicker{font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.14em;color:var(--blue);margin:0 0 8px}
+    .columns{columns:2 26rem;column-gap:34px}.columns p{break-inside:avoid;margin-top:0}
+    .rule-svg{width:100%;height:20px;margin:14px 0;color:var(--orange)}
+    .exploded{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(260px,.9fr);gap:22px;align-items:start;margin-top:22px}
+    .callout{position:absolute;display:grid;place-items:center;width:34px;height:34px;border:3px solid var(--orange);border-radius:50%;background:var(--paper);font-family:var(--font-condensed);font-weight:900;color:var(--ink);z-index:4}
+    .callout.one{left:15%;top:23%}.callout.two{left:58%;top:31%}.callout.three{left:38%;top:68%}
+    .leader{position:absolute;inset:0;z-index:2;pointer-events:none}
+    .parts-key{border:2px solid var(--ink);background:rgba(255,244,220,.52)}
+    .part{display:grid;grid-template-columns:48px 1fr;border-bottom:1px solid var(--hair)}.part:last-child{border-bottom:0}
+    .part-no{display:grid;place-items:center;background:var(--orange);color:#fff4dc;font-family:var(--font-condensed);font-size:1.35rem;font-weight:900}
+    .part-body{padding:12px 13px}.part-body h3{margin:0 0 6px}.part-body p{margin:0 0 7px}
+    .spec{display:inline-block;font-family:var(--font-mono);font-size:.76rem;letter-spacing:.04em;text-transform:uppercase;color:var(--blue)}
+    .note,.warning{margin:18px 0;border:2px solid var(--ink);background:rgba(255,244,220,.58);box-shadow:6px 6px 0 rgba(22,38,58,.13)}
+    .note b,.warning b{display:block;padding:7px 10px;font-family:var(--font-condensed);text-transform:uppercase;letter-spacing:.06em;background:var(--ink);color:var(--cream)}
+    .warning b{background:var(--orange)}
+    .note p,.warning p{margin:0;padding:11px 12px}
+    .procedure{counter-reset:step;display:grid;gap:14px;margin:22px 0}
+    .procedure li{counter-increment:step;list-style:none;position:relative;border-left:5px solid var(--orange);padding:2px 0 2px 18px;min-height:64px}
+    .procedure li::before{content:counter(step,decimal-leading-zero);position:absolute;left:-52px;top:0;width:36px;height:36px;display:grid;place-items:center;border:2px solid var(--ink);background:var(--panel);font-family:var(--font-mono);font-weight:900}
+    .check{float:right;margin-left:14px;border:1px solid var(--hair);padding:3px 7px;font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;color:var(--ok);background:rgba(240,230,210,.7)}
+    .manifesto{background:linear-gradient(180deg,rgba(222,91,31,.08),transparent),var(--paper)}
+    .plate{border:5px double var(--ink);padding:24px 28px;text-align:center;background:rgba(255,244,220,.48)}
+    .plate blockquote{margin:0 auto;max-width:900px;font-family:var(--font-condensed);font-size:var(--step-2);line-height:1.22;text-transform:uppercase;letter-spacing:.03em}
+    .plate .ornament{height:13px;margin:12px auto;background:linear-gradient(90deg,transparent,var(--orange),transparent);max-width:520px}
+    .spec-table,.catalogue{width:100%;border-collapse:collapse;margin-top:18px;font-size:var(--step--1)}
+    .spec-table caption,.catalogue caption{text-align:left;font-family:var(--font-condensed);font-weight:900;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;color:var(--orange)}
+    th{font-family:var(--font-condensed);text-transform:uppercase;letter-spacing:.06em;text-align:left;background:var(--ink);color:var(--cream);padding:8px}
+    td{vertical-align:top;border-bottom:1px solid var(--hair);padding:9px 8px}
+    .leader-row{display:grid;grid-template-columns:max-content 1fr max-content;gap:8px;align-items:end}
+    .dots{border-bottom:2px dotted rgba(22,38,58,.42);height:1em}
+    code,.cmd{font-family:var(--font-mono);letter-spacing:.02em}
+    .cmd{display:block;width:100%;border:2px solid var(--ink);background:#f7edd8;padding:8px 9px;margin:2px 0;color:var(--ink);text-align:left;cursor:pointer;overflow-wrap:anywhere;box-shadow:4px 4px 0 rgba(22,38,58,.14)}
+    .cmd:hover,.download-link:hover{background:#f1d1b7;box-shadow:6px 6px 0 rgba(222,91,31,.23)}
+    .cmd.copied::after{content:" COPIED";margin-left:8px;color:var(--orange);font-family:var(--font-condensed);font-weight:900}
+    .download-link{display:inline-block;border:2px solid var(--orange);padding:7px 9px;background:#fff1d9;font-family:var(--font-mono);font-size:.78rem;overflow-wrap:anywhere}
+    .back-cover{background:linear-gradient(180deg,var(--board),var(--board-2));color:var(--cream);border-bottom:0}
+    .back-cover .running,.back-cover .folio{border-color:rgba(255,244,220,.5);color:var(--cream)}
+    .back-cover h2,.back-cover p{color:var(--cream)}
+    .back-cover .orange{color:#ff9b5c}
+    .back-grid{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:end}
+    .back-stamp{border:3px solid #ff9b5c;padding:16px;font-family:var(--font-condensed);text-transform:uppercase;letter-spacing:.06em;font-weight:900;transform:rotate(1deg)}
+    @media (max-width:900px){.manual{width:100%;margin:0;box-shadow:none;--gutter:16px}.page,.cover{padding:24px 18px 32px calc(var(--gutter) + 16px)}.cover{min-height:auto}.cover-body,.exploded,.back-grid{grid-template-columns:1fr}.tabs{position:sticky;top:0;right:auto;z-index:12;flex-direction:row;overflow-x:auto;background:var(--board-2);padding:6px}.tabs a{writing-mode:horizontal-tb;transform:none;min-height:0;white-space:nowrap}.columns{columns:1}.procedure li{padding-left:14px}.procedure li::before{position:static;margin:0 0 7px -10px}}
+    @media (max-width:560px){.cover-shell{border-width:3px}.model{grid-template-columns:1fr}.publine,.running,.folio{flex-direction:column;gap:4px}.spec-table,.catalogue{display:block;overflow-x:auto;white-space:normal}a,code,.cmd{overflow-wrap:anywhere;word-break:break-word}.page::before,.page::after{opacity:.24}.figcap{display:block}.callout{width:28px;height:28px;font-size:.9rem}}
+    @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
+  </style>
+</head>
+<body>
+  <nav class="tabs" aria-label="Manual sections">
+    <a href="#general">General</a>
+    <a href="#operation">Operation</a>
+    <a href="#approval">Gate</a>
+    <a href="#proof">Proof</a>
+    <a href="#parts">Parts</a>
+  </nav>
+  <div class="manual">
+    <header class="cover" id="top">
+      <div class="cover-shell">
+        <div class="cover-top">
+          <div class="publine"><span>Publication No. CAR-1970-08</span><span class="badge">Apache-2.0</span></div>
+          <h1 class="cover-title"><span class="plate">Owner Workshop Manual</span><span class="ink">Owner Workshop Manual</span></h1>
+          <div class="model"><strong>CAR — Agent Runtime</strong><span>All models, cloud and local brains</span></div>
+        </div>
+        <div class="cover-body">
+          <div class="cover-blurb">
+            <p>CAR is a program you install on your own computer that runs AI agents and looks after them: it keeps them alive in the background, restarts them when they crash, and stops to ask your permission before anything risky — it can even text you for the OK.</p>
+            <p>Its signature habit is proof: for coding jobs and goal runs it writes down up front what done must look like as real checks, then re-runs those checks itself and refuses to say finished until they actually pass.</p>
+            <p>The thinking can come from cloud models, local models, or agents like Claude Code; either way the work, the rules, and the receipts stay on your machine.</p>
+            <p>We run our own fleet of agents on it every day — it is the harness we trust them with.</p>
+          </div>
+          <aside class="stamp" aria-label="Download callout">
+            Factory release counter
+            <a href="https://github.com/Parslee-ai/car-releases/releases/latest/download/CAR-darwin-arm64.pkg">Download for macOS (.pkg)</a>
+            <span class="spec">macOS Apple Silicon, macOS 26+</span>
+            <a href="https://github.com/Parslee-ai/car-releases/releases/latest/download/CAR-setup-x64.exe">Download for Windows (.exe)</a>
+            <span class="spec">Windows x64</span>
+          </aside>
+          <figure class="hero-figure">
+            <div class="figure-frame">
+              <img src="./img/hero.jpg" alt="Exploded workshop-manual illustration of CAR as an agent runtime machine assembly">
+              <span class="callout one">1</span><span class="callout two">2</span><span class="callout three">3</span>
+              <svg class="leader" viewBox="0 0 100 66" aria-hidden="true">
+                <path d="M18 17 L31 25 M61 22 L50 32 M40 49 L48 39" fill="none" stroke="currentColor" stroke-width=".7" stroke-dasharray="2 1"/>
+              </svg>
+            </div>
+            <figcaption class="figcap"><b>Fig. 0.1</b><span>Exploded agent runtime assembly, prepared for bench inspection.</span></figcaption>
+          </figure>
+        </div>
+        <div class="folio"><span>Printed for operators who inspect receipts</span><span>REV. A — 2026-08-01</span></div>
+      </div>
+    </header>
+    <main>
+      <section class="page" id="general" data-tab="General">
+        <div class="running"><span>Section 1 — General Description</span><span>CAR — Agent Runtime</span></div>
+        <p class="section-kicker">Model identification and service intent</p>
+        <h2><span class="num">SECTION 1</span> General Description</h2>
+        <svg class="rule-svg" viewBox="0 0 800 20" aria-hidden="true"><path d="M0 10H340M460 10H800" stroke="currentColor" stroke-width="3"/><circle cx="400" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+        <div class="columns">
+          <p>CAR is not a chat window. It is a supervised runtime installed on your own computer, built for long-running agents that need a home, a restart policy, and a hard rule that risky work stops for permission.</p>
+          <p>Read it like a machine with three serviceable assemblies. The proof assembly checks the work after the model claims it is finished. The supervision assembly keeps the agent alive and asks before risky operations. The brain coupling lets different thinking engines connect without giving away the harness, rules, files, or receipts.</p>
+        </div>
+        <div class="exploded">
+          <figure>
+            <div class="figure-frame">
+              <img src="./img/hero.jpg" alt="Exploded axonometric technical illustration of computing modules arranged like an engine teardown">
+              <span class="callout one">1</span><span class="callout two">2</span><span class="callout three">3</span>
+              <svg class="leader" viewBox="0 0 100 66" aria-hidden="true"><path d="M18 17 L36 21 M61 22 L63 36 M40 49 L29 42" fill="none" stroke="currentColor" stroke-width=".7" stroke-dasharray="2 1"/></svg>
+            </div>
+            <figcaption class="figcap"><b>Fig. 1.1</b><span>Major assemblies removed and numbered for service.</span></figcaption>
+          </figure>
+          <div class="parts-key" aria-label="Three CAR pillars as numbered parts">
+            <article class="part"><div class="part-no">1</div><div class="part-body"><h3>1.1 Proof-of-done unit</h3><p>The runtime re-runs real checks. Exit codes decide done, never the model's self-report.</p><span class="spec">Spec: the AI does not grade its own work.</span></div></article>
+            <article class="part"><div class="part-no">2</div><div class="part-body"><h3>1.2 Supervised home</h3><p>Agents persist in the background, auto-restart on crash, and stop to ask permission before risky work, even by text message.</p><span class="spec">Spec: supervised persistence with approval stop.</span></div></article>
+            <article class="part"><div class="part-no">3</div><div class="part-body"><h3>1.3 Owned harness coupling</h3><p>Cloud models, local models, or agents like Claude Code can do the thinking while the work, rules, and receipts stay on your machine.</p><span class="spec">Spec: pluggable brains, owned harness.</span></div></article>
+          </div>
+        </div>
+        <div class="note"><b>Note</b><p>Do not evaluate this machine by the charm of the driver. Evaluate it by whether the service checks run after the driver says the job is done.</p></div>
+        <div class="folio"><span>General Description</span><span>1-3</span></div>
+      </section>
+      <section class="page" id="operation" data-tab="Operation">
+        <div class="running"><span>Section 2 — Principle of Operation</span><span>CAR — Agent Runtime</span></div>
+        <p class="section-kicker">Operating cycle, normal service</p>
+        <h2><span class="num">SECTION 2</span> Principle of Operation</h2>
+        <ol class="procedure">
+          <li><span class="check">Check value: installed locally</span><h3>2.1 Fit runtime to the operator's machine</h3><p>CAR is installed on the computer that owns the work. The changed files, rules, and receipts stay there, not inside a rented chat surface.</p></li>
+          <li><span class="check">Check value: agent remains alive</span><h3>2.2 Start agent under supervision</h3><p>The runtime keeps the agent running in the background and restarts it when it crashes. The agent is treated as a worker process that needs a harness.</p></li>
+          <li><span class="check">Check value: risky work pauses</span><h3>2.3 Route risky operations through approval</h3><p>Before anything risky, CAR stops and asks permission. The approval can reach the operator by text message when the machine needs the OK away from the bench.</p></li>
+          <li><span class="check">Check value: real checks pass</span><h3>2.4 Re-run the proof procedure</h3><p>For coding jobs and goal runs, CAR writes down what done must look like as real checks, then re-runs them itself before accepting completion.</p></li>
+        </ol>
+        <table class="spec-table">
+          <caption>Specifications, service data</caption>
+          <tbody>
+            <tr><td><div class="leader-row"><span>Restart policy</span><span class="dots"></span><strong>Auto-restart on crash</strong></div></td></tr>
+            <tr><td><div class="leader-row"><span>Permission gate</span><span class="dots"></span><strong>Stops before risky work; can text for OK</strong></div></td></tr>
+            <tr><td><div class="leader-row"><span>Evidence storage</span><span class="dots"></span><strong>Work, rules, and receipts stay on your machine</strong></div></td></tr>
+            <tr><td><div class="leader-row"><span>Brain interchange</span><span class="dots"></span><strong>Cloud models, local models, or agents like Claude Code</strong></div></td></tr>
+            <tr><td><div class="leader-row"><span>License</span><span class="dots"></span><strong>Apache-2.0</strong></div></td></tr>
+          </tbody>
+        </table>
+        <div class="folio"><span>Principle of Operation</span><span>2-6</span></div>
+      </section>
+      <section class="page" id="approval" data-tab="Gate">
+        <div class="running"><span>Section 3 — The Approval Gate</span><span>CAR — Agent Runtime</span></div>
+        <p class="section-kicker">Risk stop and operator permission</p>
+        <h2><span class="num">SECTION 3</span> The Approval Gate</h2>
+        <div class="exploded">
+          <figure>
+            <div class="figure-frame">
+              <img src="./img/gate.jpg" alt="Cutaway workshop-manual illustration of a gate and valve assembly representing permission approval">
+              <span class="callout one">1</span><span class="callout two">2</span><span class="callout three">3</span>
+              <svg class="leader" viewBox="0 0 100 66" aria-hidden="true"><path d="M18 17 L29 26 M61 22 L54 29 M40 49 L47 42" fill="none" stroke="currentColor" stroke-width=".7" stroke-dasharray="2 1"/></svg>
+            </div>
+            <figcaption class="figcap"><b>Fig. 3.1</b><span>The approval gate in cutaway, showing the operator stop.</span></figcaption>
+          </figure>
+          <div class="parts-key">
+            <article class="part"><div class="part-no">1</div><div class="part-body"><h3>3.1 Risk sensing port</h3><p>Risky work does not pass through as ordinary flow. It is detected as a permission event.</p><span class="spec">Service action: pause.</span></div></article>
+            <article class="part"><div class="part-no">2</div><div class="part-body"><h3>3.2 Operator approval stop</h3><p>The runtime asks before continuing, including by text message when that is the practical route.</p><span class="spec">Service action: obtain OK.</span></div></article>
+            <article class="part"><div class="part-no">3</div><div class="part-body"><h3>3.3 Supervised restart return</h3><p>If the agent crashes, CAR brings the process back under the same supervised runtime.</p><span class="spec">Service action: restart in harness.</span></div></article>
+          </div>
+        </div>
+        <div class="warning"><b>Warning</b><p>Never substitute a model's confident explanation for operator approval. The gate exists because risky work belongs under human permission.</p></div>
+        <div class="folio"><span>The Approval Gate</span><span>3-7</span></div>
+      </section>
+      <section class="page" id="proof" data-tab="Proof">
+        <div class="running"><span>Section 4 — Proof of Done</span><span>CAR — Agent Runtime</span></div>
+        <p class="section-kicker">Completion circuit and re-check loop</p>
+        <h2><span class="num">SECTION 4</span> Proof of Done</h2>
+        <div class="exploded">
+          <figure>
+            <div class="figure-frame">
+              <img src="./img/loop.jpg" alt="Closed-loop workshop-manual circuit diagram representing CAR proof-of-done checks">
+              <span class="callout one">1</span><span class="callout two">2</span><span class="callout three">3</span>
+              <svg class="leader" viewBox="0 0 100 66" aria-hidden="true"><path d="M18 17 L27 21 M61 22 L70 38 M40 49 L51 48" fill="none" stroke="currentColor" stroke-width=".7" stroke-dasharray="2 1"/></svg>
+            </div>
+            <figcaption class="figcap"><b>Fig. 4.1</b><span>Completion circuit with return line through the check runner.</span></figcaption>
+          </figure>
+          <div class="parts-key">
+            <article class="part"><div class="part-no">1</div><div class="part-body"><h3>4.1 Done definition reservoir</h3><p>The job starts with real checks written down as the definition of done.</p><span class="spec">Medium: executable evidence.</span></div></article>
+            <article class="part"><div class="part-no">2</div><div class="part-body"><h3>4.2 Check runner pump</h3><p>CAR re-runs those checks itself after the agent claims completion.</p><span class="spec">Acceptance: exit codes.</span></div></article>
+            <article class="part"><div class="part-no">3</div><div class="part-body"><h3>4.3 Refusal return line</h3><p>If checks do not pass, the runtime refuses to say finished. The AI does not get to grade its own work.</p><span class="spec">Failure mode: not done.</span></div></article>
+          </div>
+        </div>
+        <div class="plate" aria-label="Manifesto excerpt">
+          <div class="ornament"></div>
+          <blockquote>The thinking is rented from clouds and chat windows; the work itself — the files it changes, the rules it must obey, the evidence that it did what it claims — deserves to live somewhere you own.</blockquote>
+          <div class="ornament"></div>
+        </div>
+        <div class="folio"><span>Proof of Done</span><span>4-11</span></div>
+      </section>
+      <section class="page" id="parts" data-tab="Parts">
+        <div class="running"><span>Section 5 — Parts Catalogue</span><span>CAR — Agent Runtime</span></div>
+        <p class="section-kicker">Installable parts and release counter</p>
+        <h2><span class="num">SECTION 5</span> Parts Catalogue</h2>
+        <p>Order the part that matches the bench. The macOS package installs CAR Host.app plus the <code>car</code> CLI. Windows operators may use Scoop or the installer. Developers may fit the runtime through npm or pip.</p>
+        <table class="catalogue">
+          <caption>Release parts list</caption>
+          <thead><tr><th>Part No.</th><th>Description</th><th>Application</th><th>Order</th></tr></thead>
+          <tbody>
+            <tr><td><code>CAR-DARWIN-ARM64-PKG</code></td><td><code>CAR-darwin-arm64.pkg</code></td><td>macOS, Apple Silicon, macOS 26+. One double-click installs CAR Host.app + the <code>car</code> CLI.</td><td><a class="download-link" href="https://github.com/Parslee-ai/car-releases/releases/latest/download/CAR-darwin-arm64.pkg">CAR-darwin-arm64.pkg</a></td></tr>
+            <tr><td><code>CAR-WIN-SCOOP</code></td><td>Scoop installation path</td><td>Windows package route.</td><td><button class="cmd" type="button" data-copy="scoop bucket add car https://github.com/Parslee-ai/scoop-car">scoop bucket add car https://github.com/Parslee-ai/scoop-car</button><button class="cmd" type="button" data-copy="scoop install car">scoop install car</button></td></tr>
+            <tr><td><code>CAR-WIN-EXE</code></td><td><code>CAR-setup-x64.exe</code></td><td>Windows installer route.</td><td><a class="download-link" href="https://github.com/Parslee-ai/car-releases/releases/latest/download/CAR-setup-x64.exe">CAR-setup-x64.exe</a></td></tr>
+            <tr><td><code>CAR-NPM-RUNTIME</code></td><td>Developer runtime package</td><td>JavaScript projects.</td><td><button class="cmd" type="button" data-copy="npm install car-runtime">npm install car-runtime</button></td></tr>
+            <tr><td><code>CAR-PIP-RUNTIME</code></td><td>Developer runtime package</td><td>Python projects.</td><td><button class="cmd" type="button" data-copy="pip install car-runtime">pip install car-runtime</button></td></tr>
+          </tbody>
+        </table>
+        <div class="note"><b>License plate</b><p>CAR is Apache-2.0 licensed.</p></div>
+        <div class="folio"><span>Parts Catalogue</span><span>5-4</span></div>
+      </section>
+    </main>
+    <footer class="page back-cover">
+      <div class="running"><span>Back Cover</span><span>CAR — Agent Runtime</span></div>
+      <div class="back-grid">
+        <div>
+          <h2><span class="orange">Publication No.</span> CAR-1970-08</h2>
+          <p>REV. A — 2026-08-01. Printed for operators who want agents running under proof, permission, and owned receipts.</p>
+          <p>We run our own fleet of agents on CAR every day. It is the harness we trust them with.</p>
+        </div>
+        <div class="back-stamp">Apache-2.0<br>All models, cloud and local brains<br>Keep receipts with the machine</div>
+      </div>
+      <div class="folio"><span>Printed in the operator's workshop</span><span>End</span></div>
+    </footer>
+  </div>
+  <script>
+    (function(){
+      try {
+        var tabs = Array.prototype.slice.call(document.querySelectorAll(".tabs a"));
+        var sections = tabs.map(function(tab){ return document.querySelector(tab.getAttribute("href")); }).filter(Boolean);
+        if ("IntersectionObserver" in window && tabs.length && sections.length) {
+          var observer = new IntersectionObserver(function(entries){
+            entries.forEach(function(entry){
+              if (!entry.isIntersecting) return;
+              tabs.forEach(function(tab){ tab.classList.toggle("active", tab.getAttribute("href") === "#" + entry.target.id); });
+            });
+          }, { rootMargin: "-35% 0px -55% 0px", threshold: 0 });
+          sections.forEach(function(section){ observer.observe(section); });
+        }
+        document.querySelectorAll("[data-copy]").forEach(function(button){
+          button.addEventListener("click", function(){
+            var value = button.getAttribute("data-copy");
+            var mark = function(){ button.classList.add("copied"); window.setTimeout(function(){ button.classList.remove("copied"); }, 1400); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value).then(mark).catch(function(){});
+          });
+        });
+      } catch (error) {}
+    }());
+  </script>
+</body>
+</html>
