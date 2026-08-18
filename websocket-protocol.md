@@ -53,11 +53,60 @@ The bindings expose the constant as `protocolVersion()` /
 
 The MCP endpoint shares the daemon's memgine with WS — facts ingested via MCP `tools/call memory_add_fact` show up in WS `memory.query` and vice versa, and MCP agents can call proactive memory tools such as `memory_save_procedural`, `memory_intervene`, and `memory_evaluate`. Override the bind address via `--mcp-bind <host:port>` or `CAR_MCP_BIND`; pass `disabled` to skip the listener entirely. See `docs/cookbook/07-mcp-server.md` for client wiring examples and the per-tool schema list.
 
-On macOS and Linux, `car-server` also binds a Unix Domain Socket at
-`${XDG_RUNTIME_DIR:-$car_dir/run}/ai.parslee.car/car-server.sock`
-(where `$car_dir` is `~/.car/` by default). Local FFI consumers can prefer the UDS to skip the TCP listening port and any localhost firewall prompts. The wire format is identical — same JSON-RPC, same auth handshake.
+On macOS and Linux, `car-server` also binds a Unix Domain Socket — at
+`$XDG_RUNTIME_DIR/ai.parslee.car/car-server.sock` when that variable is set,
+otherwise `$car_dir/run/car-server.sock` (where `$car_dir` is the state root,
+below). Local FFI consumers can prefer the UDS to skip the TCP listening port and any localhost firewall prompts. The wire format is identical — same JSON-RPC, same auth handshake.
+
+### The state root (`CAR_HOME`)
+
+Everything the daemon persists lives under one directory, `~/.car` by default.
+Set `CAR_HOME` to an absolute path and all of it moves together:
+
+| Default | With `CAR_HOME=/tmp/car-alt` |
+| --- | --- |
+| `~/.car/…` — journals, `agents.json`, `tasks/`, `registry/`, `memory/`, `approvals.jsonl`, `logs/`, `coder/`, `projects/`, `version.json`, … | `/tmp/car-alt/…` |
+| `~/.car/run/car-server.sock`, `~/.car/run/daemon.lock`, `~/.car/run/*.pid` | `/tmp/car-alt/run/…` |
+| `~/.car/models/` — the small state files that sit beside the weights: `discovered_models.json`, `outcome_profiles.json`, `outcome_ledger.jsonl`, `key_pool_stats.json`, `benchmark_priors.json` | `/tmp/car-alt/models/…` |
+| the per-platform auth-token dir (`~/Library/Application Support/ai.parslee.car` on macOS, `$XDG_RUNTIME_DIR`/`~/.config/ai.parslee.car` on Linux, `%LOCALAPPDATA%\ai.parslee.car` on Windows) | `/tmp/car-alt/ai.parslee.car/…` |
+
+Three things to know:
+
+- **The auth token and the socket move too.** They are the pair Parslee-ai/car#629 saw one daemon take from another, so an override that left them behind would not actually isolate anything. `XDG_RUNTIME_DIR` stops deciding the socket path when `CAR_HOME` is set, for the same reason — it is per-*user*, so honouring it would put two relocated daemons back on one socket.
+- **Narrower overrides still win — with one deliberate exception.** `CAR_SERVER_SOCKET`, `CAR_AUTH_TOKEN`, `--journal-dir`, `--agents-manifest`, `CAR_CODER_STATE_DIR`, `CAR_PROJECTS_DIR` and friends all take precedence where they are set, so `CAR_HOME` sets the floor rather than a ceiling. The exception is a path that *starts with the literal prefix* `~/.car/`: `car-server` reads that prefix as "the state root", not as your home directory, so `--journal-dir ~/.car/journals` under `CAR_HOME=/tmp/car-alt` resolves to `/tmp/car-alt/journals`, not `~/.car/journals`. That is what keeps the flag's own default from being the one daemon path left behind in the shared location. With `CAR_HOME` unset the two readings are the same path. To pin journals to your real home while relocating everything else, spell it out — `--journal-dir "$HOME/.car/journals"`, or any other absolute path.
+- **Model weights and the Python runtimes do not move.** The model directories under `~/.car/models/`, plus `~/.car/speech-runtime/` and `~/.car/visual-runtime/`, are a multi-gigabyte machine-global cache of identical bytes — not per-instance state — so a relocated daemon keeps *reading* them instead of re-downloading them. Point `CAR_SPEECH_RUNTIME_DIR` or `HF_HOME` elsewhere if you genuinely want separate copies. Only the weights are shared: the small state files that happen to sit in the same directory (row 3 of the table) follow the state root, so two daemons never overwrite each other's routing history or discovery cache.
+
+`CAR_HOME` must be an **absolute** path. The daemon, the CLI and any FFI host each have their own working directory, so a relative value would silently hand them three different roots; both `car-server` and the `car` CLI refuse to run on one instead, exiting 2 with the offending value in the message.
 
 ### Running a second daemon
+
+The recommended way to run a second daemon is to give it its own state root and
+its own port, which makes the two independent rather than merely polite to each
+other:
+
+```bash
+CAR_HOME=/tmp/car-alt car-server --port 9200 --mcp-bind disabled
+```
+
+`--port 9200` also moves the dashboard to 9201 (it is always `port + 1`), but
+the MCP endpoint defaults to a *fixed* `127.0.0.1:9102` and would collide — so
+disable it on the second daemon, or give it its own `--mcp-bind 127.0.0.1:9202`.
+`CAR_HOME` isolates state, not ports; TCP ports are a separate namespace and
+still need saying.
+
+Point clients at it with `CAR_DAEMON_URL=ws://127.0.0.1:9200`, and read its
+token from `/tmp/car-alt/ai.parslee.car/auth-token`. It **creates and modifies
+nothing** under `~/.car` or in the default token directory, and the only thing
+it reads there is the shared model-weight cache — including leaving alone the
+`run/daemon.lock` and `run/car-server.sock` that decide primacy, so the isolated
+daemon is the primary *of its own root* and publishes its token normally.
+
+That one read is by design (see the third bullet above): weights are a shared
+multi-gigabyte cache, and the daemon does not write to it. "Isolated" here means
+isolated state, not an empty machine.
+
+Without `CAR_HOME`, a second daemon shares one root with the first, and the
+following applies instead.
 
 The auth-token file and that shared socket are **per-user singletons** — neither path carries a port or instance id. Only one `car-server` per user owns them: the **primary**, decided by an advisory lock on `~/.car/run/daemon.lock` plus a liveness probe of the shared socket (so an already-running daemon whose binary predates the lock is still respected).
 
@@ -73,13 +122,17 @@ Both are logged at startup. Before this, a second daemon on another port silentl
 Most JSON-RPC frames are client → server. For tool dispatch the direction inverts: the daemon's `WsToolExecutor` sends a `tools.execute` request *back to the client* and waits for the response. Same envelope, same wire shape:
 
 ```json
-{"jsonrpc": "2.0", "method": "tools.execute", "params": {"action_id": "a0", "tool": "search", "parameters": {...}, "timeout_ms": 180000, "attempt": 1, "request_id": "cb-1"}, "id": "cb-1"}
+{"jsonrpc": "2.0", "method": "tools.execute", "params": {"action_id": "a0", "tool": "search", "parameters": {...}, "timeout_ms": 180000, "attempt": 1, "request_id": "cb-1", "session_id": "sess-7"}, "id": "cb-1"}
 ```
 
 `params` fields:
 - `action_id` — the originating proposal `Action.id` (empty for legacy `execute()` callers).
 - `timeout_ms` — the action's per-call budget, when declared; the host may bound its own tool runner by it.
 - `request_id` — the daemon-side callback-routing id (equal to the JSON-RPC `id`). Key a per-call abort registry on this — `tools.cancel` (below) carries the same value. Correlate by `request_id`, **not** `action_id` (which is empty for legacy callers and not unique across concurrent/retried attempts).
+- `attempt` — the engine's retry counter for this action, **1-based** (`1` on the first try, `2` on the first retry). Until car#928 this was hardcoded to `1` on the wire and dropped by both bindings, so a join built on it silently never varied; it now carries the real value and both bindings forward it. For correlating a *specific* in-flight call use `request_id`, which is unique per callback — `attempt` answers the different question of *which retry am I serving*.
+- `session_id` — the Runtime execution session this call belongs to, **stamped by the daemon** (car#904). Omitted when the caller has no session (the legacy `execute()` path, in-process executors). This is the attribution key for "which mission does this callback belong to": `action_id` is client-authored and not unique across attempts, so a submit-time map keyed on it inherits that weakness, and an agent keeping per-mission receipts that threads identity through its own convention — a process-global run id being the naive choice — can let a later mission's artifact inherit an earlier mission's receipts. Bracket the mission with `runs.start` / `runs.complete` (see **Agent run tracing**) and join on this.
+
+  **Agent authors:** `runs.*` is the supported way to bracket a mission, and it is easy to miss if you only read the serve-mode/agent-chat sections. `runs.start` → per-turn records → `runs.complete` writes a durable trace under `~/.car/runs/`, with `idempotency_key` dedupe; `runs_start`/`runs_complete` are in the NAPI and PyO3 bindings too.
 
 The client must reply with a JSON-RPC response carrying the matching `id`:
 
@@ -97,7 +150,11 @@ The Rust client at `car_ffi_common::proxy::DaemonClient` exposes `register_handl
 
 ### `tools.cancel` (server → client notification, Parslee-ai/car#264)
 
-When a `tools.execute` callback is **reaped** — the call exceeds the daemon's per-call wait (`Action.timeout_ms` + grace, or the `CAR_TOOL_TIMEOUT`-overridable 300s default when the action declares no budget) — the daemon drops its wait and emits a fire-and-forget `tools.cancel` notification so the host can kill the in-flight child instead of orphaning it (e.g. a `claude -p` / `codex exec` driven by `drive_cli`):
+When an in-flight `tools.execute` callback is **cancelled** for any reason, the daemon emits a fire-and-forget `tools.cancel` notification so the host can kill the in-flight child instead of orphaning it (e.g. a `claude -p` / `codex exec` driven by `drive_cli`). All three cancellation sources fire it:
+
+- the **executor's per-action deadline** (`Action.timeout_ms`) — the common case, since it expires before the daemon's own wait by design;
+- the **server's per-method deadline** on the handler that owns the dispatch;
+- the **daemon's own callback wait** (`Action.timeout_ms` + grace, or the `CAR_TOOL_TIMEOUT`-overridable 300s default when the action declares no budget).
 
 ```json
 {"jsonrpc": "2.0", "method": "tools.cancel", "params": {"request_id": "cb-1", "action_id": "a0", "reason": "tool 'drive_cli' callback timed out (185s)"}}
@@ -106,6 +163,31 @@ When a `tools.execute` callback is **reaped** — the call exceeds the daemon's 
 It is a **notification** (no `id`, no response expected) — the daemon has already given up on the call. Correlate by `request_id` against the value seen on the originating `tools.execute`; abort the child registered under it regardless of `reason`. FFI clients receive this through `registerToolCancelHandler` (NAPI) / `register_tool_cancel_handler` (PyO3); raw WS clients install a notification handler for the `tools.cancel` method. A host that ignores it is unchanged except the orphan persists until self-exit.
 
 Not to be confused with the client → server `tools.cancel` **request** (C2, see the tools section in the method reference), which takes `{ handle }` and cancels a detached streaming/long-running tool invocation — same method name, opposite direction.
+
+### `messaging.channel_send` (host-delivered messaging channel, Parslee-ai/car#885)
+
+Not a new JSON-RPC method — a **tool name** that arrives over the ordinary `tools.execute` callback above. It is how a messaging channel CAR has no built-in transport for still gets delivered.
+
+The runtime owns message semantics (validation, policy, rate limiting, idempotency, the event log); the host owns channels. When an agent calls the `messaging.send` tool with a `channel` no built-in adapter claims — Teams, Discord, an internal bus — the daemon's fallback adapter asks the host to deliver it, by dispatching `messaging.channel_send` back to you:
+
+```json
+{"jsonrpc": "2.0", "method": "tools.execute", "params": {"tool": "messaging.channel_send", "parameters": {"channel": "teams", "kind": "direct", "to": "user@example.invalid", "body": "Build is green."}, "request_id": "cb-9"}, "id": "cb-9"}
+```
+
+- `channel` — the channel name the agent asked for, verbatim.
+- `kind` — `"direct"` (a person) or `"channel"` (a shared channel). Same vocabulary the `messaging.send` schema advertises to the model, so one shape runs from the model's JSON through to your handler.
+- `to` — the handle for `direct`, the channel id for `channel`.
+- `body` — the message text.
+
+Reply with a normal tool result. `{"message_id": "…"}` is picked up as the channel-assigned id; anything else (including `{}` or `null`) is treated as a successful delivery with no id. Return an **error** to fail the send — your error text reaches the model verbatim, so say what would make it work ("not a member of that team", "rate limited").
+
+Three properties matter if you implement this:
+
+- **Exact match wins.** The fallback is only consulted for channels no registered adapter claims, so installing it can never divert `imessage` away from the built-in adapter that holds the pairing state for it.
+- **Dedup happens before you are called.** `messaging.send`'s `idempotency_key` is checked against the registry's ledger *before* routing, so a suppressed retry never reaches your handler at all. A send that fails records no key and stays retryable.
+- **Not implementing it is a supported state.** Returning an error whose message starts with `unknown tool` is translated into a message telling the operator this host does not implement the callback — not surfaced as a missing CAR tool.
+
+Hosts register nothing to opt in; handling the tool name *is* the registration. There is deliberately no `register_message_adapter` FFI entry point, since every host (WS, NAPI, PyO3, UniFFI) already implements tool dispatch.
 
 Send JSON-RPC 2.0 requests:
 
@@ -136,6 +218,21 @@ For a mutating request this is an ambiguous outcome: the handler may have
 committed before its future was dropped. Clients must not treat `-32004` as a
 terminal application failure or immediately retry the mutation. Reconcile
 through that method's authoritative read before deciding whether to retry.
+
+Most methods take a flat generous deadline (30 minutes by default, overridable
+with `CAR_HANDLER_TIMEOUT`). `proposal.submit` is the exception: its deadline is
+derived from the submitted proposal's own action budgets — the sum over actions
+of `timeout_ms` (defaulting to the daemon's 300-second tool budget) times the
+attempts the executor will run for that action (`max_retries + 1` for
+`failure_behavior: "retry"`, otherwise one), plus a 15-second transport grace.
+The derivation only ever raises the deadline above the generous default, so a
+legitimately long in-budget proposal — a retried action with a ten-minute
+budget, or a chain of actions summing past 30 minutes — is not abandoned while
+the executor is still running it. A short proposal, or params with no parseable
+proposal, keeps exactly the generous default. The grace is deliberately smaller
+than the client's own 30-second transport grace, so the reap order stays
+innermost-first: the executor reaps an attempt, then the daemon abandons the
+handler with `-32004`, then the client read times out.
 Credential-backed `auth.*` operations are daemon-owned rather than
 connection-owned: after host authorization, socket teardown drops only the
 response waiter and cannot cancel an in-flight coordinator/keychain mutation.
@@ -188,6 +285,9 @@ The same callback pattern applies to multi-agent (`multi.swarm`, `multi.pipeline
 Some calls produce ongoing events. After subscribing, clients receive:
 
 - `host.event` — agent registered/unregistered, status changed, approval requested/resolved
+- `supervision.intent` — a proposal is parked at the admission gate awaiting
+  your verdict, after `supervision.subscribe`. **Consuming this is mandatory**:
+  every matching proposal blocks until you answer or it fails closed
 - `voice.event` — transcript segments, partials, finals during meetings or transcription sessions
 - `runs.trace.event` — live agent-run trace records (per turn + terminal), after `runs.subscribe`
 - `tools.stream.event` — chunks from detached (streaming/long-running) tool
@@ -583,7 +683,8 @@ handshake step is skipped entirely.
 - **Returns**: `{ ok: true, auth_enabled: bool, agent_id?: string, memory_namespace?: string, parslee?: ParsleeIdentity }`,
   or `{ ok: true, auth_enabled: true, role: "host", memory_namespace?: string }` for the host-token path
 - **`memory_namespace`** binds this connection to a daemon-owned memory graph
-  private to that namespace, persisted at `~/.car/memory-namespaces/<ns>.json`.
+  private to that namespace, persisted at
+  `~/.car/memory/memory-namespaces/<encoded-ns>.json`.
   Omit it and the connection uses the daemon's **shared** graph — see the scope
   table under [memory](#memory) for what that means for a multi-project host.
   Accepted on every auth path, including the host-token handshake. **FFI hosts
@@ -591,9 +692,12 @@ handshake step is skipped entirely.
   shared daemon transport that every binding proxies through owns this
   handshake, so the environment variable is the only route from NAPI/PyO3
   (car-releases#80). Same configuration shape as `CAR_DAEMON_URL` and
-  `CAR_AUTH_TOKEN`. The value is
-  sanitized before it is used as a filename, so path separators and `..` cannot
-  escape the memory base. It is a separate axis from `agent_id`; when both are
+  `CAR_AUTH_TOKEN`. The filename is a lowercase percent-encoding of the
+  namespace's UTF-8 bytes — `a`-`z`, `0`-`9`, `-`, `_` and `.` pass through and
+  every other byte (including `%` and every uppercase letter, since APFS is
+  case-insensitive) becomes `%` plus two lowercase hex digits — so path
+  separators and `..` cannot escape the memory base and two namespaces can
+  never share a snapshot file (#891). It is a separate axis from `agent_id`; when both are
   given the namespace determines the memory scope and the agent binding still
   governs identity. (Parslee-ai/car-releases#79.)
 - **Errors**: `-32001` ("auth required" — not actually used by
@@ -1259,6 +1363,17 @@ per-method result. Embedders wanting to plug in a custom
 - **Params**: `{ recipient: string, body: string, service_id?: string }`
 - **Returns**: `{ available, backend, reason?, sent: boolean }`
 
+> **`messages.send` is not the governed agent send surface.** It is a macOS
+> host-automation integration RPC, a sibling of `mail.send` and
+> `notes.accounts`, and it dispatches straight to the local Messages app. It
+> does not run through the validator, the policy engine, the rate limiter or
+> the event log; its only gate is the interactive per-call `ApprovalGate`
+> (which `car-server --no-approvals` removes).
+>
+> The governed agent path is the **`messaging.send` tool** — one character
+> apart. Rules written in `.car/policies` against the `messaging.send` tool do
+> **not** constrain this RPC. Agents should use the tool.
+
 ### messaging
 
 The **multi-channel** approval-transport config surface. This is the **only**
@@ -1401,6 +1516,76 @@ File-based agent registry for cross-process discovery (issue #111). Each agent o
 - **Returns**: `string[]` — names of reaped entries
 - Recommended cadence: every 30s from the menubar process. Default 60s threshold catches an agent that missed two consecutive 20s heartbeats.
 
+### supervision
+
+The admission gate published as an out-of-process subscription (proposal item 5;
+Shepherd, arXiv 2605.10913 Appendix E).
+
+CAR has always blocked before execution — `car_engine::AdmissionGate` runs on
+every admitted proposal, conjunctively and fail-closed. Until this namespace
+every gate was **in-process**, a Rust trait impl compiled into the daemon, so
+supervising an agent meant forking CAR rather than connecting to it. A
+supervisor is now any process that can hold a WebSocket.
+
+**Flow.** Subscribe on your own connection. Every proposal submitted on *any*
+session that matches your filter arrives as a `supervision.intent` notification
+and **blocks** while you decide. Answer with `supervision.decide`, or poll
+`supervision.pending` and answer a batch.
+
+**Fail-closed.** An intent nobody answers within `decision_timeout_ms`
+(30 s default) is rejected, not admitted — a supervisor that dies must not
+become an open door. Disconnecting does not release intents you left parked
+either, so a supervisor cannot convert a pending deny into an allow by dropping
+its socket.
+
+**Costs nothing when unused.** With no subscriber the gate short-circuits on an
+empty-map read without building an intent.
+
+**Intents are trimmed, not redacted-by-accident.** An intent carries action id,
+type, tool, reversibility, parameter **key names**, and a digest of the
+parameter map — never the parameter values. Supervision is affordable because
+it is batched and trimmed, not because the meta-model is cheap. A supervisor
+that needs full arguments fetches them out of band.
+
+**Decision vocabulary.** `allow`, `deny`, `escalate` (hand it to the human
+approval ledger). Shepherd's `inject` / `handoff` / `discard` are deliberately
+**not** implemented: this gate sits at proposal admission, which has no
+conversation to inject into and no session-restart primitive, and `discard`
+additionally needs the scope rollback of item 4 — measured and found
+constrained. The decision enum is `#[non_exhaustive]` so they can be added
+without a break.
+
+#### `supervision.subscribe`
+- **Params**: `{ filter?: { tools?: string[], sessions?: string[], min_reversibility?: "reversible" | "compensable" | "irreversible" } }`
+- **Returns**: `{ subscribed: true, decision_timeout_ms: number, supervisors: number }`
+- Re-subscribing replaces the filter; no disconnect needed to narrow or widen.
+- `min_reversibility` matches that contract **and worse** — `compensable` also
+  shows `irreversible`, because asking to see risky proposals means "this risky
+  and up". An unrecognised label sorts as most severe, so a future variant is
+  over-reported rather than silently filtered out of view.
+- An empty filter matches everything.
+
+#### `supervision.unsubscribe`
+- **Params**: `{}`
+- **Returns**: `{ subscribed: false, was_subscribed: boolean }`
+- Happens automatically when the connection drops.
+
+#### `supervision.pending`
+- **Params**: `{}`
+- **Returns**: `{ intents: SupervisionIntent[] }`, oldest first
+- The batching half: one model call can cover every parked intent, then issue N
+  decisions. Also the fallback for clients that cannot consume notifications.
+- `SupervisionIntent`: `{ id, proposal_id, source, session_id?, scope?, reversibility, created_at, actions: [{ id, action_type, tool?, reversibility, parameter_keys, parameters_digest }] }`
+
+#### `supervision.decide`
+- **Params**: `{ intent_id: string, decision: { kind: "allow" | "deny" | "escalate", reason?: string } }` (`reason` required for `deny` and `escalate`)
+- **Returns**: `{ decided: true }`
+- **Errors** when the intent is unknown — already decided, already timed out, or
+  never existed. Deliberately an error rather than a silent success: a
+  supervisor that believes it denied something needs to hear that the denial did
+  not land.
+- `allow` is not a bypass — the other admission gates still apply.
+
 ### admission
 
 Process-wide concurrency gate for inference RPC handlers (`infer`, `embed`, `classify`). The daemon sizes the permit count from host RAM at startup (~1 permit per 8 GB, floor 1, ceiling 8) and serializes excess load instead of letting parallel calls pile up KV-cache and activation memory until the host OOMs. The cap can be overridden at start time with the `CAR_INFERENCE_MAX_CONCURRENT` env var.
@@ -1513,7 +1698,7 @@ The shared default is deliberate: facts ingested through the MCP endpoint show u
 - `memory.persist` writes the **entire** shared graph to whatever `path` it is given — so every per-project file accumulates every project's facts.
 - `memory.load` **resets** that shared graph before ingesting (see below), so one session loading its own file discards facts another session had in memory.
 
-If you key memory per project, bind a namespace. `session.auth { memory_namespace: "myapp-<projectID>" }` gives that connection a private graph, persisted under `~/.car/memory-namespaces/<ns>.json`, and every `memory.*` call on that connection acts on it alone. A namespace is a **separate axis from `agent_id`** — one agent may work across several namespaces, and two hosts may share a namespace without sharing an identity. When both are supplied the namespace wins for the memory scope; the agent binding still governs identity and tokens. (Parslee-ai/car-releases#79.)
+If you key memory per project, bind a namespace. `session.auth { memory_namespace: "myapp-<projectID>" }` gives that connection a private graph, persisted under `~/.car/memory/memory-namespaces/<encoded-ns>.json` — the filename is a lowercase percent-encoding of the namespace's UTF-8 bytes (`a`-`z`, `0`-`9`, `-`, `_`, `.` pass through; everything else, including `%` and uppercase letters, becomes `%` plus two lowercase hex digits), which keeps the mapping injective so two namespaces can never share a snapshot file (#891) — and every `memory.*` call on that connection acts on it alone. A namespace is a **separate axis from `agent_id`** — one agent may work across several namespaces, and two hosts may share a namespace without sharing an identity. When both are supplied the namespace wins for the memory scope; the agent binding still governs identity and tokens. (Parslee-ai/car-releases#79.)
 
 #### `memory.add_fact`
 - **Params**: `{ subject: string, body: string, kind?: string = "pattern" }`
@@ -1591,8 +1776,10 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 
 #### `models.list_unified`
 - **Params**: `{}`
-- **Returns**: full registry — `[ { id, name, provider, capabilities, param_count, size_mb, context_length, available, is_local, max_output_tokens, public_benchmarks, cost }, ... ]`. Includes local (Qwen3, MLX, Ollama), remote (OpenAI, Anthropic, Google, OpenRouter, etc.), and any user-registered models. CAR always includes exactly eleven reviewed personal OpenRouter rows under `openrouter/<provider>/<model>` IDs; they are visible with `available: false` without a personal credential and the same rows report `available: true` when one is present. Typoed or unregistered OpenRouter IDs are absent. Parslee-managed curated entries use eleven opaque `parslee/openrouter/<alias>` IDs that never disclose the upstream provider model. `available` reflects current credential/file presence on every call, including OpenRouter pasted/OAuth changes without restart; `is_local` distinguishes local/remote without parsing `provider`. **One exception, and it is a correction rather than a caveat:** for the managed `parslee/openrouter/*` rows, credential presence alone is *not* sufficient. Those rows authenticate through the Parslee session, so credential presence means only "signed in" and says nothing about whether the gateway has an OpenRouter upstream to proxy to — an environment without one advertised all ten as available and then failed every request with `503 openrouter_not_configured` (car#786). There is no discovery endpoint to ask, so when the gateway reports that condition CAR records it and those rows report `available: false` until it is re-tested. The suppression is bounded (15 minutes) and cleared on sign-out, so an environment that gains OpenRouter recovers on its own; expect these rows to read available again after that window even with no client action. `public_benchmarks` is `[ { name, score, harness?, source_url?, measured_at? }, ... ]` with `score` on a 0.0–1.0 scale.
+- **Returns**: full registry — `[ { id, name, provider, capabilities, param_count, size_mb, context_length, available, is_local, weights_ready, downloads_weights, max_output_tokens, public_benchmarks, cost }, ... ]`. Includes local (Qwen3, MLX, Ollama), remote (OpenAI, Anthropic, Google, OpenRouter, etc.), and any user-registered models. CAR always includes exactly eleven reviewed personal OpenRouter rows under `openrouter/<provider>/<model>` IDs; they are visible with `available: false` without a personal credential and the same rows report `available: true` when one is present. Typoed or unregistered OpenRouter IDs are absent. Parslee-managed curated entries use eleven opaque `parslee/openrouter/<alias>` IDs that never disclose the upstream provider model. `available` reflects current credential/file presence on every call, including OpenRouter pasted/OAuth changes without restart; `is_local` distinguishes local/remote without parsing `provider`. **One exception, and it is a correction rather than a caveat:** for the managed `parslee/openrouter/*` rows, credential presence alone is *not* sufficient. Those rows authenticate through the Parslee session, so credential presence means only "signed in" and says nothing about whether the gateway has an OpenRouter upstream to proxy to — an environment without one advertised all ten as available and then failed every request with `503 openrouter_not_configured` (car#786). There is no discovery endpoint to ask, so when the gateway reports that condition CAR records it and those rows report `available: false` until it is re-tested. The suppression is bounded (15 minutes) and cleared on sign-out, so an environment that gains OpenRouter recovers on its own; expect these rows to read available again after that window even with no client action. `public_benchmarks` is `[ { name, score, harness?, source_url?, measured_at? }, ... ]` with `score` on a 0.0–1.0 scale.
 - **`cost`** is the model's declared price structure: `{ input_per_mtok, output_per_mtok, cache_read_input_per_mtok, cache_write_input_per_mtok, pricing_tiers, size_mb, ram_mb }`. The four rates are USD per 1M tokens for uncached input, output, cache-read input and cache-write input. `pricing_tiers` is `[ { min_prompt_tokens, input_per_mtok?, output_per_mtok?, cache_read_input_per_mtok?, cache_write_input_per_mtok? }, ... ]` — prompt-size overrides where the highest `min_prompt_tokens` not greater than the prompt wins, and a tier only overrides the components it declares. Every rate is nullable, and `null` means **unpriced, not free**: local/downloaded models declare no prices, and a consumer that reads `null` as `0` publishes a fabricated cost. The managed `parslee/openrouter/<alias>` rows publish the same prices as the personal row they front; a `CostModel` carries no identifiers, so adding `cost` to this response discloses nothing new about the upstream model. Note the scope: **`models.list_unified` carries no upstream identifier for a managed alias, but `models.search` does** — its entries add a `family` field, which for these rows is the upstream model family (e.g. `claude-4.8`), and it matches queries against that field. That is pre-existing and unchanged here; treat the non-disclosure guarantee as holding on `models.list_unified`, not registry-wide. The field is additive: a client built against this version parsing a response from a daemon that predates it sees `cost` absent and defaults it to all-`null`, rather than failing the whole catalog.
+- **`weights_ready`** is weights-already-on-disk, and it answers a different question from `available`. `available` means CAR can use the model *here* — for a local MLX entry with a declared `hf_repo` that is `true` before a single byte has been fetched, because `ensure_local()` lazy-downloads on first use (car#164). `weights_ready` is `false` until those bytes actually land, and remote models — which have no weights to install — report `true`. Reading `available` as "installed" is what made `car models list` print MLX rows as available on a machine where `car doctor` said `Models: none installed` (car#894); the CLI now renders the two as separate `RUNNABLE` and `INSTALLED` columns and the two commands agree. The field is additive: a client built against this version parsing a response from an older daemon sees `weights_ready` absent and defaults it to `false`, rather than failing the whole catalog.
+- **`downloads_weights`** is `true` only for entries whose weights CAR fetches before use (GGUF, MLX, whisper.cpp); when it is `false` — OS-provided models such as `windows/speech-synthesis:os` and `apple/foundation:default`, server-backed local models such as `vllm-mlx/*` and Ollama, and every remote entry — there is nothing to install, so `weights_ready` carries no meaning and the CLI renders `INSTALLED` as `-` rather than a `yes`/`no` about nothing. Do not substitute `is_local` for this: the first four examples above are all local and all download nothing, and gating on `is_local` is what made `windows/speech-synthesis:os` report an install it does not have (car#894). The field is additive: a client built against this version parsing a response from an older daemon sees `downloads_weights` absent and defaults it to `false`, rather than failing the whole catalog.
 
 #### `models.route_provenance`
 - **Params**: `{ id: "parslee/openrouter/<alias>" }`
@@ -1662,8 +1849,8 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 
 #### `models.register`
 - **Params**: `ModelSchema` (the bare value) OR `{ schema: ModelSchema }`. Both shapes are accepted — `rt.registerModel(schemaJson)` from the FFI bindings passes the bare value; explicit JSON-RPC callers may prefer the wrapped form for readability.
-- **Returns**: `{ id, registered: true, path, note }` — `path` is the resolved `~/.car/models.json` location; `note` carries the daemon-restart-required reminder (see below).
-- Persists the supplied `ModelSchema` to `~/.car/models.json` (replacing any existing entry with the same `id`). Schema follows `car_inference::ModelSchema`: `{ id, name, provider, family, capabilities, source: ModelSource, context_length, ... }`. `ModelSource` is the load-bearing enum: `local | remote_api | ollama | mlx | vllm_mlx | apple_foundation_models | proprietary | delegated`.
+- **Returns**: `{ id, registered: true, path, note }` — `path` is the resolved `models.json` location (`~/.car/models.json`, or `$CAR_HOME/models.json` when the daemon was started with a state root); `note` carries the daemon-restart-required reminder (see below).
+- Persists the supplied `ModelSchema` to `models.json` under the daemon's state root (replacing any existing entry with the same `id`). The registry reads it back from the same resolved path on the next boot, so a registration against a relocated daemon takes effect on that daemon. Schema follows `car_inference::ModelSchema`: `{ id, name, provider, family, capabilities, source: ModelSource, context_length, ... }`. `ModelSource` is the load-bearing enum: `local | remote_api | ollama | mlx | vllm_mlx | apple_foundation_models | proprietary | delegated`.
 - **Trust boundary**: every persisted row is normalized to `trust_tier: "community"`, even when the payload omits `trust_tier` (legacy serde defaults it to Curated) or explicitly claims `"curated"`. The same rule applies to public Rust `UnifiedRegistry::register` and `InferenceEngine::register_model`. The reviewed `parslee/openrouter/<alias>` namespace is reserved: `models.register` rejects it and stale persisted user rows with those IDs are ignored, so no user schema can shadow CAR-managed provenance. Only compiled builtins and detached-signature-verified project catalogs retain Curated provenance. Community rows remain explicitly selectable and learn from outcomes, but an eligible Curated remote peer excludes them from latency-sensitive quality-first cold-start candidates and fallbacks.
 - **Visibility limitation (phase 1)**: the daemon's live `UnifiedRegistry` is not updated in-process. The model becomes visible to `models.list*` / `infer` / `infer_stream` on the **next daemon boot**, when `UnifiedRegistry::load_user_config` re-reads the file. Hot-update inside the running daemon requires interior mutability on `InferenceEngine` and is tracked as a separate follow-up. Callers SHOULD register models before issuing `infer` calls against them, or restart the daemon after a batch of registrations.
 - Closes [Parslee-ai/car-releases#39].
@@ -1672,8 +1859,8 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 
 #### `models.unregister`
 - **Params**: `{ id: string }` (a bare string is also accepted for symmetry with internal callers).
-- **Returns**: `{ id, unregistered: true, path, note }` on success. Error when the id isn't present in `~/.car/models.json`.
-- Symmetric counterpart to `models.register`. Removes the entry from `~/.car/models.json` by id and writes the file back atomically.
+- **Returns**: `{ id, unregistered: true, path, note }` on success. Error when the id isn't present in the state root's `models.json`.
+- Symmetric counterpart to `models.register`. Removes the entry from the same state-root `models.json` by id and writes the file back atomically.
 - **Visibility limitation (phase 1)** matches `models.register`: the daemon's live `UnifiedRegistry` is not rebuilt, so the removal takes effect on the **next daemon boot**. Operators SHOULD restart the daemon after a batch of unregistrations if they need `models.list_unified` to reflect the change immediately.
 
 #### `models.pull`
@@ -1750,6 +1937,7 @@ All variants also accept an optional `budget` object — a runtime-enforced coor
 - **Params**: `{ proposal: ActionProposal, session_id?: string, scope?: RuntimeScope, ... }`
 - **Returns**: `ExecutionResult { final_state, outputs, errors, ... }`
 - Triggers `tools.execute` callbacks to the client for each `tool_call` action. See `docs/agent-ir-spec.md` for the proposal shape.
+- **Gated by the session's permission tier.** Before any action dispatches, the proposal is admitted against the session's granted standing tier (`permission.set_tier`, default `sandbox_edit`). An action whose required tier exceeds the grant — or a `full_access` action, which is always mandatory HITL — blocks the **whole** proposal: every action comes back `rejected`, nothing executes, and no state write lands. The error names the fingerprints to hand to `permission.approve`; re-submitting after approval succeeds. Run `permission.evaluate` first to see the same verdict without submitting. See the `permission.*` section.
 - `session_id` (optional) scopes per-action policy validation to a session opened via `session.policy.open` on this connection's runtime. Global policies still apply, plus the session's. Omit for the default global-only path. See `docs/proposals/per-session-policy-scoping.md`.
 - `scope` (optional) is a `RuntimeScope` — `{ callerId?: string, tenantId?: string, claims?: object }` — attaching per-execution caller / tenant identity. When `tenantId` is set, the runtime routes per-action state R/W (`StateWrite` / `StateRead` / `Assertion` + action `expected_effects`) through the tenant-scoped view so distinct tenants can't observe each other's keys (Parslee-ai/car#187 phase 3). The car-a2a bridge already passes this automatically for inbound A2A messages; direct WS callers building their own proposals attach it here. When both `session_id` and `scope` are supplied, the runtime currently routes through `execute_scoped` (scope wins) — combining per-session policies with per-tenant scoping is a follow-up.
 
@@ -1973,6 +2161,11 @@ Skills are learned procedures stored as graph nodes with trigger context. See `d
 - **Returns**: `{ ingested: bool, node?: number, decision: SkillDeploymentDecision, enforcement, pending_approval?: { fingerprint, skill_name, requested_tier } }`
 - The **loader integration**: ingests a skill *through* the deployment gate. Gates the provenance against the requested capability, enforces against the daemon's shared durable `ApprovalLedger`, and **only adds the skill to the graph when deployment is permitted** — stamping the granted ceiling onto `SkillMeta.deployment_tier` (which survives `memory.persist` and is visible to execution). A denied skill is not ingested (`ingested: false`); an unseen deny surfaces a `pending_approval` resolved via `permission.approve`/`permission.reject`. FFI: `ingestSkillGoverned` (NAPI) / `ingest_skill_governed` (PyO3).
 
+#### `skill.adopt_pack`
+- **Params**: `{ pack: ApprovedSkillPack, requested_tier?: "read_only" | "sandbox_edit" | "full_access" = "read_only", manifest?: AgentManifest, provenance?: SkillProvenance, scanned?: boolean = false, vulnerabilities?: number = 0, source?: "official" | "first_party" | "community" | "unknown" = "unknown" }`
+- **Returns**: `{ loaded: string[], pending: [ { skill_id, fingerprint }, ... ], refused: [ { skill_id, reason }, ... ], requested_tier: string, provenance: SkillProvenance, trusted_signers: number }`
+- The **daemon call-site** for governed pack adoption: materializes an `ApprovedSkillPack` into the session graph with every skill routed through the deployment gate. Governance is **unconditional** here — there is no ungoverned mode on this method, which is what makes governed adoption the default rather than something a host opts into. Provenance comes from **either** `manifest` **or** a caller-assembled `provenance`; passing **both is an error**, because silently preferring one would drop a security-relevant input, and passing neither yields the conservative unsigned/unscanned default. The two paths are not equivalent: `manifest` is the **derived** path — the caller cannot assert `signed`/`signer_trusted`, which are computed by `MemgineEngine::skill_provenance_from_bundle` against the operator's `.car/config.toml` `trusted_skill_signers` keyring, read **only** from operator config and never from the request (a caller that could name its own trusted keys would be self-certifying). `provenance` is a **trusted-caller escape hatch**: it is taken at face value and nothing clamps or cross-checks it, so any caller that can reach this method can assert any trust tier, up to `official` + `full_access`. It exists for hosts carrying their own attestation — the same contract `skill.ingest_governed` offers — and it means the keyring rule constrains the `manifest` path only. On that path, an empty keyring costs less than it sounds: `signer_trusted` separates **only** `Official` from `Verified`, so a signed + scanned pack lands `Verified` → `sandbox_edit` rather than `Official` → `full_access`; it is never demoted to `Community` (which requires `scanned && !signed`), and an unscanned pack is `Untrusted` → denied either way. Since `scanned` is caller-supplied on every path, a self-signed manifest sent with `"scanned": true` reaches `sandbox_edit` against an empty keyring. Enforcement runs against the daemon's **shared durable** `ApprovalLedger` — the same restart-surviving, cross-connection ledger `permission.*` writes to: a `Deny` skill **never enters the graph**, a previously-approved override deploys, and an unseen deny surfaces in `pending` with a fingerprint the host resolves via `permission.approve`/`permission.reject` before re-adopting. Adoption is **per-skill, so a pack can adopt partially** — the skills whose verdict permits deployment land in `loaded` while the others surface in `pending`/`refused`, and the host re-adopts the same pack after resolving them. `trusted_signers` is a **count**, not the key ids — enough to tell an operator "your keyring is empty, that is why a signed pack stopped at Verified" without echoing configured identifiers over the wire. FFI: `adoptSkillPack` (NAPI) / `adopt_skill_pack` (PyO3).
+
 ### skills
 
 #### `skills.distill`
@@ -2055,7 +2248,10 @@ All `state.*` methods accept an optional `tenant_id: string` sibling field (Pars
 - **Params**: `{ prompt: string, intent?: IntentHint }`. `intent` is an
   optional routing hint; notably `exclude_models: string[]` ("any capable
   model that is NOT one of these") for adversarial-reviewer separation so a
-  model never grades its own work (car#358). Exclusion is soft — if it leaves
+  model never grades its own work (car#358). Each entry may be a catalog
+  `model_id` **or** a `model_name` — the two differ for most models, and
+  `model_name` is what a result reports as the model it used, so the identifier
+  you have in hand always works (car#889). Exclusion is soft — if it leaves
   no candidate it is dropped rather than failing. Absent `intent` routes
   exactly as before.
 - **Returns**: route decision JSON for the adaptive router —
@@ -2182,7 +2378,7 @@ All `state.*` methods accept an optional `tenant_id: string` sibling field (Pars
 - The governor's **real executor** (arXiv 2507.21046 — the "remaining daemon step" of `docs/proposals/self-evolution-governor.md`). Plans exactly like `evolution.plan` (all five components live, over the session's *effective* engine — the daemon-owned per-agent memgine for `session.auth { agent_id }`-bound connections), then dispatches each `EvolveNow` component in priority order via `run_evolution_cycle`. At most one `evolution.run` executes per session at a time — a concurrent second call errs instead of overlapping (the dispatcher spawns requests concurrently even on one connection).
   - `memory` → `engine.consolidate()`, **sized by** `maintenance::decide_maintenance` off the live `memory_stats` (dirty regions = the outstanding + superseded backlog, global structural gain = the supersede-churn share valued at store size); the localized-vs-global choice is recorded in the step outcome — `consolidate()` is the single live mechanism for both today.
   - `skills` → `engine.evolve_skills(failed_events, domain)` for every domain `domains_needing_evolution` flags (success < 0.6 over ≥3 outcomes), with `failed_events` folded from the session event log's failure records (`ActionFailed`/`ActionRejected`/`PolicyViolation`/`ReplanExhausted` → `TraceEvent`s; the log carries per-action failures, **not** state-before/after trajectories — those fields are honest `None`s, never fabricated). A session engine without a model records `ran: false, outcome: "no inference engine"` — not a stub.
-  - `harness` → the `harness_evolution` diagnose→gate→apply loop, **HITL-gated on the daemon's shared durable `ApprovalLedger`** (`~/.car/approvals.jsonl` — the same store `permission.*` writes; approve on a host connection, apply on the agent connection, and the decision survives restart). Fingerprint: `harness:<component>:<patch-digest>` — bound to the **patch content** (the concrete config change a human authorizes), not the diagnostic rationale (which embeds live measurements and would mint a fresh identity every re-run). A previously **approved** fingerprint applies its config patch to the session runtime's live `HarnessConfig` under one atomic read-modify-write (`Governance::HumanApproved`, rollback patch returned); **rejected** → blocked. The regression gate needs *measured post-mutation* metrics, which a single live cycle cannot produce — so auto-promotion runs **only** when the caller supplies `harness_candidate_metrics` from its own held-out replay (baseline defaults to the live session metrics, overridable via `harness_baseline_metrics`; a supplied baseline also **replaces the Harness planning signal** — failed/total attempts — so the declared telemetry both elects and diagnoses the component): a gate-passed non-safety mutation then auto-applies (`Governance::Promoted`); safety-affecting mutations **always** route to HITL. Without candidate metrics every activation is a pending approval — the gate's input is never fabricated.
+  - `harness` → the `harness_evolution` diagnose→gate→apply loop, **HITL-gated on the daemon's shared durable `ApprovalLedger`** (`~/.car/approvals.jsonl` — the same store `permission.*` writes; approve on a host connection, apply on the agent connection, and the decision survives restart). Fingerprint: `harness:<component>:<patch-digest>` — bound to the **patch content** (the concrete config change a human authorizes), not the diagnostic rationale (which embeds live measurements and would mint a fresh identity every re-run). A previously **approved** fingerprint applies its config patch to the session runtime's live `HarnessConfig` under one atomic read-modify-write (`Governance::HumanApproved`, rollback patch returned); **rejected** → blocked. The regression gate needs *measured post-mutation* metrics, which a single live cycle cannot produce — so auto-promotion runs **only** when the caller supplies `harness_candidate_metrics` from its own held-out replay (baseline defaults to the live session metrics, overridable via `harness_baseline_metrics`; a supplied baseline also **replaces the Harness planning signal** — failed/total attempts — so the declared telemetry both elects and diagnoses the component): a gate-passed non-safety mutation then auto-applies (`Governance::Promoted`); safety-affecting mutations **always** route to HITL. Without candidate metrics every activation is a pending approval — the gate's input is never fabricated. The replay that produces those metrics ships as `car-bench-harness` (`car-rs/crates/car-bench/README.md`): it runs the checked-in task suite through the real assistant loop on a deterministic held-out split and writes `--metrics-out` as **exactly** a serialized `HarnessMetrics`, so the file goes into these two params verbatim. Its `HarnessMetrics` carries one field `harness.metrics`/`harnessMetrics` cannot produce — the optional `task_pass_rate`, end-**task** success — because an event log records what ran, not whether the task was satisfied. The gate guards it *and* `trajectory_efficiency.success_rate` (tool-**attempt** success), which are different quantities: a candidate that cuts tokens by abandoning hard tasks earlier holds a perfect attempt rate while solving fewer tasks. `task_pass_rate` absent on either side means *not measured* — that guard then does not fire at all, rather than reading absent as 0.0 or 1.0. Ahead of both guards the two rates must be over the **same task set**: the document also carries `task_pass_denominator` (how many tasks the rate is over) and `tasks_unrunnable` (how many the runner could not measure), and when both sides report a denominator and the two disagree the result is a fourth decision, **`incomparable`** — no verdict, nothing applied, `"status": "incomparable"` in the per-mutation result. A pass rate over a smaller task set is not an improvement over a larger one, and a harness that loses a capability also loses the ability to *measure* the tasks needing it — those tasks leave the denominator and the surviving rate rises, which without this check reads as a win. Both fields are optional: a document written before they existed carries neither, and the comparability check is then skipped rather than failing. **Arming the task-level guard takes both params.** The default baseline is the live session's own metrics folded from its event log, which never carries `task_pass_rate`; supplying only `harness_candidate_metrics` therefore gets you the attempt-level guard and not the task-level one. Pass a measured `harness_baseline_metrics` (a `car-bench-harness` run of the pre-mutation harness) as well.
   - `context` / `tools` → recorded as `not_executable` with the documented reason (no autonomous mutation mechanism yet: context tuning is a `.car/config.toml` change, connector repair is `connectors.*`).
   `evolved` lists only components that **applied a change** — a step that completed without changing anything (nothing to evolve, every mutation still pending approval, a dry run) appears in `steps` with `applied: false` but not in `evolved`; the `EvolutionTriggered` audit event carries the same semantics. `dry_run: true` skips every side effect (no consolidate, no evolve, no config apply, no event append) and reports what would run — **including** `pending_approvals` (listing what needs approval is response data, not a side effect). A real run appends one `EvolutionTriggered` event (`data.source = "evolution.run"`) to the session event log and, on a bound-agent session, persists the per-agent memgine after a cycle that applied something. FFI: `runEvolutionCycleLive` (NAPI) / `run_evolution_cycle_live` (PyO3).
 - **Autonomous cadence (opt-in)**: setting `evolution_interval_secs = N` (N > 0) in `.car/config.toml` makes the daemon spawn ONE background task over its **shared** engine that every N seconds runs the same plan+dispatch unattended (`dry_run = false`), appending each cycle's outcome as an `EvolutionTriggered` event (`data.source = "cadence"`) to `<journal_dir>/evolution.jsonl` — capped at 1000 in-memory events, and **no-op cycles (nothing planned, nothing run) are not appended**, so an idle daemon doesn't mint an audit line per tick. Absent or `0` = off (the no-surprise default). Ticks never overlap (a tick landing while the previous cycle still runs is skipped), and the task shuts down with the daemon. The unattended Skills arm is **per-domain exponentially backed off** (an attempted domain waits `2^attempts` ticks, capped at 64, resetting only when the domain is observed recovered) so unattended inference spend never repeats the same failing domain every tick. Daemon-scope boundaries, stated not papered over: harness telemetry is per-session, so the unattended cycle plans over Memory/Skills/Context/Tools only and Skills runs with an empty failure-trace set (the engine's own per-domain outcome stats elect domains); use `evolution.run` on a session for the full five-component cycle.
@@ -2744,6 +2940,22 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
 
 `ToolDefinition`: `{ name: string, description?: string, parameters?: object }`. Tools registered here are dispatched via `tools.execute` callbacks during proposal execution.
 
+#### `tools.list`
+- **Params**: none
+- **Returns**: `{ tools: [ToolSchema], count: number }`, where each `ToolSchema` is `{ name, description, parameters, returns?, idempotent, cache_ttl_secs?, rate_limit? }` (optional fields omitted when unset)
+- The toolset actually in effect on this connection. The full schema comes back, not just names — what a tool accepts is part of the surface being proven.
+- **The array is sorted by tool name.** The underlying store is a hash map, so unsorted output would reorder between two calls that registered nothing in between; an audit surface whose order changes on its own cannot be diffed and is not usable as proof.
+- Scope is the connection: each WebSocket client gets its own runtime, so this reports what is in force on *this* session, not a daemon-wide set. It is also **not** the assistant's set — `car do` / `agents.chat` build their own runtime, so listing here does not describe the toolset those will execute with.
+- "In force" is a superset of "what you registered", which is much of why enumerating is worth doing: a fresh session already carries the `messaging.send` built-in, because the daemon attaches an outbound message sink and the sink and its schema arrive together (a tool the runtime cannot execute is never advertised to the model). The commodity stdlib is *not* included until the session asks for it — both `session.bindSubstrate` and `session.bindSandbox` register it.
+- Before this existed, `tools.register` had no counterpart: a client could add tools but never ask what was registered, so a governed or read-only deployment could not prove "only tools X and Y are callable here".
+
+#### `tools.unregister`
+- **Params**: `{ name: string }`
+- **Returns**: `{ unregistered: string, removed: number }` — `removed` is `1` if the tool was present, `0` if it was not
+- Removes the tool from both the runtime's canonical registry and its schema map, so the model stops seeing it and the validator stops accepting it.
+- `removed: 0` for an unknown tool is reported, not raised, so a client cleaning up can call this unconditionally without listing first — the same contract as `policy.unregister`. A missing `name` *is* an error.
+- Without it a tool added to a session could not be taken back for the life of the connection: narrowing an over-broad registration meant reconnecting and rebuilding the session's state.
+
 #### Detached tool dispatch (streaming / long-running, EPIC C / C2)
 
 A ToolCall action with `invocation_mode: "streaming" | "long_running"` (see
@@ -2983,7 +3195,7 @@ no deadline (cancel it explicitly).
 
 #### `agent.chat` (daemon → agent reverse-call) + `agent.chat.event`
 - For attached supervised agents, `agents.chat` reverse-calls **`agent.chat`** on the target agent's WS connection — resolved via `attached_agents`, so the agent must have `session.auth`'d **with its `agent_id`** (`{ session_id, prompt, model?, attachments?, goal?, context? }`). The optional `model` is forwarded unchanged from the host request. The agent **acks** `{ accepted: true }` immediately, then streams its reply as **`agent.chat.event`** notifications `{ session_id, kind, delta? }` (`kind: "token" | "tool_call" | "approval_pending" | "goal_evaluated" | "done" | "error"`), which the daemon rewrites to `agents.chat.event` for the host. `goal_evaluated` is emitted by goal-driven agents after each verifier pass as `{ iteration, met, grounded, reason }`. `agents.chat.cancel` proxies to `agent.chat.cancel`; `agents.chat.approve` reverse-*requests* `agent.chat.approve` (resolving an `approval_pending` gate so the turn resumes). In-daemon declarative agents skip the reverse call and stream `token`/`goal_evaluated`/terminal frames directly; cancel flips a local run flag and halts at the next model/tool/goal-check boundary; inline `agents.chat.goal` and image attachments are rejected for them because their own manifest `goal` and scratch-worktree runner own completion.
-- **FFI (agent side):** `registerChatHandler(handlerFn)` / `register_chat_handler(handler)` installs the handler (stored-callback pattern; the per-`CarRuntime` bridge acks and fires it with the params JSON). `CarRuntime.chatEvent(sessionId, kind, delta?)` / `chat_event(...)` emits each `agent.chat.event`. A `--serve` agent **attaches automatically**: the binding sends `agent_id` on `session.auth` when `CAR_AGENT_ID` + `CAR_AGENT_TOKEN` are set (the supervisor injects them). The bundled `create-car-agent` harness wires all of this in `--serve`, keeping an ephemeral per-`session_id` message thread and running the standard propose→verify→execute loop per turn.
+- **FFI (agent side):** `registerChatHandler(handlerFn)` / `register_chat_handler(handler)` installs the handler (stored-callback pattern; the per-`CarRuntime` bridge acks and fires it with the params JSON). `CarRuntime.chatEvent(sessionId, kind, delta?)` / `chat_event(...)` emits each `agent.chat.event`. **The handler may call any runtime method and should run the turn inline** — in Python it is dispatched on a dedicated CAR-owned OS thread, never a tokio worker, so `infer_tracked`, `submit_proposal`, `state_set`, and `chat_event` all work from inside it. Before car#905 the Python bridge dispatched on a runtime worker and every one of those raised `PanicException: Cannot start a runtime from within a runtime`; because that is a `BaseException` and `chat_event` hit the same wall, the accepted turn was stranded with the host receiving zero frames. Any `threading.Thread` offload written to work around that is now unnecessary. NAPI was never affected (async `ThreadsafeFunction` dispatch). The same contract covers the `tools.execute`, `tools.cancel`, and `voice.event` callbacks. A `--serve` agent **attaches automatically**: the binding sends `agent_id` on `session.auth` when `CAR_AGENT_ID` + `CAR_AGENT_TOKEN` are set (the supervisor injects them). The bundled `create-car-agent` harness wires all of this in `--serve`, keeping an ephemeral per-`session_id` message thread and running the standard propose→verify→execute loop per turn.
 - Bundled `car do` / `car do --serve` assistant loops run proactive memory before every model turn. The hidden pass maintains compact execution-state memory from the runtime event log, selects at most one relevant remembered fact/procedural warning, and injects it as a `## Proactive Memory` context block. This uses the same assistant memory bank as `remember` / `recall`, but does not require the model to call `recall`; maintenance/intervention decisions are journaled as `proactive_memory_maintained` and `proactive_memory_intervention`.
 - Native coder loops also run proactive memory over the shared repair memgine when learning is enabled. The pass mines the coder session journal into procedural/open-subgoal facts, injects at most one `## Proactive Memory` context block before the next coding turn, and journals the same proactive-memory events into the coder session event log.
 
@@ -3228,7 +3440,8 @@ type; the rest is additive.
   "auth_wait_secs": 120 | null,       // set iff needs_you == "auth"
 
   // --- outcome + provenance ---
-  "failure_kind": "budget_exhausted" | "auth_required" | "error" | null, // set iff state == "failed"
+  "failure_kind": "budget_exhausted" | "auth_required" | "infrastructure" | "error" | null,
+                                      // set iff state == "failed"
   "worktree": "/abs/path" | null,     // only when the directory still exists on disk
   "project": "slug" | null,
   "result_branch": "car/coder/ab12cd34" | null,
@@ -3261,13 +3474,42 @@ same state:
 | `null` | otherwise |
 
 `failure_kind` is `"budget_exhausted"` when the session hit its wall-clock
-ceiling, `"auth_required"` when it ended waiting on a sign-in nobody supplied,
-and `"error"` otherwise. It, `needs_you`, `worktree`, `result_branch`,
+ceiling, `"auth_required"` when it ended waiting on a sign-in nobody supplied —
+**or** when contract DERIVATION or REVISION died on a rejected credential, which
+does not wait at all (`coder.start` and `coder.revise_contract` are synchronous
+RPCs the client is blocked on, so they emit `auth_required` with `wait_secs: 0`
+and end rather than hold the call open). A run loop with no auth gate — the
+default adaptive-routing path — is the one case that emits `auth_required` and
+still ends `"infrastructure"`: it does not wait, so the strikes run out
+normally. Read the **event**, not `failure_kind`, to decide whether to show a
+sign-in prompt.
+`"infrastructure"` is used when the machinery failed rather than the work (the
+worker
+could not be started or never received the task, the backbone stopped
+answering, the outcome contract could not even be derived for any reason other
+than a rejected credential, or a **daemon
+restart** adopted the session while it was still mid-flight — the most common
+of the four), and `"error"`
+otherwise — i.e. the work ran and was judged red.
+
+`"infrastructure"` is the one to check before reading a failure as a result: no
+check ever passed judgement on the task, so a scorer must exclude it rather than
+count it as a loss. It exists as its own value because the alternative — folding
+it into `"error"` — leaves consumers recovering the distinction by matching the
+runtime's error prose, which only recognises failure modes somebody already met.
+One such prose scan silently recorded 18 sessions that died in seconds on a
+backbone that could not make structured tool calls as genuine task failures, and
+while the kinds stay collapsed the
+next unfamiliar error string reads the same way. `"auth_required"` outranks it:
+both mean nothing was attempted, but only one is fixed by asking a human.
+
+`failure_kind`, `needs_you`, `worktree`, `result_branch`,
 `project`, `model` and `discussion_id` are all **persisted on the session
 snapshot**, so a summary read after a daemon restart still carries them —
-otherwise the distinction between "ran out of clock", "nobody signed in" and
-"the work was judged red" would go blank exactly when the operator comes back to
-look. `worktree` is reported only when the directory still exists (the
+otherwise the distinction between "ran out of clock", "nobody signed in", "the
+machinery broke" and "the work was judged red" would go blank exactly when the
+operator comes back to look. `worktree` is reported only when the directory
+still exists (the
 `keep_workspace_on_failure` / preserved-orphan cases): a path whose tree was
 reaped is a snapshot detail, not a place to send someone.
 
@@ -3825,16 +4067,18 @@ Declarative multi-stage orchestration with conditional edges and saga compensati
 
 #### `permission.*` — the permission-tier safety governor (survey §3.4.3, §5.2.5)
 
-A per-session permission gate classifies each action's risk into `read_only` / `sandbox_edit` / `full_access` and gates it against the session's granted standing tier. Human-in-the-loop decisions are recorded on the daemon's **shared, journal-backed approval ledger** (`~/.car/approvals.jsonl`, keyed by a stable operation fingerprint): an approval recorded on ONE connection (e.g. a host UI) is visible to EVERY other connection's evaluations (`permission.evaluate`/`pending`, `evolution.run`, `cascade.run`, `skill.enforce_deployment`/`ingest_governed`) and **survives daemon restart**. Tier state stays per-session; the approval store is daemon-wide — a per-connection ledger would strand the approver's decision where the runner never reads it. Distinct from the method-level `host.*_approval` gate, which is per-call and time-boxed; this is keyed by *operation* and durable. The session defaults to a `sandbox_edit` standing tier.
+A per-session permission gate classifies each action's risk into `read_only` / `sandbox_edit` / `full_access` and gates it against the session's granted standing tier. Human-in-the-loop decisions are recorded on the daemon's **shared, journal-backed approval ledger** (`~/.car/approvals.jsonl`, keyed by a stable operation fingerprint): an approval recorded on ONE connection (e.g. a host UI) is visible to EVERY other connection's evaluations (`permission.evaluate`/`pending`, `evolution.run`, `cascade.run`, `skill.enforce_deployment`/`ingest_governed`/`adopt_pack`) and **survives daemon restart**. Tier state stays per-session; the approval store is daemon-wide — a per-connection ledger would strand the approver's decision where the runner never reads it. Distinct from the method-level `host.*_approval` gate, which is per-call and time-boxed; this is keyed by *operation* and durable. The session defaults to a `sandbox_edit` standing tier.
 
-- **`permission.get_tier`** — Returns `{ granted_tier }`.
-- **`permission.set_tier`** — Params `{ tier: "read_only"|"sandbox_edit"|"full_access" }`. Returns `{ granted_tier }`.
+**The tier is enforced on `proposal.submit`, not merely reported** (Parslee-ai/car#890). A `PermissionAdmissionGate` runs on every session runtime alongside the static-verification and supervision gates, and it asks the *same* session gate the *same* question `permission.evaluate` asks, against the *same* shared ledger — so the advisory answer and the enforced one cannot diverge. An action the gate escalates blocks the **whole** proposal before any action dispatches (a safety hazard is a property of the action set, not an isolated action), and the rejection names each offending action's fingerprint with its required and granted tier, so `permission.approve` can be driven straight off the error text. Approving a fingerprint makes the next submit of that operation evaluate to `allow` with no escalation raised at all — that is how the loop closes, through the shared ledger rather than through the executor's own. Until this landed the classification was published and never consulted: an action `permission.evaluate` called `needs_approval` executed anyway, on the same session, and its state write persisted.
+
+- **`permission.get_tier`** — Returns `{ granted_tier }`. Also proxied to the bindings as `permissionGetTier()` (Node) / `permission_get_tier()` (Python).
+- **`permission.set_tier`** — Params `{ tier: "read_only"|"sandbox_edit"|"full_access" }`. Returns `{ granted_tier }`. Also proxied to the bindings as `permissionSetTier(tier)` (Node) / `permission_set_tier(tier)` (Python) — a binding client can govern its own session's standing authority rather than only classifying against a tier it supplies by hand to the in-process `permission_evaluate` helper. Subject to the same **Authority** rule below: under a host token this is host-management-only.
 - **`permission.classify`** — Params `{ proposal: ActionProposal }`. Returns `{ classifications: [{ action_id, tool, required_tier, reversibility, missing_compensation }], declared_rollback_contract }`.
-  - `required_tier` is the minimum tier each action needs — *who may authorize this*.
+  - `required_tier` is the minimum tier each action needs — *who may authorize this*. It is the **highest** tier any signal implies, over five signals matched at different granularities, each against the part of the action that actually carries the evidence: the **tool name** (whole `snake`/`camel` segments — `deploy_service`, `send_email`, `read_secret`); the **command line** only (a broad keyword list over `command`/`args`/`argv`/`flags` — `curl`, `terraform apply`, `aws `); **parameter keys** (`api_key`, `db_password`, a nested `auth.token` — the key names the credential, the value is opaque); **declared target paths** (`path`/`file`/`dest`/… holding `~/.ssh/id_rsa`, `.aws/credentials`, `*.pem`); and a narrow set of **always-dangerous phrases** anywhere in the flattened parameters (`drop table`, `delete from`, `rm -rf`, `git reset`). Nothing scans arbitrary parameter *values* for single common words. Before v0.48.0 one broad substring scan covered the whole flattened payload, so a URL matched `http`, a message body matched `send`, a `format_date` call matched `format`, and a search for "release notes" matched `release` — all of them `full_access`, which since Parslee-ai/car#915 is a hard block on a connection with no approver (Parslee-ai/car#917). A command-shaped action classifies identically before and after.
   - **`reversibility`** — `"reversible" | "compensable" | "irreversible"` — is the orthogonal second axis, *can this be undone*, from `car_policy::classify_reversibility` over the tool name and flattened parameters. It is classified **independently** of the tier, not derived from it, because deriving it would rebuild the conflation the axis exists to remove: `PermissionTier` used to describe `full_access` as "externally-consequential **or** irreversible", collapsing a `git push` (force-push the prior ref), a production `INSERT` (delete the row) and a charged card onto one rung. The two disagree in both directions — `read_secret` is `full_access` + `reversible` (a read leaves nothing to undo), `db_insert` is `sandbox_edit` + `compensable`.
   - **`missing_compensation`** is `true` when the action *declares* `reversibility: "compensable"` but carries no `compensation` — an incoherent rollback plan, visible before execution instead of at the point someone needs the undo. It reads the declared IR fields, not the classifier.
   - **`declared_rollback_contract`** is the whole proposal's contract: the **worst** of its actions' declared `reversibility` values, since a plan is only as recoverable as its least recoverable step (an empty batch is `"reversible"` — nothing to undo is not the same as unclassified). Note this envelope field and the per-row `reversibility` answer different questions: the envelope reports what the *author declared* in the IR, the rows report what the *classifier inferred*. A proposal written before this axis existed declares nothing, so its actions default to `irreversible` and the envelope reads `"irreversible"` even where the rows classify individual actions as `reversible`.
-  - Both are conservative keyword heuristics — an unrecognized tool comes back `irreversible` — and **nothing in the runtime gates on either field yet**: they are classified, reported, and audited (`PermissionDecision` events carry `reversibility` too), not enforced. Older daemons omit all three fields.
+  - Both are conservative keyword heuristics — an unrecognized tool comes back `irreversible`. **`reversibility` is still classified, reported, and audited (`PermissionDecision` events carry it too), never enforced.** `required_tier` no longer is: since Parslee-ai/car#915 `proposal.submit` admits against it, and a `full_access` action is mandatory HITL regardless of the granted tier — so an over-classification on an automated connection is a rejection, not a nag. That is why the signals above are matched at boundaries rather than as substrings. Older daemons omit all three fields.
 - **`permission.evaluate`** — Params `{ proposal, skill? }`. Returns `{ decisions: [{ action_id, fingerprint, decision: "allow"|"needs_approval"|"deny", required, reversibility, granted?, reason? }], skill_ceiling? }`. **`reversibility`** is on *every* row, `allow` rows included, and is orthogonal to `decision`: the gate's verdict says whether the action may run, not whether it could be taken back afterwards. Two actions that both escalate to `needs_approval` are not the same decision for a human if one of them is the one there is no undoing, and a trail that records the rollback contract only for actions the gate *stopped* is missing the rows an incident review reads first. Same classifier, same values, and the same "classified, not enforced" caveat as `permission.classify` above; older daemons omit the field. A `full_access` action always yields `needs_approval` (mandatory HITL) unless previously approved; a prior rejection yields `deny`. When `skill` names a governed skill (arXiv 2602.12430 "Agent Skills"), its persisted `deployment_tier` caps the session's standing authority for this evaluation — the effective tier is `min(granted, deployment_tier)`, so an action driven by a `read_only`-capped skill escalates instead of running even in a `full_access` session. The applied ceiling is echoed as `skill_ceiling`. This is the join from skill-trust governance to the action-level gate: the caller already knows which skill drove the actions, so it names it; the gate honours the ceiling without inventing action→skill provenance.
 - **`permission.pending`** — Params `{ proposal, skill? }`. Returns `{ pending: [...] }` — only the `needs_approval` decisions (the approval work-queue), each row identical in shape to `permission.evaluate`'s, `reversibility` included. Honours the same optional `skill` ceiling as `permission.evaluate`. The field matters most here: this queue is where a human decides, and "can this be undone?" is the question they are actually weighing.
 - **`permission.approve`** / **`permission.reject`** — Params `{ fingerprint, required_tier, reason?, evidence? }` (from a prior `evaluate`) **or** `{ action, reason?, evidence? }`. Records a durable decision on the **shared daemon ledger** (visible to every connection, restart-surviving) that overrides future evaluations of the same operation, and audits it as `ApprovalRecorded`. The `reviewer` is **stamped server-side** from the authenticated principal (bound `agent:<id>` or `conn:<id>`) — it is not a caller param, so the audit's "who decided" can't be forged. An under-scoped `required_tier` cannot widen access: the gate re-classifies the action and only honors an approval at or above its true tier. Returns the stored `ApprovalRecord`.
@@ -3855,13 +4099,14 @@ Orthogonal to the per-session standing tier above: a durable **per-agent** postu
 - **Returns**: `{ text: string, tool_calls: ToolCall[], usage: { input_tokens, output_tokens }, model_used: string, trace_id: string, latency_ms: number, time_to_first_token_ms: number | null, stop_reason: string | null }`
 - Supplying a non-null `model` is a hard pin. The daemon forces `params.strict_model` to `true` even when the caller sends `false`, so an error from the selected provider is returned directly instead of appending CAR's on-device last-resort fallback. Omit `model` to let adaptive routing select and fall back across eligible models.
 - `time_to_first_token_ms` is the wall-clock from request start to the first generated token sample, populated by the local Candle/MLX paths. Always present in the response (`null` when not measured — currently the non-streaming remote path; for honest TTFT on remote models, use streaming and time the first chunk client-side).
-- `stop_reason` is the raw provider termination reason (OpenAI `finish_reason`, Anthropic `stop_reason`, Google `finishReason`). Always present (`null` for local backends or providers that don't report one). A value of `"length"` / `"max_tokens"` / `"MAX_TOKENS"` means the output was truncated at the token cap. On local Qwen3 hybrid-thinking models it is also set by the reasoning-recovery path: when the caller leaves `thinking` on `auto` and reasoning consumes the whole `max_tokens` budget inside an unclosed `<think>` block (leaving empty text), CAR retries once with reasoning suppressed and returns the direct answer with `stop_reason: "thinking_recovered"`; if even the retry is empty the result carries `stop_reason: "thinking_truncated"`. This keeps a small-budget `infer` from silently returning `""` (car-releases#60, #62).
+- `stop_reason` is the raw provider termination reason (OpenAI `finish_reason`, Anthropic `stop_reason`, Google `finishReason`). Always present (`null` for local backends or providers that don't report one). A value of `"length"` / `"max_tokens"` / `"MAX_TOKENS"` means the output was truncated at the token cap. On local Qwen3 hybrid-thinking models it is also set by the reasoning-recovery path: when the caller leaves `thinking` on `auto` and reasoning consumes the whole `max_tokens` budget inside an unclosed `<think>` block (leaving empty text), CAR retries once with reasoning suppressed and returns the direct answer with `stop_reason: "thinking_recovered"`; if even the retry is empty the result carries `stop_reason: "thinking_truncated"`. This keeps a small-budget `infer` from silently returning `""` (car-releases#60, #62). A model CAR decodes **in this process** (`mlx/*`, `local/*` — not vLLM-MLX, which is an HTTP server) is additionally bounded by a wall-clock ceiling, `CAR_LOCAL_DECODE_TIMEOUT_SECS` (default `300`, `0` disables): reaching it stops the decode, keeps whatever text was produced, and returns `stop_reason: "local_decode_timeout"`. The ceiling (and the decode-progress logging that goes with it) lives in the MLX decode loops, so it covers in-process decoding **on Apple Silicon**; on other platforms the in-process path is Candle, which is not yet bounded — it does get the `max_tokens` rule below, which takes away the widening that made an in-process decode run long. That value counts as truncation for `was_truncated()`. **If the ceiling is reached before any text or tool call exists, `infer` returns a JSON-RPC error rather than an empty success** — a turn nobody can act on has to read as a failure. Such a model also no longer has its `max_tokens` silently widened to the model's advertised output cap: an in-process token budget is spent as wall clock, and a 131072-context model widened 4096 to 32768 was ~24 minutes of silent decode per turn (#851). Remote models and vLLM-MLX still get the widening.
 - If `context_query` is set, CAR builds a memory context for that query and injects it into the request automatically.
 - Proactive memory runs before inference for long-horizon/high-stakes requests: sessions already granted `FullAccess`, requests with `intent.high_stakes`, requests with tools, and `intent.task` of `code` or `reasoning`. It appends at most one targeted `## Proactive Memory` reminder to the request context. `memory_intervention: false` or `null` is a hard opt-out; `true` forces the default proactive request; an object is parsed as `memory.intervene` params. This is a two-phase pass: first `memory.maintain` updates compact execution-state memory from the recent event log, then the selector decides whether to inject or remain silent. A silent decision leaves the request unchanged. It can be combined with `context_query`; the reminder is appended after the assembled memory context. The selector merges explicit trigger fields with recent runtime telemetry from the session event log: `ActionFailed`, `ActionRetrying`, `ReplanExhausted`, ungrounded `GoalEvaluated` completions, and truncated/max-turn/stalled `TurnCompleted` records. Full-access/high-stakes sessions also set the high-risk trigger.
 - `response_format` constrains output to JSON. Two variants: `{ "type": "json_schema", "schema": <JSON Schema>, "strict": bool, "name"?: string }` or `{ "type": "json_object" }` for the looser JSON-mode form. Maps to OpenAI `response_format`, Google `responseMimeType` + `responseSchema`. **Anthropic** is not wired for a provider-enforced `response_format` field under CAR's pinned `anthropic-version`, so CAR rejects both variants rather than silently weakening the request: `json_object` returns `UnsupportedMode` with `mode: "structured-output-json"` and `json_schema` returns `mode: "structured-output-json-schema"`, both with `backend: "anthropic"`. Supply a tool whose input schema is your schema plus a forcing `tool_choice` for structured Claude output. This applies to both `infer` and `infer_stream` (the streaming path performs the same rejection before credential lookup). **Known-remaining silent paths** (unchanged this pass): Bedrock Converse has no response-format field, so `response_format` is silently ignored on Bedrock models. The `parslee/*` proprietary endpoint rejects any `response_format` (`backend: "parslee-inference"`).
 - `params.tool_choice` is honored per provider, not just on OpenAI — but the supported vocabulary is provider-dependent:
   - **Portable subset** `"auto"` (default when tools present) / `"required"` / `"none"` — accepted on OpenAI-family, Anthropic, and Google. `"required"` maps to Anthropic `{"type":"any"}` and Google mode `ANY`.
   - **Forcing modes** `"any"` and a specific tool NAME — honored on **Anthropic** (`{"type":"any"}` / `{"type":"tool","name":...}`), **Google/Vertex** (mode `ANY`, a name adds `allowedFunctionNames: [name]`; previously hardcoded `AUTO`), and **Bedrock** (a name → `{"tool":{"name":...}}`). **OpenAI-family passes the `tool_choice` string through verbatim**, so `"any"` or a bare tool name is sent as-is and the OpenAI API 400s — use `"required"` there. This OpenAI passthrough is pre-existing and deliberately unchanged.
+  - **Managed (`parslee/*`) lane** — the shipped inference gateway speaks the OpenAI Responses contract, and CAR maps into it rather than passing through: `"auto"` → `"auto"`, `"required"` **and** `"any"` → `"required"`, `"none"` → `"none"`, and a specific tool NAME → `{"type":"function","name":...}` (a bare name is not valid on Responses). Two differences from every lane above, both deliberate: the mapping is applied instead of the OpenAI-family verbatim passthrough, so `"any"` and a tool name work here; and **an unset `tool_choice` emits no field at all** rather than defaulting to `"auto"` — this gateway answers an unexpected request field with an opaque HTTP-200 `event: error` that reads as "no content", so the field only rides when a caller asked for it. Before this, the managed request body carried `tools` but no choice at all, so tool use could not be forced on the managed lane (car#895).
   - **Caveats:** `params.parallel_tool_calls: false` adds Anthropic `disable_parallel_tool_use`. On Anthropic a forcing choice (`any` / a named tool) **wins over auto-enabled extended thinking** for that request — thinking is dropped and a warning logged (Anthropic rejects forced tool use + thinking). **Bedrock Converse has no `none` mode**: a `"none"` string falls through to a forced tool literally named "none" (`{"tool":{"name":"none"}}`), so `tool_choice: "none"` is effectively unsupported on Bedrock. `tool_choice` is only emitted when `tools` are present; OpenAI and Bedrock tool_choice mapping is otherwise unchanged.
 - `intent` is an optional `IntentHint` that lets callers express task semantics without pinning a model id. Shape: `{ task?: "chat" | "classify" | "summarize" | "reasoning" | "code" | "extract", prefer_local?: boolean, prefer_fast?: boolean, prefer_quality?: boolean, high_stakes?: boolean, require?: ModelCapability[] }`. When set together with `model`, the explicit model wins (`intent` is recorded for telemetry but does not override the pin). When set without `model`, the adaptive router uses `require` as a hard filter and `task` / `prefer_local` / `prefer_fast` / `prefer_quality` as score biases. `high_stakes` (consequential/irreversible work) forces the strongest quality posture and outranks every other bias — the daemon sets it automatically for `FullAccess`-granted sessions. Omitting `intent` preserves the no-hint adaptive routing behavior bit-for-bit. See `docs/proposals/policy-intent-surface.md` for the full surface.
 - **Prompt caching (Anthropic).** `cache_control: boolean` (top-level, default `false`) marks the system prompt, the last tool definition, and — for multi-turn requests (≥2 messages) — the growing conversation prefix with `cache_control` breakpoints so a shared prefix is read from cache (~0.1× input) instead of reprocessed. When `context_query` is set, the assembled memory context is split at the stable Identity+Constraints boundary and the system breakpoint is placed after it, so the stable prefix hits across queries instead of being re-written every request (the volatile facts/conversation/environment tail stays uncached). `context_stable_prefix` (a prefix of `context`) carries this hint explicitly for callers that build the context themselves; it is ignored unless it is a genuine prefix of the system and `cache_control` is on. `params.cache_ttl: "five_minutes" | "one_hour"` (default `"five_minutes"`) sets the cache lifetime uniformly across every breakpoint; use `"one_hour"` for agentic loops where minutes pass between calls (tool execution, HITL approval) so the prefix survives instead of silently expiring. The TTL is uniform per request, so Anthropic's "1-hour entries must precede 5-minute" ordering rule never applies. Ignored by non-Anthropic providers. When caching is requested but nothing was cached (prompt below the model's minimum cacheable length, ~1024 tokens on Opus 4.8, or a churning prefix), the daemon logs a debug line — there is no error, by Anthropic's design.
@@ -3873,6 +4118,43 @@ Orthogonal to the per-session standing tier above: a durable **per-agent** postu
   prompt footprint. They do not alter the provider payload and are not actual
   usage telemetry.
 - `usage` carries the prompt-cache split when the provider reports it: `{ prompt_tokens, completion_tokens, total_tokens, cache_read_input_tokens, cache_creation_input_tokens }`. `prompt_tokens` is the **uncached** prefix only; `cache_read_input_tokens` (hit) and `cache_creation_input_tokens` (write) account for the cached portion, so true input is the sum of all three. Both cache fields are `0` for uncached calls and non-caching providers. This is normalized across providers: Anthropic reports the uncached tail directly, while OpenAI's `cached_tokens` (Chat Completions `prompt_tokens_details` / Responses `input_tokens_details`) is subtracted out of `prompt_tokens` so the cached part isn't double-counted. The durable cost view (`outcomes.scoreboard`) prices each bucket at the provider's own cache rate — Anthropic ~0.1× read / ~1.25×–2× write, OpenAI ~0.5× read with no write charge.
+- **A content refusal is its own error code, `-32007` — not `-32603`.** When
+  something in FRONT of the model declines the request's content — a managed
+  gateway's content filter, a provider's moderation layer — `infer` (and
+  `infer_stream`, for a rejection raised before the stream opens) returns JSON-RPC
+  error `-32007` with a message prefixed `content refused:`, followed by the
+  provider's own text including its `type=` / `code=` tags where it sent them
+  (e.g. `content refused: parslee refused this request on content grounds
+  (type=invalid_request_error, code=content_policy_violation): …`). The numeric
+  code is the contract; the prefix is the fallback for consumers that only see
+  the flattened message string. **What to do with it:** record it as a policy
+  refusal and do **not** retry — the ruling is deterministic for that content, so
+  a retry replays it and spends the budget for nothing. It is not a fault
+  signal: it says nothing about the health of the model, the lane, or the
+  daemon, and CAR does not count it against the provider's circuit breaker.
+  Everything else — a crashed backend, a dead credential, a timeout — still
+  returns `-32603`, so `-32007` is safe to treat as "blocked, by design"
+  (Parslee-ai/car#796). **Both stream timings are covered.** A refusal raised
+  before the stream opens still carries its type, and one raised *mid-stream*
+  reaches the daemon as flattened text — but the verdict there is read from the
+  same `type=` / `code=` tags, using the same function the non-streaming path
+  uses, so `infer_stream` returns `-32007` either way. Note that a mid-stream
+  refusal can arrive *after* `inference.stream.event` frames have already
+  delivered partial text; the frames you received stand, and the call still ends
+  in `-32007`. A stream failure whose gateway sent no classification tags stays
+  `-32603`.
+
+  **A refusal reaches you instead of being answered by a fallback model.** CAR
+  normally advances its fallback chain when a candidate fails, and a remote-only
+  chain has an installed on-device model appended as its last resort. A content
+  refusal is exempt: the chain cannot vary the request, so every remaining
+  candidate would replay the payload the filter just declined — and the on-device
+  tail has no filter in front of it, so it would answer, and its answer would be
+  attributed to the model you asked for. That silent substitution is what made
+  the reported benchmark's counts move between runs. The chain now stops at the
+  refusal and returns `-32007`. If you *want* a fallback attempt for refused
+  content, make it yourself against an explicitly chosen second model — CAR will
+  not choose one for you behind a refusal.
 - **Local models report `usage` too.** The in-process MLX and Candle paths report the post-truncation prompt length and the number of tokens they sampled; the mlx-vlm CLI path reports the counts the CLI prints (image patches included). Both cache fields are always `0` — on-device inference has no remote prompt cache. `usage` is `null` only when nobody could produce a count: Apple FoundationModels (the framework exposes none), a delegated runner that emits no `usage` stream event, and an mlx-vlm build whose performance summary doesn't parse. `null` is deliberate rather than a zeroed struct — a consumer summing `total_tokens` can't distinguish a fabricated `0` from a real "this used no tokens", so treat `null` as "estimate it yourself" (car#795).
 
 #### `infer_stream`
@@ -3967,7 +4249,19 @@ monotonically increasing per session (the resume cursor for
 ```
 `type` values and their payload fields: `state_changed {from, to}`,
 `contract_proposed {contract}`, `engine_selected {engine, reason}`,
-`engine_fallback {from, to, reason}`, `iteration_started {n, max}`,
+`engine_fallback {from, to, reason}`,
+`model_fallback {from, to, reason}` (the preferred inference **lane** was
+skipped and a different MODEL served the call — distinct from
+`engine_fallback`, which is about the coder engine, native vs an external CLI,
+not the model behind it. Emitted at most once per **phase** — contract
+derivation, each contract revision, and the run loop announce independently, and
+a session that degrades in more than one of them emits more than one; the guard
+is against narrating every routing decision inside a phase, not against a second
+phase reporting a degrade the operator has not seen resolved. Currently emitted
+only when the skipped lane's credential was **rejected**: the run keeps working
+on a fallback backbone, so without this event an operator whose sign-in lapsed
+sees a healthy run on a model they never chose. `reason` names the remedy),
+`iteration_started {n, max}`,
 `budget_exhausted {reason, elapsed_secs, iterations}` (the session hit its
 wall-clock ceiling and the next iteration was not admitted; the session ends in
 `failed` — it does not reach the approval gate, which requires green checks —
@@ -3989,10 +4283,20 @@ pending, which is only discoverable by asking again, so a board kept rendering
 the question as live and counting it under "needs you" until the operator
 refreshed. It also drives the `coder.session_changed` that drops `needs_you`
 back to `null`,
-`auth_required {message, wait_secs}` (the run is blocked on **sign-in** and is
-waiting rather than failing — **not terminal**: if a credential appears within
-`wait_secs` the session resumes where it stopped, worktree intact, and no
-iteration is consumed). Surface this as an action the user can take ("sign in to
+`auth_required {message, wait_secs}` (the run is blocked on **sign-in**.
+`wait_secs > 0` means the loop is waiting rather than failing — **not terminal**:
+if a credential appears within `wait_secs` the session resumes where it stopped,
+worktree intact, and no iteration is consumed. `wait_secs: 0` means this emitter
+is **not** waiting and the call is ending: contract derivation and contract
+revision are synchronous RPCs the client is blocked on, and a run loop with no
+auth gate configured — the default adaptive-routing path — has nothing to poll a
+sign-in against, so it says "sign in" and then fails the turn normally instead of
+stalling for minutes — and it says it at most **once per run**, because it cannot
+resume, so the second and third strike would repeat a prompt that has not changed.
+A `wait_secs > 0` emitter repeats on every lapse instead: it can resume, so a
+second lapse after a successful sign-in is a new event the operator must act on
+again. Either way the remedy is the same: `car auth login`, then
+start or revise again). Surface this as an action the user can take ("sign in to
 continue"), not as an error: it is the one failure mode a person at the machine
 clears in seconds, and it previously surfaced as `no inference backend is
 available`, which points at models and accounts rather than at the sign-in it
@@ -4144,9 +4448,10 @@ Same pattern as `tools.execute`, but for delegating per-agent inference during `
 | `-32603` | Internal error (most runtime errors land here) |
 | `-32001` | Transport auth required; send `session.auth` first (connection closes) |
 | `-32003` | Approval denied or timed out |
-| `-32004` | Handler deadline exceeded; the operation may have committed, so consult the method's authoritative read before retrying |
+| `-32004` | Handler deadline exceeded; the operation may have committed, so consult the method's authoritative read before retrying. `proposal.submit`'s deadline is derived from the submitted proposal's action budgets rather than flat, so an in-budget proposal is not abandoned |
 | `-32005` | Protocol handshake required; `host.subscribe` / `auth.*` did not dispatch |
 | `-32006` | Protocol version missing, malformed, or incompatible |
+| `-32007` | Content refused — something in front of the model (a managed gateway's content filter, a provider's moderation layer) declined the request's content. Not a fault: record it as a policy refusal and do not retry. Message is prefixed `content refused:` |
 
 The error `message` field contains a human-readable description.
 

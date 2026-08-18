@@ -458,6 +458,147 @@ Reject when a JS callback returns truthy. Requires `registerAgentRunner` to have
 |-------|----------|-------|
 | `target` | yes | tool name to gate |
 
+### Declarative project rules (`.car/policies/*.toml`)
+
+The rules above are **registered by a caller** — `registerPolicy` over FFI, `session.init` over the WebSocket. The rules below are **loaded from files**: every `*.toml` in a `.car/policies/` directory is read in sorted filename order, merged into one rule set, and lowered onto the same `PolicyEngine`, so an operator can govern their own machine or project without patching CAR or writing host code.
+
+Which `.car` depends on who is loading:
+
+| Loader | Directory | Scope |
+|--------|-----------|-------|
+| The daemon, per session | `~/.car/policies/*.toml` | the operator's rules — the daemon serves whatever project a client happens to be in, so its rule set cannot be per-project |
+| `car do` / the assistant | `<working directory>/.car/policies/*.toml` | project-scoped; the working directory is `--dir` if given, otherwise `std::env::current_dir()` |
+
+> ⚠️ **There is no walk-up for `car do`.** It joins `.car/policies` onto its working directory and looks there, once. Invoked from a subdirectory of a repo, the repo-root `.car/policies/` is not loaded — and this fails **open**: no warning, no error, the rules just do not apply. Run from the project root or pass `--dir <project root>`.
+>
+> This is inconsistent with neighbouring `.car/` discovery, and worth knowing because the other docs say the opposite: `.car/connectors.toml` walks up from cwd (`car-connectors::team_connectors_path`), and the cookbook's project-directory chapter describes `.car/` discovery in general as walking up from cwd. Policies do not.
+
+Loading is strict. A missing `policies/` directory is not an error (most projects have none), but a present-but-malformed file **fails the session** — a security rule that fails to parse must surface rather than be silently skipped. The daemon refuses the WebSocket connection; `car do` prints the error and exits 2. In both cases the message names the offending file.
+
+Two of these keys share a name with a `registerPolicy` rule type (`deny_tool`, `deny_tool_param`) and mean the same thing; they are simply the file-authored form. The others exist only here. Every rule is a *prohibition* — matching an action produces a violation — with one exception, `allow_tool_param`, which inverts the polarity and denies everything it does not permit.
+
+A single file may set any combination of keys:
+
+```toml
+# .car/policies/security.toml
+deny_tool    = ["deploy", "rm"]
+deny_keyword = ["DROP TABLE", "rm -rf /"]
+
+[[deny_tool_param]]
+tool     = "http_request"
+param    = "url"
+contains = "169.254.169.254"
+```
+
+#### `deny_tool`
+Deny every action whose `tool` is named in the list.
+
+```toml
+deny_tool = ["deploy", "rm"]
+```
+
+| Param | Required | Notes |
+|-------|----------|-------|
+| (list of strings) | yes | tool names that may never be invoked |
+
+#### `deny_keyword`
+Deny any action — any tool — carrying this substring in **any** string-coerced parameter value. The coarse "never let this text near a tool" guard.
+
+```toml
+deny_keyword = ["DROP TABLE", "rm -rf /"]
+```
+
+| Param | Required | Notes |
+|-------|----------|-------|
+| (list of strings) | yes | case-sensitive substrings; matched against every parameter of every action |
+
+#### `deny_tool_param`
+Deny an action when `tool` matches and its `param` satisfies the stated condition. Set `equals` for an exact JSON-value match, `contains` for a case-sensitive substring of the string-coerced value, or both (then both must hold). With neither set the rule is a *presence* deny — any call to `tool` that carries `param` at all is denied. A parameter that is absent is never a violation.
+
+```toml
+[[deny_tool_param]]
+tool     = "http_request"
+param    = "url"
+contains = "169.254.169.254"   # block cloud metadata exfiltration
+
+[[deny_tool_param]]
+tool   = "shell"
+param  = "command"
+equals = "shutdown"
+```
+
+| Param | Required | Notes |
+|-------|----------|-------|
+| `tool` | yes | tool name the rule applies to |
+| `param` | yes | parameter key inspected on the action |
+| `equals` | no | deny when the parameter equals this JSON value exactly |
+| `contains` | no | deny when the parameter's string form contains this substring |
+
+#### `allow_tool_param`
+The only **allowlist** in the format, and the only rule that denies an action for what it does *not* say. When an action calls `tool`, it is denied unless it carries `param` and that parameter's string form is exactly one of the entries in `allow`. Comparison is exact and case-sensitive. Actions for any other tool are untouched — one rule governs one tool.
+
+It fails closed in all three ways it can fail: an absent parameter is denied (nothing proves the call is permitted), an empty `allow` denies every call to the tool, and a present-but-unlisted value is denied.
+
+```toml
+[[allow_tool_param]]
+tool  = "deploy"
+param = "target"
+allow = ["staging", "preview"]   # any other target — or none at all — is denied
+```
+
+| Param | Required | Notes |
+|-------|----------|-------|
+| `tool` | yes | tool name the rule applies to |
+| `param` | yes | parameter key that must be present and allowlisted |
+| `allow` | no | permitted values; defaults to empty, which denies every call |
+
+#### `deny_tool_param_matching`
+The content counterpart to `deny_tool_param`, for prohibitions no fixed substring expresses — credential shapes, account numbers, an address family. `matches` is a regex over the string-coerced parameter value. The match is **unanchored**, so the pattern fires anywhere in the value; anchor it with `^`/`$` when that matters. Like `deny_tool_param`, an absent parameter is not a violation — use `allow_tool_param` when absence itself must be refused.
+
+The pattern is compiled once when the rule set is applied, not per action. A pattern that fails to compile **denies every call to that tool** rather than disappearing, matching the loader's loud-error posture.
+
+```toml
+[[deny_tool_param_matching]]
+tool    = "http_request"
+param   = "body"
+matches = "sk-[A-Za-z0-9]{20,}"   # never let an API-key-shaped string leave in a body
+```
+
+| Param | Required | Notes |
+|-------|----------|-------|
+| `tool` | yes | tool name the rule applies to |
+| `param` | yes | parameter key inspected on the action |
+| `matches` | yes | regex source; unanchored; an uncompilable pattern denies the tool outright |
+
+#### `rate_limit_tool`
+A sliding-window cap on how often `tool` may be called. The call is denied when admitting it would make it the `max_calls + 1`-th call to `tool` within the trailing `interval_secs`. `max_calls = 0` denies every call. This bounds how much of a side effect an agent can produce in a stretch of wall-clock time, independently of whether any single call is legitimate.
+
+Two behaviours are load-bearing:
+
+- **Budget is consumed at admission, not at delivery.** A call this rule admits that later fails at dispatch still occupies its slot in the window. The cap bounds *attempts*, not confirmed successes — the conservative direction for a rule whose job is to bound blast radius.
+- **Only a call denied *by this rule* consumes no budget.** Being refused for being over the cap does not push the window further out, so a caller that keeps retrying into a full window is admitted again as soon as the oldest admitted call ages out. A call refused by a *different* rule is not free: the policy engine collects every violation instead of stopping at the first, so the rate-limit check has already run and taken the slot. Size a cap on total attempts, not on the ones you expect to get through.
+
+The window is per rule and per policy engine, starts empty, and is not persisted. **On the daemon that means per WebSocket connection, not per machine** — `create_session` builds a fresh runtime, and so a fresh engine, for every accepted connection. Two agents connected at once each get a full budget, and an agent that reconnects starts a new window immediately. Size a cap for one agent-session's blast radius; it is not a machine-wide quota. Under `car do` the assistant builds one runtime per run, so there the window is the run.
+
+```toml
+[[rate_limit_tool]]
+tool          = "http_request"
+max_calls     = 10
+interval_secs = 60.0
+```
+
+| Param | Required | Notes |
+|-------|----------|-------|
+| `tool` | yes | tool name the rule applies to |
+| `max_calls` | yes | calls permitted within the window; `0` denies every call |
+| `interval_secs` | yes | window length in seconds |
+
+A seventh key, `trace_rule`, expresses temporal constraints over the run's execution trace (`car-verify::trace_policy`). Unlike the six above it is **stateful** — evaluated against what has already run — so it cannot be registered as a per-action check and would have to be enforced at dispatch by a `TraceGate`.
+
+**Nothing builds that gate outside tests, so loading a `[[trace_rule]]` is refused rather than accepted.** A policy file carrying one fails to load and names itself, instead of reporting a rule the runtime would never apply. The key is documented here so the error is recognisable, not because it is available: today, express the prohibition with one of the six enforced kinds above.
+
+Violations from these rules carry a stable rule name derived from the rule itself: `deny_tool:deploy`, `deny_keyword:rm -rf /`, `deny_tool_param:http_request.url`, `allow_tool_param:deploy.target`, `deny_tool_param_matching:http_request.body`, `rate_limit_tool:http_request`. Neither the offending value nor the regex-matched text appears in the message — the matched text is precisely the secret such a rule exists to catch, and violation reasons are written to the event log.
+
 ### Policy violations
 
 When a policy denies an action, the runtime emits a `PolicyViolation`:
