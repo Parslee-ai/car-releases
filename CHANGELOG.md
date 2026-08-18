@@ -3,6 +3,9 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.48.0] — 2026-08-18
+Added; Added; Fixed; Added. See the [release notes][v0.48.0].
+
 ## [v0.47.0] — 2026-08-08
 Added; Changed; Added; Fixed. See the [release notes][v0.47.0].
 
@@ -204,6 +207,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.48.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.48.0
 [v0.47.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.47.0
 [v0.46.1]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.46.1
 [v0.46.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.46.0
