@@ -76,7 +76,7 @@ log "extracting"
 mkdir -p "$CAR_INSTALL/bin"
 tar -xzf "$tmp/${asset}" -C "$tmp"
 
-for bin in car car-server car-memgine-eval; do
+for bin in car car-server car-memgine-eval car-mcp; do
     if [ -f "$tmp/$bin" ]; then
         install -m 0755 "$tmp/$bin" "$CAR_INSTALL/bin/$bin"
     else

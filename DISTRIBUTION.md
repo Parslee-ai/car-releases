@@ -73,7 +73,8 @@ Kotlin/Android `.aar` parity is tracked separately.
 
 ### CLI + server
 
-The CLI (`car`), server (`car-server`), and eval bridge (`car-memgine-eval`) ship
+The CLI (`car`), server (`car-server`), eval bridge (`car-memgine-eval`), and
+stdio MCP server (`car-mcp`) ship
 as native binaries.
 
 - **Homebrew** (macOS + Linux): `brew install Parslee-ai/car/car`
@@ -109,7 +110,7 @@ to the newest:
 
 | Asset | Contents |
 |-------|----------|
-| `car-<platform>.tar.gz` / `.zip` | `car`, `car-server`, `car-memgine-eval`, the `.node` module |
+| `car-<platform>.tar.gz` / `.zip` | `car`, `car-server`, `car-memgine-eval`, `car-mcp`, the `.node` module |
 | `car-runtime.<platform>.node` | Node native addon, standalone |
 | `car_runtime-<ver>-cp39-abi3-<platform>.whl` | Python wheel (carries the version — no `latest` URL) |
 | `CAR-darwin-arm64.pkg` | macOS app + CLI installer (signed/notarized) |
