@@ -26,8 +26,21 @@ Clients negotiate it with an additive `server.handshake` RPC, run once after `se
  "params": {"protocol_version": 2, "client_version": "0.25.0"}}
 // ← server reply
 {"jsonrpc": "2.0", "id": 1,
- "result": {"protocol_version": 2, "server_version": "0.25.0", "client_protocol_version": 2}}
+ "result": {"protocol_version": 2, "server_version": "0.25.0", "client_protocol_version": 2,
+            "client_version": "0.25.0",
+            "assistant_name": "Jarvis",
+            "assistant_aliases": ["hey jarvis", "ok jarvis", "jarvis"],
+            "assistant_brand": "Parslee Core"}}
 ```
+
+The three `assistant_*` fields carry the name this user chose for the flagship
+assistant (see [`assistant.identity.*`](#assistant)). They ride on the handshake
+every client already performs, so a host can render "Ask Jarvis" on its first
+frame and its in-app wake matcher can listen for the right word immediately —
+no extra round trip, and no window where the composer offers one name while the
+agent answers to another. They are **additive**, so they did not bump
+`PROTOCOL_VERSION`: an older client ignores them and keeps its built-in
+defaults. `assistant_brand` is the fixed product name and never changes.
 
 Protocol v2 is exact-version and fail-closed for the host/auth surface:
 
@@ -42,6 +55,19 @@ The bundled NAPI/PyO3/UniFFI clients run this handshake automatically (via
 and the native macOS/iOS/Android/Windows hosts negotiate before subscribing.
 The bindings expose the constant as `protocolVersion()` /
 `protocol_version()`.
+
+`client_version` is the build the *client* reported in its request, echoed back
+(truncated to 64 characters, since it is client-controlled). It is an echo, not
+a census — a client that reports nothing reads back `unknown`, which today
+includes the native CarHost macOS/iOS/Android clients and the web dashboard.
+It matters because it is otherwise unobservable: on macOS `car --version` reads
+`/usr/local/bin/car`, a symlink into `CarHost.app`, so it answers for the bundled
+CLI — a different component from the `car-runtime` npm/PyPI package that may have
+made the call. The bindings expose their own build as `clientVersion()` /
+`client_version()` (and Python `car_runtime.__version__`), and the daemon's
+version-skew notice names whichever of the two is actually stale plus a command
+that reaches it (Parslee-ai/car#1050). Echoing is additive — an older client
+ignores the field.
 
 ## Sibling endpoints on the same daemon
 
@@ -345,7 +371,11 @@ The same callback pattern applies to multi-agent (`multi.swarm`, `multi.pipeline
 
 Some calls produce ongoing events. After subscribing, clients receive:
 
-- `host.event` — agent registered/unregistered, status changed, approval requested/resolved
+- `host.event` — agent registered/unregistered, status changed, approval
+  requested/resolved, and browser sign-in needed/resolved (see the `kind`
+  list under `host.event` in the notification reference — sign-in attention
+  is deliberately here, not on `browser.view.event`, because this channel is
+  on whether or not the drawer is)
 - `auth.credential.event` — host-only, process-owned Parslee credential-read
   lifecycle `{ generation, state }`, where `state` is `pending`, `configured`,
   `signed_out`, `denied`, `cancelled`, `timed_out`, or `unreadable`. One
@@ -935,7 +965,116 @@ handshake step is skipped entirely.
 - **Params**: `{ account_id?: string }`
 - **Returns**: settings/UI data for account configuration
 
+### assistant
+
+The name the flagship assistant answers to — in its own system prompt, in every
+host's addressing copy, and as its voice wake word. One record
+(`~/.car/identity.json`, via the `car-identity` crate) feeds all three.
+
+Not to be confused with `assistants.invoke` (invoking a *named assistant*) or
+with `session.identity` (which identifies the connected *client*).
+
+#### `assistant.identity.get`
+- **Params**: `{}`
+- **Returns**: `{ name, spellings: string[], aliases: string[], user_name: string | null, brand, updated_at_unix }`
+- `aliases` is derived, not stored: the name and its alternate spellings crossed
+  with `hey`/`hi`/`ok`/`okay`, longest first. Hosts match wake phrases against it
+  **locally** (their matcher has to work before the daemon answers), and deriving
+  it in one place is what keeps Swift, Kotlin, and Rust from drifting into three
+  different wake sets.
+- `spellings` are the ways speech-to-text is likely to mangle the name
+  (`jervis` for `Jarvis`). The shipped default carries `parsley` for `Parslee`,
+  which is the existing proof that one spelling never survives STT.
+- `brand` is the fixed product name (`Parslee Core`) and never changes. The
+  chosen name is a nickname layered on top: store copy uses `brand`, addressing
+  copy uses `name`.
+- **Ungated**, unlike the neighbouring `openrouter.status`. A name is not a
+  credential — it is what every connected surface must render to address the
+  assistant at all, and mobile hosts reach the daemon without approval
+  authority. It also ships in the `server.handshake` reply, so gating the RPC
+  would protect nothing while breaking mobile.
+- A malformed `identity.json` is an **error**, not a silent fall back to the
+  default name. This is the surface a user checks when the assistant stopped
+  answering to the name they set, and "everything is fine, it's called Parslee"
+  is the least useful possible answer.
+
+#### `assistant.identity.set`
+- **Params**: `{ name?: string, spellings?: string[], user_name?: string | null }`
+- **Returns**: the updated identity, same shape as `assistant.identity.get`
+- Read-modify-write: every field is optional and unset fields are preserved, so
+  a host that only knows about the name cannot wipe spellings a voice-settings
+  pane wrote. Pass `user_name: null` to clear it.
+- `name` is validated: 1–32 characters, at least one letter or digit, and not a
+  conversational role (`system`, `user`, `assistant`, …).
+- **Host/local-auth gated** (`require_approval_authority`), the same trust root
+  as `auth.*` / `openrouter.*` / `messaging.*`. A rename repoints the voice wake
+  word; an ungated write would let any authenticated local connection make the
+  assistant stop answering to the name its user knows.
+- Broadcasts `host.event { kind: "assistant.identity.changed", payload: <identity> }`
+  so a live rename reaches open sessions without a reconnect.
+
+The assistant can also rename itself through the gated `set_assistant_name`
+tool, which is what makes "call yourself Friday" work hands-free. That tool is
+routed through human approval on **every** session including `--full-access`
+ones — unlike the tier-gated write tools, the risk there is not what the session
+may do but where the instruction came from, since a rename can arrive inside a
+fetched page, a file, or a recalled memory.
+
 ### browser
+
+`browser.run` / `browser.close` is a per-connection **scripted** browser —
+the caller sends a script, gets a trace back, nothing streams. The
+**browser drawer surface** documented below it is a different feature
+entirely: a live, two-way, host-facing window onto the browser a CAR agent
+(or the shared standing session) is *actually* using — built for the
+Command Deck's drawer. It has three families:
+
+- **`browser.view.*`** — the HOST side: subscribe, drive input, take/hand
+  back control. **Host-management-client only**
+  (`session.auth { host_token }`) — deliberately **stricter** than
+  `runs.subscribe`, which also admits the run's owning agent: frames here
+  ARE page screenshots and the input methods drive a logged-in browser, so
+  admitting an agent would hand it perception and actuation outside the
+  `full_access` `browse_*` tool tier, and would let it read a page during
+  the privacy blackout that exists to keep it out.
+- **`browser.producer.*`** — the AGENT side: a supervised `car do --serve`
+  process publishing ITS OWN browser so `browser.view.*` can serve it.
+  Agent-session only (`session.auth { token, agent_id }`).
+- **`agent.browser.*`** — reverse calls the DAEMON makes on the agent's own
+  session (input/control/capture) to drive a relayed browser, the mirror
+  image of `agent.chat`.
+
+**All three families are WS-only — no FFI binding on any of the twenty-four
+methods/events below** (the sixteen `browser.view.*` methods + its
+`browser.view.event` notification, plus the seven Task 4b added:
+`browser.producer.register`, the `browser.producer.presentation` /
+`browser.producer.frame` notification pair, and `agent.browser.input` /
+`agent.browser.control` / `agent.browser.capture` /
+`agent.browser.host_connected`). `browser.view.*` mirrors the `runs.subscribe` /
+`coder.subscribe` precedent exactly: its authorization is CarHost-only, so
+there is no JS/Python SDK caller to bind. `browser.producer.*` /
+`agent.browser.*` mirrors `agent.chat` / `agent.chat.event`: today the only
+producer is the Rust `car-cli` binary (`car do --serve`) talking to the
+daemon over its own `DaemonClient` session in-process, and there is no
+generic "register a browser producer" callback primitive exposed to
+JS/Python (unlike `register_chat_handler` for `agent.chat`) — adding one
+would be inventing a new binding mechanism, not documenting an existing
+one. See
+[`docs/host-protocol.md`](./host-protocol.md#live-browser-view-browserviewsubscribe--browserviewevent)
+for the reconnect/cursor/authorization contract, written in the same voice
+as `runs.subscribe`'s; this section is the field-level params/returns
+reference.
+
+Every `browser.view.*` method shares the envelope field
+`conversation_id?: string | null` — omitted or `null` means the **standing
+session**, the one shared browser every conversation without an
+agent-attached browser shows. A `browser.view.*` response always echoes the
+`conversation_id` it was given and adds `standing_session: bool`.
+
+`browser.producer.register` takes the same field but **requires a non-empty
+value**: there is no standing session to publish — that browser is the
+daemon's own — so an omitted, null or empty `conversation_id` is refused
+(see its own entry below).
 
 #### `browser.run`
 - **Params**: `{ script: string | object, width?: number = 1280, height?: number = 720, headed?: boolean = false }`
@@ -945,6 +1084,133 @@ handshake step is skipped entirely.
 #### `browser.close`
 - **Params**: `{}`
 - **Returns**: `{ closed: boolean }`
+
+#### `browser.view.subscribe`
+- **Params**: `{ conversation_id?: string | null }`
+- **Returns** (the snapshot at a cursor): `{ conversation_id, standing_session, cursor, presentation }` where `cursor` (`u64`) is the event boundary the daemon streams strictly after and `presentation` is a `Presentation` object (below).
+- **Atomicity.** The presentation read and the subscriber registration happen under the same lock every emitter holds, so the snapshot covers exactly the events through `cursor` — no gap, no duplicate, at the boundary. Subscribing does **not** launch Chromium.
+- **Re-subscribing** on the same connection replaces the prior subscriber and re-snapshots — the reconnect path.
+- **Unknown conversation**: `` no browser view for conversation '<id>' — that conversation has no agent-attached browser; omit `conversation_id` for the standing session ``. A drawer opened on a conversation with no turn yet gets this and falls back to the standing session (see `browser.producer.register` below — a conversation resolves only once its agent has registered it, from the start of its first turn).
+- **Authorization** — see the section intro above; checked *before* params are parsed and before any view is resolved, so an unauthorized caller never learns whether a conversation exists: `not authorized to use browser.view.*: this connection is not the host management client (session.auth { host_token })`.
+- **WS-only** — no FFI binding (CarHost consumes the notification, same contract as `runs.subscribe`).
+
+#### `browser.view.unsubscribe`
+- **Params**: `{ conversation_id?: string | null }`
+- **Returns**: `{ conversation_id, removed: bool }` — idempotent; `removed: false` when there was nothing to remove. No authorization gate beyond the base check — removing your own subscription leaks nothing.
+- **WS-only** — no FFI binding.
+
+#### `browser.view.take_control` / `browser.view.hand_back`
+- **Params**: `{ conversation_id?: string | null }`
+- **Returns**: the same shape as `browser.view.subscribe`'s reply (`conversation_id, standing_session, cursor, presentation`).
+- `take_control` records the calling connection as the control holder and drives the control reducer's `TakeControl` transition. `hand_back` clears the holder, drives `HandBack` (which also resolves a pending sign-in), and returns control to the agent.
+- **Both are gated on holding control, exactly like the input methods.** Only the connection that took control may take it again or hand it back — or any authorized connection when nobody holds it (nothing has been taken, or the holder disconnected). Otherwise: `another connection holds control of this browser — it must hand back before another can take control` / `another connection holds control of this browser — only the control holder may hand it back`. Gating `hand_back` alone would not have closed the case it exists for: a second connection could simply `take_control` first, overwriting the holder, and then hand back. `take_control` also records a holder only when the reducer actually moved ownership to the user — on the standing session it is a documented no-op, and recording one there would lock every other connection out of a browser nobody had taken. Without this, a second host connection could revert the browser to the agent while the holder was mid-sign-in, resolving their pending sign-in and lifting the privacy blackout underneath them.
+- **A holder that disconnects is cleared immediately**, not at the end of the grace period: the connection is provably gone, and the reducer does not always ask for a grace timer (a relayed transition that fails to reach a wedged agent process returns no effects at all). Ownership reversion is still the timer's job. While ownership sits with the user and no connection holds it, any authorized connection may drive and hand back — "a person has control but we do not know which connection" must not mean nobody may.
+- **The browser is driven first; the daemon's record of who holds control moves only on success.** On a **relayed** view (a supervised agent process's browser), a transition that never reached the process leaves both sides agreeing — the call fails and nothing changed, so the drawer can retry safely rather than believing it holds control it does not. New failure modes, relay-only: `the agent process serving this browser is unreachable: <e>` · `the agent process serving this browser disconnected before answering` · ``the agent process serving this browser did not answer `agent.browser.control` within 30s`` · `the agent process that owns this browser has disconnected — its browser is gone`.
+- **WS-only** — no FFI binding.
+
+#### The input methods
+All take the shared envelope plus their own fields; all return `{ ok: true, conversation_id }` (plus `tab_id` for `tab_open`).
+
+| Method | Extra params |
+|---|---|
+| `browser.view.navigate` | `{ url: string }` |
+| `browser.view.click` | `{ x: number, y: number }` — viewport pixels, matching the frame's `width`/`height` |
+| `browser.view.type` | `{ text: string }` |
+| `browser.view.keypress` | `{ key: string, modifiers?: ("alt" \| "control" \| "meta" \| "shift")[] }` |
+| `browser.view.scroll` | `{ delta_y: integer }` |
+| `browser.view.paste` | `{ text: string }` |
+| `browser.view.back` | — |
+| `browser.view.forward` | — |
+| `browser.view.reload` | — |
+| `browser.view.tab_open` | — (response adds `tab_id: string`) |
+| `browser.view.tab_close` | `{ tab_id: string }` |
+| `browser.view.tab_switch` | `{ tab_id: string }` |
+
+- Modifier aliases (case-insensitive): `alt`/`option`, `control`/`ctrl`, `meta`/`command`/`cmd`, `shift`. An unknown name is a clean error — `unknown modifier '<x>' — use alt, control, meta, or shift` — never silently dropped.
+- `tab_id` is the tab's opaque id rendered as a string (`"tab-3"`), exactly as it appears in `presentation.tabs[].id`. Ids are never reused, so a stale one errors cleanly: `no open tab '<id>'`.
+- **`browser.view.paste` carries the TEXT, and a client MUST NOT synthesise ⌘V as a keypress.** The clipboard belongs to the host's OS; CDP's `Input.dispatchKeyEvent` reaches only the page and has no access to a clipboard, so an injected Cmd+V delivers a key event and nothing arrives — silently. The host reads its own pasteboard and sends the string, which the daemon applies with `Input.insertText`: one insertion that replaces the selection, rather than N keydown handlers a page could read as N keystrokes. This is also why `browser.view.type` is not a substitute — it types character by character. Errors are the ordinary input family: `browser.view.paste requires { text }`, `no browser is running for this view — navigate to a page first`, and `paste: <e>` for a browser-level failure.
+- **Editing keys work through `browser.view.keypress`.** `Backspace`, `Delete`, `Tab`, `Enter`, `Escape`, the four arrows, `Home`/`End`/`PageUp`/`PageDown`, and any single printable character are sent with the `code`, `windowsVirtualKeyCode` and `text` Chromium's editing layer requires — without those it delivers a DOM event the page can observe and performs no edit. `text` is suppressed while Control or Meta is held, so `⌘A` selects rather than typing an `a`. An unrecognised key name still dispatches under its own `key`.
+- **The three nav-bar history buttons — `back` / `forward` / `reload` — take no params of their own**: which page they act on is the ACTIVE tab's own history, per tab. They drive Chromium's real session history over CDP (`Page.navigateToHistoryEntry` on the adjacent entry, `Page.reload`); a synthesised ⌘←/⌘→ keypress does **not** move history, because the shortcut is browser chrome the CDP input domain never reaches — it injects into the page instead. Whether each is available is already on the wire: `presentation.tabs[].can_go_back` / `can_go_forward` are what a nav bar disables its buttons from. A tab is born at `about:blank` and Chromium records that as history entry zero, so `can_go_back` deliberately EXCLUDES it — Back enables after the *second* navigation, and never lands on a blank page that would read as the empty state. (A later, deliberate navigation to `about:blank` is a real entry and does count.) Calling one anyway (a race, or a client bug) is a clean error, never a hang or a silent success: `no page to go back to` · `no page to go forward to`.
+- **Who may call them**, checked immediately after view resolution:
+
+  | Control state | Who may drive |
+  |---|---|
+  | `owner: "none"` (no agent involved) | any authorized connection — zero ceremony |
+  | a sign-in is pending | any authorized connection — a human must be able to type credentials |
+  | `owner: "user"` | only the connection that called `take_control` |
+  | `owner: "agent"` | nobody, until `take_control` |
+
+  Errors: `the agent holds control of this browser — call browser.view.take_control first` · `another connection holds control of this browser — input is accepted only from the control holder`.
+- **Which can launch Chromium**: only `navigate` and `tab_open` — the standing session comes to life on the user's first navigation. Every other input against no running browser errors cleanly: `no browser is running for this view — navigate to a page first`. That is also `reload`'s answer on the empty state, which is what "reload is inactive on the empty state" means on the wire.
+- **Validation happens before the view is touched**, so a malformed call is refused identically whether the browser is local to the daemon or relayed to a supervised agent process, and a relayed call never pays a round trip for a request that could never have worked: `browser.view.navigate requires { url }` · `` navigate requires a non-empty `url` `` · `browser.view.click requires { x, y }` · `browser.view.type requires { text }` · `browser.view.keypress requires { key }` · `browser.view.scroll requires { delta_y }` · `browser.view.tab_close requires { tab_id }` · `browser.view.tab_switch requires { tab_id }`. `back`/`forward`/`reload` have nothing to validate. Browser-level failures: `navigate to <url>: <e>` · `click: <e>` · `type: <e>` · `keypress: <e>` · `scroll: <e>` · `reload: <e>` · `open tab: <e>` · `close tab: <e>` · `switch tab: <e>`.
+- **A pending sign-in relaxes the input gate for the agent's browser, not for a browser someone has taken.** While a sign-in is pending and the agent still owns the browser, any authorized connection may drive — that is how a person completes a sign-in without pressing Take control. Once a connection takes control the ordinary holder rule applies again (the sign-in stays pending; `take_control` does not clear it), so another connection is refused with `another connection holds control of this browser — input is accepted only from the control holder`.
+- **On a relayed view, the control gate is re-checked a second time — in the agent process, immediately before injection.** The daemon's own check reads a *cached* presentation, and on the relay path that read is separated from the injection by a WS round trip; without the second check a user's click could land after the agent legitimately resumed driving, one hop late. Both checks answer the identical string, so a person cannot tell which one refused them.
+- **WS-only** — no FFI binding, for all twelve.
+
+#### `browser.view.event` (server → client notification)
+Pushed once per event to every `(connection, view)` subscriber. Shape (a tagged union flattened onto the envelope): `{ conversation_id, cursor, kind: "presentation", presentation }` or `{ conversation_id, cursor, kind: "frame", frame }`.
+
+- `cursor` (`u64`) counts **all** events — presentation deltas and frames alike. A subscriber at `n` expects `n+1`; a jump means the daemon dropped an event for a slow subscriber, and the fix is to re-subscribe (fresh snapshot + fresh cursor). `presentation.revision` is a **separate** counter that advances only when the presentation actually changed, and it is **per producer** — it can reset when a view's producer is replaced (a restarted supervised process starts its own counter at 0). `cursor`, by contrast, is per **view** and never resets and never moves backwards, including across that handover — a client should gap-detect on `cursor`, never on `revision`.
+- `frame`: `{ jpeg_base64: string, width: number, height: number, device_pixel_ratio: number, captured_at: number }` — standard base64, no `data:` prefix; `captured_at` is wall-clock seconds since THIS subscription started (frames are change-driven, not fixed-rate).
+- **Bounded channel + drain task per subscriber**, capacity 32 (`BROWSER_VIEW_CHANNEL_CAP`) — small on purpose, since a slot can hold a full-viewport JPEG. A full channel **drops the event**; the subscriber stays registered and recovers by detecting the cursor gap and re-subscribing (it is not evicted).
+- **Explicit fanout** — each `(connection, view)` is its own subscriber, so two Command Deck windows on the same browser both get every event.
+- **WS-only** — no FFI binding; no dispatch arm in `handler.rs` (a push notification, like `runs.trace.event`).
+
+#### `browser.producer.register`
+- **Params**: `{ conversation_id: string, presentation?: Presentation }` — `conversation_id` is the `agents.chat` `session_id`, required and non-empty; `presentation` optionally seeds the cache the daemon serves reads from.
+- **Returns**: `{ ok: true, conversation_id, host_connected: boolean, capture: boolean }` — `capture` is whether anything is currently watching this producer's browser, and the producer MUST apply it: the daemon's capture signal is per-connection and edge-published while a supervised process's own capture state survives the connection, so a process that was capturing when its session dropped would otherwise keep screencasting and pushing frames under a fresh producer that never tells it to stop. `host_connected` is whether a CarHost host-client is connected to the daemon right now (`ServerState::any_host_connected`). This is how a supervised process learns to launch its own browser headless (the drawer is its face) vs headed (no host, so `browser_await_signin` still needs a visible window) — see `assistant::browser_tools::HostConnectivity` and the freshness note on `assistant::browser_producer::BrowserProducer`: refreshed on every registration that actually reaches the daemon (the first for a given conversation, and any resync after a reconnect), not continuously.
+- **Idempotent for the same connection.** A supervised process registers on every chat turn; re-registering the same conversation on the same session is a no-op that keeps the existing view, its subscribers and its cursor. A DIFFERENT process claiming the key **replaces** the view (the same `adopt` handover Task 4 built for run replacement), carrying subscribers and cursor across.
+- **Admission — a live turn OR a binding this agent already established.** A conversation may be claimed by the agent serving a *live* chat turn for it, or, between turns, by the agent that established the FIRST such claim (the daemon remembers the binding in `ProducerRegistry`). A live turn for a different agent beats a stale binding; another agent's binding, and a conversation nobody has ever served, are both refused. This widens *liveness*, not authorization — the agent_id↔conversation binding is still validated against the daemon's own record on every claim. **A full daemon restart clears these bindings** (they are in-memory only): those conversations resolve as "no browser view" — the drawer falls back to the standing session, the same state as a conversation that has not had a turn yet — until their next turn.
+- Errors: `browser.producer.register requires a non-empty { conversation_id }` · `conversation '<id>' is served by agent '<other>', not '<agent>'` · `conversation '<id>' is not an active chat session for agent '<agent>' — register from inside the turn that serves it` · ``browser.producer.register `presentation` is not a presentation object: <serde error>``.
+- **Authorization**: agent session only — `not authorized to use browser.producer.*: this connection is not a supervised agent (session.auth { token, agent_id })`.
+- **WS-only** — no FFI binding.
+
+#### `browser.producer.presentation` / `browser.producer.frame` (client → server notifications, no `id`)
+- `browser.producer.presentation`: `{ presentation: Presentation }`. `browser.producer.frame`: `{ frame }`, the same shape as `browser.view.event`'s frame payload.
+- Pushed by the agent process whenever its browser changes (presentation) or while a drawer is watching it (frame) — capture is **reference-counted at the producer**: 0→1 watching views asks the process to start capturing, 1→0 asks it to stop, so a browser nobody has a drawer open on pays for no CDP screencast and no WS traffic. Both are recognized and silently dropped, not errored, when the sending connection has no registered producer — and both fall through to the ordinary auth gate (which rejects and closes) on a connection that has not authenticated against a daemon that requires it.
+- **A frame is capped at `MAX_PRODUCER_FRAME_BYTES` (8 MiB of base64) and dropped with a log above it.** A registered producer already runs arbitrary code on the box, so this is not a privilege boundary — but the daemon is the shared component, one frame fans out to every watching view, and the only bound underneath is tungstenite's 64 MiB message cap. A 1920x1080 quality-60 JPEG is a few hundred KB.
+- **A frame reaches only the views somebody is actually watching.** A view with no subscribers is skipped entirely, and its cursor does not advance — which is invisible to a later subscriber, since `browser.view.subscribe` hands out the view's CURRENT cursor.
+- **WS-only** — no FFI binding; no dispatch arm in `handler.rs` (intercepted ahead of method dispatch since a notification carries no `id`, the same shape as `agent.chat.event`'s interceptor).
+
+#### `agent.browser.input`, `agent.browser.control`, `agent.browser.capture`, `agent.browser.host_connected` (daemon → agent reverse calls)
+The mirror image of `agent.chat`: the DAEMON calls these on the agent process's own WS session — the same string-request-id / oneshot / response-demuxer machinery `agent.chat` uses — bounded by `RELAY_CALL_TIMEOUT` (30s).
+
+- **`agent.browser.input`** — params are one of `{ op: "navigate", url }` · `{ op: "click", x, y }` · `{ op: "type", text }` · `{ op: "keypress", key, modifiers? }` · `{ op: "scroll", delta_y }` · `{ op: "paste", text }` · `{ op: "back" }` · `{ op: "forward" }` · `{ op: "reload" }` · `{ op: "tab_open" }` · `{ op: "tab_close", tab_id }` · `{ op: "tab_switch", tab_id }`. Returns `{ ok: true }` (plus `tab_id` for `tab_open`). Runs through the **same code** the in-daemon `browser.view.*` input path runs (`ViewInput::apply`), error strings included, and re-checks the control state in the process that owns the browser immediately before injecting — refused with `the agent holds control of this browser — call browser.view.take_control first` when the agent is driving and no sign-in is pending. Applied one at a time per process (the daemon dispatches each relayed call on its own task, so two keystrokes in flight can otherwise interleave mid-`apply`), and that wait is bounded at `INPUT_QUEUE_TIMEOUT`: an input still queued past it is refused with `the browser is still applying earlier input — the drawer gave up waiting for this one` rather than applied, because by then the daemon has already answered the drawer with an error and applying it would put a click on a page the person moved on from. Errors: `agent.browser.input requires { op }` · `` agent.browser.input `<op>` requires { <field> } `` · `` agent.browser.input `click` requires { x, y } `` · `` agent.browser.input `keypress` modifiers must be strings `` · `unknown agent.browser.input op '<x>'`.
+- **`agent.browser.control`** — params `{ action: "take_control" | "hand_back" | "run_ended" | "holder_disconnected" | "grace_expired" }`. Returns `{ presentation, effects }` where `effects` is `[{ effect: "start_grace_period" }]` or `[{ effect: "sign_in_resolved", signed_in: bool }]` — they cross back because the daemon owns the clock the grace period runs on. An effect the daemon does not recognize is dropped rather than failing the transition, so a newer process talking to an older daemon can still hand control back. Errors: `agent.browser.control requires { action }` · `unknown agent.browser.control action '<x>' — use take_control, hand_back, run_ended, holder_disconnected or grace_expired`.
+- **`agent.browser.capture`** — params `{ enabled: boolean }` → `{ ok: true }`. Toggles the agent process's frame pump; see the reference-counting note on `browser.producer.frame` above.
+- **`agent.browser.host_connected`** — params `{ connected: boolean }` → `{ ok: true }`. Pushed on every transition the daemon observes: a connection authenticating as the host-management client, and the last host connection dropping. A supervised process has no read of the daemon's session set, so it CACHES this answer — and the cached value decides whether `browser_await_signin` returns the "open the CAR app" result or waits out its whole timeout pointing at a drawer that is not there. Refreshing it only from `browser.producer.register`'s ack meant a host that disconnected mid-run was never noticed. Broadcast fire-and-forget, one task per producer, so a wedged process delays neither the disconnect sweep nor the other producers — but SERIALIZED per producer, and a transition superseded while it waited its turn is collapsed rather than sent: unordered tasks meant a host flap (disconnect, immediate reconnect) could leave the process believing whichever call happened to finish last. Errors: `agent.browser.host_connected requires { connected }` — a malformed push leaves the process's belief unchanged rather than flipping it.
+- **WS-only** — no FFI binding; no dispatch arm in `handler.rs` (reverse calls, like `agent.chat`).
+
+#### `Presentation` object
+Shared by `browser.view.event`'s `presentation` payload, `browser.view.subscribe`/`take_control`/`hand_back`'s `presentation` field, `browser.producer.presentation`/`browser.producer.register`'s `presentation`, and `agent.browser.control`'s `presentation`:
+
+```jsonc
+{
+  "revision": 7,                    // u64; advances only on a real change; see the cursor note above
+  "owner": "none",                  // "none" | "agent" | "user"
+  "current_action": "Navigate https://x.test",         // string | null
+  "pending_signin": "Sign in at accounts.example.com",  // string | null — the orange strip
+  "blackout_active": false,
+  "tabs": [
+    { "id": "tab-0", "url": "https://x.test/", "title": "X",
+      "active": true, "can_go_back": false, "can_go_forward": false }
+  ],
+  "active_tab": "tab-0",            // string | null — convenience projections of the active tab,
+  "url": "https://x.test/",         // string | null   so a client does not have to scan `tabs`
+  "title": "X"                      // string | null   to render the nav bar
+}
+```
+`owner` maps 1:1 from the control reducer's owner state, matched exhaustively on the Rust side — a new owner state is a compile error, not a silent re-use of an existing wire name.
+
+#### Constants
+- `BROWSER_VIEW_CHANNEL_CAP = 32` — per-subscriber bounded channel on the drawer side.
+- `CONTROL_GRACE = 30s` — how long control stays with a connection that dropped while holding it, before it reverts to the agent.
+- `RELAY_CALL_TIMEOUT = 30s` — how long the daemon waits for a relayed `agent.browser.*` call to answer.
+- `REPUBLISH_INTERVAL = 10s` — how often an idle supervised process re-checks that its browser is still published to the daemon; recovers from a daemon session lost between turns without waiting for the user's next message.
+- `INPUT_QUEUE_TIMEOUT = 15s` — half `RELAY_CALL_TIMEOUT`; how long a relayed `agent.browser.input` waits behind an earlier one before it is refused instead of applied. The other half is left for the input to actually reach the page.
+- `MAX_VIEWS_PER_PRODUCER = 8` — how many conversation views one supervised process keeps. `agents.chat`'s `session_id` is minted fresh per TURN, so a registration retires this producer's older views (and their conversation bindings) past this cap. Deliberately the same number as `MAX_KNOWN_CONVERSATIONS`, which is what the agent side re-publishes: nothing reachable is retired, nothing retired is reachable. A retired view a drawer is still subscribed to is kept.
+- `MAX_PRODUCER_FRAME_BYTES = 8 MiB` — largest `browser.producer.frame` payload the daemon fans out; anything bigger is logged and dropped.
+- `FRAME_PUSH_TIMEOUT = 5s` — bound on one `browser.producer.frame` push occupying the agent process's shared WS write mutex. Frames are the one writer here that is safe to drop (a stale frame is worthless; the next one is along shortly), so they are the writer that gives up rather than parking `agent.chat.event` token deltas, the heartbeat, and relayed-call responses behind them.
 
 ### calendar
 
@@ -1185,7 +1451,7 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 
 #### `host.subscribe`
 - **Params**: `{}`
-- **Returns**: `{ subscribed: boolean, agents: HostAgent[], devices: HostDevice[], approvals: HostApproval[], events: HostEvent[], identity?: HostIdentity }`
+- **Returns**: `{ subscribed: boolean, agents: HostAgent[], devices: HostDevice[], approvals: HostApproval[], events: HostEvent[], pending_signins: { conversation_id: string, standing_session: boolean, message: string }[], event_sequence: number, identity?: HostIdentity }`
 - Registers the connection to receive `host.event` notifications. Returns the current snapshot.
 - **`identity` (added 2026-05)**: daemon-identifying metadata so hosts that connect to multiple daemons (e.g. one supervised by CarHost.app plus an ad-hoc `cargo run -p car-server` dev/eval daemon on a different port) can tell which one they're on and whether it's the supervisor lock owner.
   - `version` — `CARGO_PKG_VERSION` of the daemon binary
@@ -1763,6 +2029,15 @@ The spawned `car_engine::Runtime` is fresh — engine builtins via `register_age
 - **Params**: `{ bind: string, public_url?: string, agent_name?: string, agent_description?: string, organization?: string, organization_url?: string, share_session_runtime?: boolean }`
 - **Returns**: `{ bound: string }`
 - Errors if a server is already running, the bind fails, or `bind` is malformed. `bind` accepts `host:port` (use `127.0.0.1:0` to ask the kernel for an ephemeral port, then read it back from `bound`). `public_url` defaults to `http://<bound>`; everything else has reasonable defaults.
+- **`agent_name` defaults to the user's chosen assistant name** (see
+  [`assistant.identity.*`](#assistant)) when they have set one, and to
+  `"Common Agent Runtime"` when they have not. A conversational A2A message
+  routes to the flagship agent's own loop, so a card reading "Common Agent
+  Runtime" while the replies come back from something calling itself "Jarvis"
+  names the same thing two ways. The unnamed case is left byte-identical on
+  purpose: a card name is also a discovery identifier a peer may key on, so a
+  deployment where nobody named their assistant sees no change. An explicit
+  `agent_name` always wins.
 - **`share_session_runtime`** (default `false`): when `true`, the A2A dispatcher uses *this* WS session's runtime, so tools the session registered (`tools.register`) appear on the Agent Card's `skills` and a peer `message/send` is served by this session:
   - a message carrying an explicit tool invocation (a `data` part `{ "tool", "parameters" }`) routes to the session's `tools.execute` callback;
   - a purely **conversational** message (free text, no tool `data` part) routes to the session's **`agent.chat`** handler — the daemon reverse-calls `agent.chat` on this session, aggregates the streamed `agent.chat.event` deltas (5s to ack, then a 180s cap on the full reply), and returns the reply as the A2A agent message (car-releases#65). A session that doesn't handle `agent.chat` never acks, so the call falls back to the `"Acknowledged."` acknowledgement after the ~5s ack timeout.
@@ -1857,9 +2132,26 @@ The shared default is deliberate: facts ingested through the MCP endpoint show u
 If you key memory per project, bind a namespace. `session.auth { memory_namespace: "myapp-<projectID>" }` gives that connection a private graph, persisted under `~/.car/memory/memory-namespaces/<encoded-ns>.json` — the filename is a lowercase percent-encoding of the namespace's UTF-8 bytes (`a`-`z`, `0`-`9`, `-`, `_`, `.` pass through; everything else, including `%` and uppercase letters, becomes `%` plus two lowercase hex digits), which keeps the mapping injective so two namespaces can never share a snapshot file (#891) — and every `memory.*` call on that connection acts on it alone. A namespace is a **separate axis from `agent_id`** — one agent may work across several namespaces, and two hosts may share a namespace without sharing an identity. When both are supplied the namespace wins for the memory scope; the agent binding still governs identity and tokens. (Parslee-ai/car-releases#79.)
 
 #### `memory.add_fact`
-- **Params**: `{ subject: string, body: string, kind?: string = "pattern" }`
+- **Params**: `{ subject: string, body: string, kind?: string = "pattern", committed_by?: string, verdicts?: VerifierVerdict[] }`
 - **Returns**: updated fact count
 - `kind: "constraint"` sets the constraint flag. WebSocket-ingested facts are auto-prefixed with `ws-` for provenance.
+- This is the **externally-authored** memory write path, so it runs through the durable-state admission gate. With no admission table installed the gate is off and `committed_by` / `verdicts` are ignored — existing callers are unaffected. With a table installed, the candidate must satisfy that table's rule for the `memory` surface or the call fails with `memory admission refused for <id>: <refusals>`.
+- `produced_by` is fixed to `execution` and is **not** caller-settable: a peer calling this surface *is* the execution path, and letting it name its own producer would let it satisfy any rule by declaring itself whatever the rule expects.
+- **Limitation, stated plainly:** `committed_by` is a caller *claim* that this surface does not yet authenticate. With a table installed the gate therefore enforces **evidence** (a caller cannot conjure a passing verifier verdict) and structure, but not committer **identity**. Binding the committer to the authenticated session is follow-up work; until then treat that half as bookkeeping, not a security boundary.
+
+#### `memory.set_admission_table`
+- **Params**: `{ table?: OwnershipTable | null }`
+- **Returns**: `{ enabled: boolean, ungated_surfaces: string[] }`
+- Installs or clears the durable-state admission rules for the session's memgine. A null or absent `table` **clears** them, turning the gate off — the default, and what every deployment has until this is called.
+- Off is **not** the same as an empty table. The gate core is fail-closed: a table with no rule for a surface refuses everything on it. So `{}` installs a table that rejects every externally-authored fact, while `null` disengages the gate entirely. That distinction is deliberate — engaging a fail-closed gate implicitly would refuse every memory write on every existing deployment.
+- `ungated_surfaces` names surfaces whose rule imposes no real constraint (the producer may self-commit and no evidence is required). Check it after installing a table that only *looks* governed.
+- A `SurfaceRule` is `{ surface, produced_by, committed_by, self_commit, requires }` where `surface` ∈ `memory | skills | tools | verification | routing | tasks`, the two authorities ∈ `execution | review | coordination | scheduling | system_config`, `self_commit` ∈ `forbidden | with_passing_evidence`, and `requires` is a list of `{ class, accepts_tiers?, operator_override? }`.
+- Only the `memory` surface is enforced today — that is the write path this is wired into. Rules for other surfaces are accepted and stored so a table can be authored ahead of the call sites, but nothing consults them yet.
+
+#### `memory.admission_table`
+- **Params**: `{}`
+- **Returns**: `{ enabled: boolean, table: OwnershipTable | null, ungated_surfaces: string[] }`
+- Reads back the installed rules. `enabled: false` with a null `table` means the gate is off.
 
 #### `memory.update_status`
 - **Params**: `{ body: string, tenant_id?: string }`
@@ -3441,6 +3733,57 @@ no deadline (cancel it explicitly).
 - Bundled `car do` / `car do --serve` assistant loops run proactive memory before every model turn. The hidden pass maintains compact execution-state memory from the runtime event log, selects at most one relevant remembered fact/procedural warning, and injects it as a `## Proactive Memory` context block. This uses the same assistant memory bank as `remember` / `recall`, but does not require the model to call `recall`; maintenance/intervention decisions are journaled as `proactive_memory_maintained` and `proactive_memory_intervention`.
 - Native coder loops also run proactive memory over the shared repair memgine when learning is enabled. The pass mines the coder session journal into procedural/open-subgoal facts, injects at most one `## Proactive Memory` context block before the next coding turn, and journals the same proactive-memory events into the coder session event log.
 
+#### `agents.peers`
+- **Params**: none (`{}`).
+- Lists the agents this caller can send a peer message to.
+- **Returns**: `{ self: string | null, peers: [{ name, address, reference, kind, source, can_receive, display_name, capability, last_seen_ms }], count: number }`.
+  - `self` is the caller's own name — the address other agents use to reach it. The caller is **never** among `peers`; addressing yourself is an error, not a loopback.
+  - `address` is the form to pass as `agents.message`'s `to`. It is the bare `name` unless two live peers share that name, in which case it is `name [reference]`. References are assigned only where a name is genuinely ambiguous, so ordinary addresses stay readable.
+  - `kind` is `car_agent`, `external_cli`, or `remote_car`; `can_receive` is false for `external_cli`. CAR runs external CLIs as batch processes (the task goes in on stdin, which is closed immediately so the child sees EOF), so they can message CAR while running but have no inbox to deliver into.
+  - `source` is `attached`, `invocation`, `parslee`, or `lan`. Local peers come from the daemon's **live connection table**, not the on-disk agent registry — the registry is observe-only self-report whose reap sweep tolerates a 900s stale window, so a listing built from it would offer agents that exited a quarter of an hour ago.
+  - **Cross-host discovery** has two independent routes, complementary rather than redundant:
+    - `parslee` — this user's other machines, each announcing its A2A endpoint on the **synced oplog** (`Registry { kind: "host_endpoint" }`, folding LWW per device id so a machine that moves overwrites its own entry). The oplog is end-to-end encrypted, so Parslee relays the bytes without being able to read the endpoints. This is why discovery rides the oplog instead of an address field on the sync roster: the roster would publish a per-device address to the service. Requires a login; empty without one.
+    - `lan` — CAR daemons advertising `_car-a2a._tcp.local.` over mDNS. Needs no login but reaches only one broadcast domain. The peer-reachable URL travels in a TXT record rather than being rebuilt from the resolved IP and port, because an operator can pass `--a2a-public-url` to declare a URL that differs from the bound socket.
+  - **A `lan` peer is listed but not addressable.** Anyone on a network can advertise any name, so discovery makes a peer *visible*, not reachable; `agents.message` refuses it with an error naming the remedy until an operator promotes it via `a2a.peers.add`. A promoted peer is reported under its trusted source instead, so it is not double-listed. Name collisions resolve toward the more *trusted* source, not the nearest one — a `parslee` device outranks a `lan` advertisement even though the LAN is the shorter path.
+  - Cross-host delivery addresses the remote **daemon's** A2A surface, never one of its agents. That daemon applies its own guard and policy before reverse-calling a local agent, so a cross-host message passes two admissions — the sender's and the recipient's — and neither can be skipped. `PeerAddress` deliberately has no variant naming a remote agent.
+
+#### `agents.message`
+- **Params**: `{ to: string, body: string, summary?: string }`.
+  - `to` is an `address` from `agents.peers`. `body` is plain text.
+  - `summary` is a label for the **sender's** own transcript; it is not transmitted.
+  - There is no `from`. The daemon derives the sender from the connection's bound `agent_id` (the same server-side principal stamped into approval audit records), so a caller cannot attribute a message to another agent and the audit trail cannot be forged.
+- **Authorization**: the caller must be a bound agent or a host session; an unauthenticated connection is refused. A bound agent is then resolved against `AgentPermissionPolicy` at the **`read_only`** tier — honestly what a peer message is, since it mutates nothing on the recipient, reaches no executor, and grants no authority. The tier is resolved for the *sender*: the question is whether this agent may talk to other agents. Under the Balanced preset `read_only` is `always_allow`, so the default is permissive; the value is that setting a specific agent's `read_only` posture to `deny` actually stops its peer messages (`require_approval` holds them instead of dropping them), rather than the rule living only in a system prompt the agent may or may not follow.
+- **Semantics**: a peer message is **inert data**. It is not a `proposal.submit` and cannot reach the executor; whatever the receiving agent decides to do about it passes through that agent's own gates unchanged. It cannot answer a pending permission prompt, and a slash command in the body arrives as text.
+- **Delivery**: the daemon reverse-calls **`agent.peer_message`** `{ id, from, body, sent_at_ms, no_reply }` on the recipient's attached connection — the same mechanism `agents.chat` uses. There is deliberately no per-agent socket: a path that reached an agent without passing through the daemon would make admission advisory, since nothing would sit between sender and recipient.
+- **Channel limits** (these bound the channel, not the sender's authority — two agents answering each other form a loop that no policy rule catches because neither is misbehaving):
+  - Body cap ~1 MB serialized. Over it, send a path or a state handle instead.
+  - Identical body from the same sender inside 10s is dropped as a repeat.
+  - 20 messages per sender per recipient per 60s.
+  - 50 undelivered messages queued per recipient.
+  - Each limit returns a distinct error naming the remedy: batch for a rate limit, wait for a full queue.
+- **Returns**: `{ id, to, outcome }` where `outcome` is:
+  - `delivered` — the recipient acknowledged.
+  - `unacknowledged` — the frame was written but no ack arrived within 5s. Reported honestly rather than as failure: an agent that does not implement `agent.peer_message` simply never answers, and the write did happen.
+  - `held` — the recipient's configured posture stopped it; carries `reason` and `retained: true`. The message is kept for an operator decision — see `agents.message.pending` / `agents.message.approve` below.
+  - A refusal is an error, not an outcome.
+- **Audit**: every attempted delivery, refusals included, appends to `~/.car/peer-messages.jsonl`. `agents.chat` writes to the same journal — it has driven another agent's turn since it shipped with no audit record of any kind, and adding a governed sibling beside an unrecorded surface would only have moved well-behaved callers onto the audited path.
+
+#### `agents.message.pending`
+- **Params**: none (`{}`).
+- **Authorization**: **host-only.** An agent must not be able to read, or later approve, the queue that exists to gate it.
+- Lists peer messages held awaiting an operator decision, oldest first.
+- **Returns**: `{ held: [{ id, from, to, body, held_at_ms, reason }], count, cap }`.
+  - The queue is bounded at 100 undecided messages; past that the oldest is dropped, logged, and written to the audit journal as a refusal — a message the operator never saw must not vanish silently after the sender was told it was retained.
+  - Held in memory only. A held message is a live decision awaiting a human, and one that outlived a daemon restart would be delivered into a world that had moved on.
+
+#### `agents.message.approve`
+- **Params**: `{ id: string, decision: boolean | string }`.
+  - `decision` accepts a bool or a string (`"approve"`/`"approved"`/`"yes"` → approved; anything else, or omitted → denied). Same convention as `agents.chat.approve`, so an operator does not have to remember two.
+- **Authorization**: **host-only**, as above.
+- On approval the message is **re-admitted through the channel guard** before delivery. It passed the guard when it was sent, but time has moved and the recipient may since have been flooded; an approval authorizes the sender, it is not a licence to bypass the channel's limits. The identical-repeat window has long since expired for anything that sat awaiting a human, so this does not spuriously reject.
+- **Returns**: `{ id, outcome }` — `denied`, or the same `{ id, to, outcome }` shape `agents.message` returns on delivery. Both paths append to `~/.car/peer-messages.jsonl`.
+- The queue slot a held message occupied is released when it is held, not when it is decided: `QUEUE_CAP` bounds what a recipient has yet to read, `HOLD_CAP` bounds what an operator has yet to decide. Charging a held message against the delivery queue would let a slow human block a healthy channel.
+
 #### `agents.chat.cancel`
 - **Params**: `{ session_id: string }`.
 - Best-effort cancellation. Attached supervised agents receive `agent.chat.cancel` so they can short-circuit their inference stream. In-daemon declarative agent sessions set a local cancellation flag and drop routing immediately; the runner stops at the next model/tool/goal-check boundary. Terminal for the session.
@@ -3576,10 +3919,17 @@ at `~/.car/coder/<session_id>.json`; an audit event journal sits alongside as
 
 **Security model** — read before extending. The native engine's `shell` tool
 executes on the **host** with the daemon's privileges and (deliberately) the
-real toolchain + network. An inspector chain denies the unambiguous footguns
-(`git push`/remote mutation, history rewrite, `sudo`/`doas`/service managers,
-destructive ops and writes outside the worktree, credential-path reads), and
-the executor pins the working directory to the worktree — but this is policy
+real toolchain + network. An inspector chain (native engine only — the
+governed assistant in `assistant/governance.rs` keeps its own, wider chain)
+denies the unambiguous footguns (`git push`/remote mutation, history rewrite,
+`sudo`/`doas`/service managers, destructive ops and writes outside the
+worktree, credential-path reads) and every route that would publish the work
+around the merge gate: the forge CLIs (`gh`, `glab`, `hub`) are reduced to a
+read-only allowlist — `pr view`/`list`/`diff`/`checks`, `run view`/`list`,
+`issue list`, `gh api` GET, `auth status` — so `gh pr create`, `gh pr merge`,
+`gh release create` and `gh auth token` come back as denials, and
+`npm`/`cargo publish`, `gem push`, `twine upload`, `docker push`/`login` are
+denied alongside them. The executor pins the working directory to the worktree — but this is policy
 hardening, **not a sandbox**: a model can still e.g. pipe curl to sh inside
 the worktree. The hard stops are the two human gates: `coder.confirm_contract`
 before any work starts and `coder.approve_merge` before anything reaches the
@@ -3601,7 +3951,22 @@ merge gate as the built-in tools.
 
 State machine: `created → contract_proposed → contract_confirmed → running →
 needs_approval → merged`, with `failed` / `abandoned` reachable from any
-non-terminal state (`coder.cancel` → `abandoned`). The worktree is removed on
+non-terminal state (`coder.cancel` → `abandoned`).
+
+There is a second, non-failure terminal: **`reported`**. It means the session
+concluded that *no code should change* and the runtime accepted that — a correct
+outcome with no diff, rather than a loss. Reaching it requires a contract the
+session's own model did not author (operator-supplied, human-confirmed, or
+runtime-generated) whose every check already passed against the untouched
+worktree. A conclusion that needs human judgement instead parks at
+`needs_approval` and is never auto-promoted.
+
+**The daemon does not yet produce `reported` itself** — only `car code-task`
+does. It still appears on this surface, because a CLI-run session persists its
+snapshot under the same `~/.car/coder` state root the daemon merges into
+`coder.list`, so a client must already tolerate the value. The daemon-side gate
+for accepting or rejecting a parked finding is not implemented; until it lands,
+a `needs_approval` session on this wire is always a merge gate. The worktree is removed on
 terminal transitions (unless `keep_workspace_on_failure` is set — see below —
 in which case a `failed` session's worktree is retained for postmortem).
 
@@ -3821,6 +4186,7 @@ reaped is a snapshot detail, not a place to send someone.
 #### `coder.revise_contract`
 - **Params**: `{ session_id: string, request: string }` — `request` is plain English, e.g. `"also verify the Windows path"`.
 - **Returns**: `{ state: "contract_proposed", revised: boolean, contract: OutcomeContract, baseline: CheckResult[], baseline_gates_nothing: boolean, message: string | null }`
+- `CheckResult` is `{ name, passed, exit_code: number | null, output_tail, duration_ms, timed_out, deadline_clamped }`. The last two are additive and optional (default `false`) — see `coder.check_completed` below for what they mean and why a starved check is not a red verdict.
 - Redrafts a **proposed** contract from the operator's reply instead of making
   them hand-edit JSON or reject and start over. Legal **only** in
   `contract_proposed`; any other state returns the already-happened error below.
@@ -4359,7 +4725,8 @@ Orthogonal to the per-session standing tier above: a durable **per-agent** postu
 - `params.tool_choice` is honored per provider, not just on OpenAI — but the supported vocabulary is provider-dependent:
   - **Portable subset** `"auto"` (default when tools present) / `"required"` / `"none"` — accepted on OpenAI-family, Anthropic, and Google. `"required"` maps to Anthropic `{"type":"any"}` and Google mode `ANY`.
   - **Forcing modes** `"any"` and a specific tool NAME — honored on **Anthropic** (`{"type":"any"}` / `{"type":"tool","name":...}`), **Google/Vertex** (mode `ANY`, a name adds `allowedFunctionNames: [name]`; previously hardcoded `AUTO`), and **Bedrock** (a name → `{"tool":{"name":...}}`). **OpenAI-family passes the `tool_choice` string through verbatim**, so `"any"` or a bare tool name is sent as-is and the OpenAI API 400s — use `"required"` there. This OpenAI passthrough is pre-existing and deliberately unchanged.
-  - **Managed (`parslee/*`) lane** — the shipped inference gateway speaks the OpenAI Responses contract, and CAR maps into it rather than passing through: `"auto"` → `"auto"`, `"required"` **and** `"any"` → `"required"`, `"none"` → `"none"`, and a specific tool NAME → `{"type":"function","name":...}` (a bare name is not valid on Responses). Two differences from every lane above, both deliberate: the mapping is applied instead of the OpenAI-family verbatim passthrough, so `"any"` and a tool name work here; and **an unset `tool_choice` emits no field at all** rather than defaulting to `"auto"` — this gateway answers an unexpected request field with an opaque HTTP-200 `event: error` that reads as "no content", so the field only rides when a caller asked for it. Before this, the managed request body carried `tools` but no choice at all, so tool use could not be forced on the managed lane (car#895).
+  - **Managed (`parslee/*`) lane** — the shipped inference gateway speaks the OpenAI Responses contract, and CAR maps into it rather than passing through: `"auto"` → `"auto"`, `"required"` **and** `"any"` → `"required"`, `"none"` → `"none"`, and a specific tool NAME → `{"type":"function","name":...}` (a bare name is not valid on Responses). Two differences from every lane above, both deliberate: the mapping is applied instead of the OpenAI-family verbatim passthrough, so `"any"` and a tool name work here; and **an unset `tool_choice` emits no field at all** rather than defaulting to `"auto"` — this gateway answers an unexpected request field with an opaque HTTP-200 `event: error` that reads as "no content", so the field only rides when a caller asked for it. Before this, the managed request body carried `tools` but no choice at all, so tool use could not be forced on the managed lane (car#895). **The gateway does not yet bind this field.** Its request record has no `tool_choice` member (confirmed by reading the endpoint owner's own source, not inferred from behavior), and its JSON binder skips unmapped members rather than rejecting them — so the field CAR sends is accepted and ignored, and the upstream call runs at the provider default. A managed caller who asks for `required` still does not get a forced tool call today. CAR emits the correct Responses spelling so the knob takes effect the moment the gateway binds it; closing it end-to-end needs a change on the endpoint owner's side (car#895).
+  - **Managed (`parslee/*`) tool DEFINITIONS use the flat Responses shape** — `{type:"function", name, description, parameters}`, not the Chat-Completions `{type:"function", function:{…}}` nesting. That is what the endpoint's contract names: its tool DTO declares the flat fields directly and carries a separate optional nested member it unwraps, so the nested form is accepted as a second spelling rather than being the declared one. Nothing in that source marks the nested form deprecated — CAR emits the declared shape because relying on the other one is a bet on unstated intent, not because a break is imminent. Both managed call sites used to emit the nested shape; both now emit the flat one (car#1010, car#1011). Personal Chat-Completions models are unaffected and keep the nested shape their own endpoints require.
   - **Caveats:** `params.parallel_tool_calls: false` adds Anthropic `disable_parallel_tool_use`. On Anthropic a forcing choice (`any` / a named tool) **wins over auto-enabled extended thinking** for that request — thinking is dropped and a warning logged (Anthropic rejects forced tool use + thinking). **Bedrock Converse has no `none` mode**: a `"none"` string falls through to a forced tool literally named "none" (`{"tool":{"name":"none"}}`), so `tool_choice: "none"` is effectively unsupported on Bedrock. `tool_choice` is only emitted when `tools` are present; OpenAI and Bedrock tool_choice mapping is otherwise unchanged.
 - `intent` is an optional `IntentHint` that lets callers express task semantics without pinning a model id. Shape: `{ task?: "chat" | "classify" | "summarize" | "reasoning" | "code" | "extract", prefer_local?: boolean, prefer_fast?: boolean, prefer_quality?: boolean, high_stakes?: boolean, require?: ModelCapability[] }`. When set together with `model`, the explicit model wins (`intent` is recorded for telemetry but does not override the pin). When set without `model`, the adaptive router uses `require` as a hard filter and `task` / `prefer_local` / `prefer_fast` / `prefer_quality` as score biases. `high_stakes` (consequential/irreversible work) forces the strongest quality posture and outranks every other bias — the daemon sets it automatically for `FullAccess`-granted sessions. Omitting `intent` preserves the no-hint adaptive routing behavior bit-for-bit. See `docs/proposals/policy-intent-surface.md` for the full surface.
 - **Prompt caching (Anthropic).** `cache_control: boolean` (top-level, default `false`) marks the system prompt, the last tool definition, and — for multi-turn requests (≥2 messages) — the growing conversation prefix with `cache_control` breakpoints so a shared prefix is read from cache (~0.1× input) instead of reprocessed. When `context_query` is set, the assembled memory context is split at the stable Identity+Constraints boundary and the system breakpoint is placed after it, so the stable prefix hits across queries instead of being re-written every request (the volatile facts/conversation/environment tail stays uncached). `context_stable_prefix` (a prefix of `context`) carries this hint explicitly for callers that build the context themselves; it is ignored unless it is a genuine prefix of the system and `cache_control` is on. `params.cache_ttl: "five_minutes" | "one_hour"` (default `"five_minutes"`) sets the cache lifetime uniformly across every breakpoint; use `"one_hour"` for agentic loops where minutes pass between calls (tool execution, HITL approval) so the prefix survives instead of silently expiring. The TTL is uniform per request, so Anthropic's "1-hour entries must precede 5-minute" ordering rule never applies. Ignored by non-Anthropic providers. When caching is requested but nothing was cached (prompt below the model's minimum cacheable length, ~1024 tokens on Opus 4.8, or a churning prefix), the daemon logs a debug line — there is no error, by Anthropic's design.
@@ -4470,6 +4837,7 @@ Broadcast to subscribers after `host.subscribe`.
   "method": "host.event",
   "params": {
     "id": "event-...",
+    "sequence": 1042,
     "timestamp": "2026-04-25T13:00:00Z",
     "kind": "agent.status_changed",
     "agent_id": "researcher-1",
@@ -4478,7 +4846,93 @@ Broadcast to subscribers after `host.subscribe`.
   }
 }
 ```
-`kind` values: `agent.registered`, `agent.unregistered`, `agent.status_changed`, `approval.requested`, `approval.resolved`, `host.notification`.
+`kind` values: `agent.registered`, `agent.unregistered`, `agent.status_changed`, `approval.requested`, `approval.resolved`, `host.notification`, `device.registered`, `device.updated`, `browser.signin_needed`, `browser.signin_resolved`.
+
+#### `browser.signin_needed` / `browser.signin_resolved`
+
+An agent's browser is blocked waiting for a human sign-in
+(`browser_await_signin`, which blocks the agent for up to 1800 s), and then
+that wait ended.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "host.event",
+  "params": {
+    "id": "event-...",
+    "sequence": 1043,
+    "timestamp": "2026-04-25T13:00:00Z",
+    "kind": "browser.signin_needed",
+    "agent_id": null,
+    "message": "Sign in at https://example.com/login",
+    "payload": {
+      "conversation_id": "chat-6f2c...",
+      "standing_session": false,
+      "message": "Sign in at https://example.com/login"
+    }
+  }
+}
+```
+
+`browser.signin_resolved` is the same envelope with the summary message
+`"The browser sign-in wait ended"`; its payload is only
+`{ "conversation_id", "standing_session" }` and omits the prompt `message`.
+
+- `payload.conversation_id` — the browser-view key `browser.view.*` takes.
+  The **empty string** is the standing session (that surface's
+  `conversation_id: null`). For CAR Chat this is the per-turn `agents.chat`
+  `session_id`.
+- `payload.standing_session` — `true` iff `conversation_id` is empty.
+- `payload.message` — the sign-in prompt the tool composed. Never anything
+  read off the page: no title, no live URL, no form contents, no cookies.
+
+**These are on `host.event`, not `browser.view.event`, on purpose.**
+`browser.view.*` needs a live per-conversation subscription, so it structurally
+cannot reach a client whose drawer is closed or who is watching a different
+conversation — which is the whole situation this exists for. `host.event` is
+subscribed once per connection, for the whole daemon.
+
+**Transition rule.** Emitted on the pending-sign-in transition only:
+`none -> pending` emits `browser.signin_needed`, `pending -> none` emits
+`browser.signin_resolved`, and a changed pending prompt emits a fresh
+`browser.signin_needed`; unchanged pending and `none -> none` emit nothing. A
+supervised agent republishes its presentation on every change and
+re-registers every 10 s, so an emitter that fired per push would notify
+repeatedly for one sign-in.
+
+Every `needed` is followed by a `resolved` — signed in, handed back, timed out
+or run ended when nobody engaged, host gone, grace expired, or the supervised
+process dying. One `resolved` does **not** always mean the browser is
+unblocked: a supervised process backs several per-turn views, and when the view
+that was reporting a wait retires the daemon emits `resolved` for that
+`conversation_id` immediately followed by `needed` for a surviving one. Treat
+that pair as the wait MOVING — clear the old key and raise the new one, which
+falls out of ordinary per-key handling — rather than as an ending. If a person
+engaged during the wait, timer expiry and run end deliberately leave it pending
+until hand-back or disconnect grace.
+
+On every connection, `host.subscribe.pending_signins` is the authoritative
+snapshot of active waits (`conversation_id`, `standing_session`, `message`).
+`host.subscribe.event_sequence` is captured before that snapshot is read, and
+every live `HostEvent` carries its monotonic `sequence`. Reconcile local
+attention against that snapshot after reconnect **one conversation key at a
+time**: the snapshot's verdict stands for a key — listed means waiting, omitted
+means resolved — unless a live event with a strictly larger `sequence` already
+arrived on that socket **for that key**. Do not reject the whole snapshot
+because one key raced: the subscriber is registered before the response is
+written, so an unrelated conversation's event can legitimately overtake it, and
+throwing the snapshot away with it leaves the conversation that is actually
+blocked with nothing on screen. Do not clear on the transport drop or depend on
+the bounded `events` history.
+
+**Both producers emit.** In-daemon runtimes report the transition at their
+control reducer; a supervised agent process's browser has its reducer in that
+process, so the daemon derives the transition from
+`browser.producer.presentation` (which already carries the pending sign-in and
+already flows on every change, ungated by any watcher). No extra agent → daemon
+method exists for this, and exactly one of the two paths applies to a given
+view, so a sign-in is never announced twice. The standing session never emits:
+no agent tool can run against it.
 
 ### `voice.event`
 Pushed during active `meeting.*`, `voice.transcribe_stream.*`, and `voice.tts_stream.*` sessions. Payload includes transcript segments, partials, finals, source identifiers, and TTS chunk metadata (`type = "tts_chunk"` carrying `{ stream_id, seq, audio_b64, format, is_final }`).
@@ -4496,10 +4950,26 @@ monotonically increasing per session (the resume cursor for
     "seq": 17,
     "ts": 1781234567,
     "type": "check_completed",
-    "result": { "name": "tests_pass", "passed": true, "exit_code": 0, "output_tail": "…", "duration_ms": 8123 }
+    "result": {
+      "name": "tests_pass", "passed": true, "exit_code": 0, "output_tail": "…",
+      "duration_ms": 8123, "timed_out": false, "deadline_clamped": false
+    }
   }
 }
 ```
+A `CheckResult` carries two additive booleans alongside the verdict (both
+optional, defaulting to `false`, so a result persisted before car#1053 still
+deserializes). `timed_out` says the command was killed at a timeout instead of
+exiting on its own; `deadline_clamped` says the timeout it was killed at was the
+**session's** remaining wall-clock budget rather than the check's own ceiling.
+That ceiling is `min(timeout_secs, 600)` — every contract command runs through
+the coder shell, which caps any timeout at 600s — so a check declaring
+`timeout_secs: 900` that dies at 600 with 700s of session budget left reports
+`deadline_clamped: false`: the shell ceiling cut it, not the clock.
+Both together mean the check was starved by the session clock
+and its `passed: false` is not a verdict on the work — see "A starved gate is
+not a red contract" in `docs/car-code-task.md`. `timed_out` alone is an ordinary
+red: the check hung inside its own ceiling.
 `type` values and their payload fields: `state_changed {from, to}`,
 `contract_proposed {contract}`, `engine_selected {engine, reason}`,
 `engine_fallback {from, to, reason}`,
