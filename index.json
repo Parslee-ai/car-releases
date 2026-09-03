@@ -1,0 +1,8 @@
+{
+  "name": "Parslee Agent Registry",
+  "owner": {
+    "name": "Parslee AI",
+    "email": "keenan.keeling@parslee.ai"
+  },
+  "agents": []
+}
