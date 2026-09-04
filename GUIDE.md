@@ -49,13 +49,16 @@ Valid `type` values: `tool_call`, `state_write`, `state_read`, `assertion`.
 ## Tool callback contract
 
 ```python
-def tool_fn(tool: str, params_json: str) -> str:
-    params = json.loads(params_json)
-    if tool == "read_file":
-        return json.dumps({"content": open(params["path"]).read()})
-    return json.dumps({"error": f"unknown tool: {tool}"})
+def tool_fn(call_json: str) -> str:
+    call = json.loads(call_json)
+    if call["tool"] == "read_file":
+        return json.dumps({"content": open(call["params"]["path"]).read()})
+    return json.dumps({"error": f"unknown tool: {call['tool']}"})
 ```
 
+The callback takes ONE argument — a JSON string describing the whole call
+(`{"tool", "params", "action_id", "request_id", "timeout_ms", "session_id",
+"attempt"}`), not the tool name and params as two separate arguments.
 Return a JSON string. Errors are just a `{"error": "..."}` payload — the runtime
 handles retries + replans if configured.
 
@@ -88,9 +91,9 @@ def build_agent():
         raise SystemExit(f"invalid plan: {check['issues']}")
 
     # 6. Execute.
-    def tool_fn(tool, params_json):
-        params = json.loads(params_json)
-        return json.dumps({"ok": True})  # IMPLEMENT ME
+    def tool_fn(call_json):
+        call = json.loads(call_json)          # {"tool", "params", ...}
+        return json.dumps({"ok": True})       # IMPLEMENT ME
 
     result = json.loads(rt.execute_proposal(json.dumps(proposal), tool_fn))
     print(json.dumps(result, indent=2))

@@ -51,14 +51,16 @@ You register a tool name and provide a dispatch callback; CAR never owns tool
 implementations.
 
 ```python
-def tool_fn(tool: str, params_json: str) -> str:
-    params = json.loads(params_json)
-    if tool == "read_file":
-        return json.dumps({"content": open(params["path"]).read()})
-    return json.dumps({"error": f"unknown tool: {tool}"})
+def tool_fn(call_json: str) -> str:
+    call = json.loads(call_json)
+    if call["tool"] == "read_file":
+        return json.dumps({"content": open(call["params"]["path"]).read()})
+    return json.dumps({"error": f"unknown tool: {call['tool']}"})
 ```
 
-- Input: the tool name and a JSON string of parameters.
+- Input: ONE JSON string describing the whole call — `{"tool", "params",
+  "action_id", "request_id", "timeout_ms", "session_id", "attempt"}`. Not the
+  name and params as two arguments.
 - Output: a JSON string. An error is just a `{"error": "..."}` payload — the
   runtime handles retries / replans if configured.
 - In Node the callback is async and returns a `Promise<string>`; in

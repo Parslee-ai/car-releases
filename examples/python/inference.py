@@ -1,16 +1,17 @@
-"""Local inference + streaming example.
+"""Local inference example.
 
-Uses CAR's managed local model registry. The first run will download weights.
+Uses CAR's managed local model registry. The first run downloads weights, so
+the first call can take minutes; later ones are fast.
 
 Prereq:
     pip install car-runtime
+    car setup          # pick and install a local model, once per machine
 
 Run:
     python inference.py
 """
 
 import json
-import sys
 
 import car_runtime
 
@@ -18,23 +19,15 @@ import car_runtime
 def main() -> None:
     rt = car_runtime.CarRuntime()
 
-    # Streaming — token-by-token.
-    def on_event(event_json: str) -> None:
-        e = json.loads(event_json)
-        if e["type"] == "text":
-            sys.stdout.write(e["data"])
-            sys.stdout.flush()
-        elif e["type"] == "done":
-            print()  # final newline
-
-    print("streaming inference:")
-    rt.infer_stream(
-        "Describe the Common Agent Runtime in one paragraph.",
-        on_event,
-        max_tokens=256,
-    )
-
-    # One-shot tracked call returns usage + tool_calls.
+    # NOTE ON STREAMING: `rt.infer_stream(...)` is NOT available through the
+    # Python bindings — it is an ABI-compatibility stub that always raises
+    # RuntimeError. Token-by-token streaming lives on the daemon's WebSocket:
+    # connect to ws://127.0.0.1:9100/ (start it with `car daemon`), call the
+    # `infer_stream` JSON-RPC method, and read `inference.stream.event`
+    # notifications. See docs/websocket-protocol.md, and cookbook 06 for a
+    # minimal Python WebSocket client.
+    #
+    # One-shot tracked call returns the text plus usage + tool_calls.
     tracked = json.loads(
         rt.infer_tracked("Say 'CAR online' and nothing else.", max_tokens=32)
     )

@@ -22,10 +22,28 @@ function loadNative() {
     'linux-x64':    'car-runtime.linux-x64-gnu.node',
     'linux-arm64':  'car-runtime.linux-arm64-gnu.node',
   };
+  // Prefer the npm package: it resolves the right platform binary itself, and
+  // it is what the install docs recommend. The header above offers both routes,
+  // but only the tarball one used to be implemented — so `npm install
+  // car-runtime` followed by running this file failed with MODULE_NOT_FOUND.
+  try {
+    return require('car-runtime');
+  } catch (err) {
+    if (err.code !== 'MODULE_NOT_FOUND') throw err;
+  }
+
+  // Fall back to a .node extracted from a release tarball into the cwd.
   const key = `${process.platform}-${process.arch}`;
   const file = byPlatform[key];
   if (!file) throw new Error(`no CAR native binary for ${key}`);
-  return require(path.resolve(process.cwd(), file));
+  try {
+    return require(path.resolve(process.cwd(), file));
+  } catch (err) {
+    throw new Error(
+      `could not load CAR. Either run \`npm install car-runtime\`, or extract a ` +
+      `release tarball so ${file} sits in ${process.cwd()}.\nUnderlying: ${err.message}`
+    );
+  }
 }
 
 async function main() {

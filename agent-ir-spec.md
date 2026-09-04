@@ -304,7 +304,10 @@ Returned by `proposal.submit` (WebSocket), `executeProposal` (NAPI), `execute_pr
       "status": "succeeded",
       "output": { "deployed": true },
       "error": null,
-      "state_changes": { "deployed": true },
+      "state_changes": {
+        "deployed": { "op": "set", "value": true },
+        "obsolete_key": { "op": "delete" }
+      },
       "duration_ms": 1230.0,
       "timestamp": "2026-05-02T12:00:01Z"
     }
@@ -314,6 +317,12 @@ Returned by `proposal.submit` (WebSocket), `executeProposal` (NAPI), `execute_pr
 ```
 
 `status` is one of: `"proposed"`, `"validated"`, `"rejected"`, `"executing"`, `"succeeded"`, `"failed"`, `"skipped"`.
+
+Each `state_changes` value is a tagged `StateMutation`: `{"op":"set","value":…}`
+sets the key (including explicitly setting it to JSON `null`), while
+`{"op":"delete"}` removes it. Rust consumers can encode and decode that stable
+wire shape with `car_ir::StateMutation`; the `ActionResult` field remains a
+JSON-value map for source and wire compatibility.
 
 ---
 

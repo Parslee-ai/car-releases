@@ -16,7 +16,6 @@ Run:
 """
 
 import json
-import tempfile
 
 import car_runtime
 
@@ -86,10 +85,12 @@ def main() -> None:
 
     # ---- Persist + reload ----
     print("\npersist + reload memory")
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        path = f.name
-    rt.persist_memory(path)
-    print(f"  persisted to {path}")
+    # The path is sandboxed under ~/.car/memory/. A RELATIVE name lands there;
+    # an absolute path has to already be inside it, so a tempfile path is
+    # rejected outright ("memory path resolved outside the sandbox").
+    path = "example-roundtrip.json"
+    written = rt.persist_memory(path)
+    print(f"  persisted {written} records to ~/.car/memory/{path}")
 
     rt2 = car_runtime.CarRuntime()
     loaded = rt2.load_memory(path)

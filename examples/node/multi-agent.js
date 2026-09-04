@@ -22,7 +22,21 @@ function rand() {
   return seed / 233280;
 }
 
-async function agentFn(specJson, task) {
+// The runner is invoked with the stage spec and the task, as
+// `(specJson, taskJson)` — what index.d.ts declares.
+//
+// This destructures EITHER that or a single [specJson, taskJson] array, on
+// purpose. Binaries at or below 0.52 typed the payload as
+// `ThreadsafeFunction<Vec<String>>`, and napi-rs delivers a Vec as one JS
+// array — so the declared signature received the array as `specJson` and
+// `undefined` as `taskJson`, and every stage failed on `JSON.parse` of
+// "{...},research topic #0". The binding now passes a tuple and spreads
+// correctly; keeping the array branch means this example works against both
+// the fixed runtime and the versions already published.
+async function agentFn(argOrSpec, maybeTask) {
+  const [specJson, task] = Array.isArray(argOrSpec)
+    ? argOrSpec
+    : [argOrSpec, maybeTask];
   const spec = JSON.parse(specJson);
   const role = spec.name;
   const base = { name: role, turns: 1, tool_calls: 0, duration_ms: 1.0 };

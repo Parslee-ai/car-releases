@@ -1,5 +1,13 @@
 """Voice-sidecar dispatch (two-track conversation) — Python.
 
+READ THIS FIRST: the voice-turn flow is DAEMON-ONLY. `dispatch_voice_turn`,
+like `infer_stream`, is not exposed through the Python bindings — calling it
+raises RuntimeError telling you to use the daemon. This file documents the
+shape of the flow and the exact JSON-RPC calls to make; it is a reference, not
+a script that drives voice by itself. For a runnable client, start
+`car daemon` and follow cookbook 06 (minimal Python WebSocket client) plus
+cookbook 13 (voice orchestration).
+
 Demonstrates the voice-turn pattern:
   1. Register a voice-event handler to receive turn events
   2. Dispatch an utterance — get a synchronous turn_id back
@@ -14,7 +22,7 @@ Prereq:
     pip install car-runtime
 
 Run:
-    python voice_turn.py
+    python voice_turn.py      # prints the flow and the JSON-RPC calls to make
 """
 
 import json
@@ -59,10 +67,13 @@ def main() -> None:
     # Dispatch a conversational utterance. Returns synchronously with
     # the turn_id; the actual fast/sidecar work happens in the
     # background and surfaces via the event handler above.
-    conversational = rt.dispatch_voice_turn(
-        json.dumps({"utterance": "Tell me a one-line joke."})
-    )
-    print(f"\nstarted turn: {conversational}")
+    # DAEMON CALL — over ws://127.0.0.1:9100/:
+    #   {"jsonrpc":"2.0","id":1,"method":"voice.dispatch_turn",
+    #    "params":{"utterance":"Tell me a one-line joke."}}
+    # Returns the turn_id synchronously; fast deltas and the sidecar result
+    # arrive as voice.event notifications on the same connection.
+    print("\ndispatch: voice.dispatch_turn "
+          '{"utterance": "Tell me a one-line joke."}')
 
     # Give the turn time to stream its fast deltas + sidecar resolve.
     # In real use you'd await a completion signal; here we just sleep.
@@ -70,10 +81,9 @@ def main() -> None:
 
     # Tool-likely utterance — the classifier routes this to the
     # bridge-phrase + sidecar-only path. The fast track is suppressed.
-    toolish = rt.dispatch_voice_turn(
-        json.dumps({"utterance": "What's on my calendar tomorrow?"})
-    )
-    print(f"\nstarted tool-likely turn: {toolish}")
+    print("\ndispatch: voice.dispatch_turn "
+          '{"utterance": "What\'s on my calendar tomorrow?"}  '
+          "# classifier routes this to bridge-phrase + sidecar-only")
     time.sleep(8)
 
     # Barge-in / supersede — cancels any in-flight turn. Bumps the

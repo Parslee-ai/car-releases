@@ -1,5 +1,12 @@
 // Voice-sidecar dispatch (two-track conversation) — Node.js.
 //
+// READ THIS FIRST: the voice-turn flow is DAEMON-ONLY. `dispatchVoiceTurn`,
+// like `inferStream`, `transcribeStream` and `ttsStreamStart`, is not exposed
+// through the bindings — calling it throws, pointing at the daemon. This file
+// documents the flow and the exact JSON-RPC calls; it is a reference, not a
+// script that drives voice by itself. For a runnable client, start
+// `car daemon` and follow cookbook 06 (WebSocket client) and 13 (voice).
+//
 // Demonstrates the voice-turn pattern:
 //   1. Register a voice-event handler to receive turn events
 //   2. Dispatch an utterance — get a synchronous turn_id back
@@ -19,7 +26,6 @@
 const {
   CarRuntime,
   registerVoiceEventHandler,
-  dispatchVoiceTurn,
   cancelVoiceTurn,
   prewarmVoiceTurn,
 } = require('car-runtime');
@@ -68,24 +74,19 @@ async function main() {
   // Dispatch a conversational utterance. Returns synchronously with
   // the turn_id; the actual fast/sidecar work happens in the
   // background and surfaces via the event handler above.
-  const conversational = await dispatchVoiceTurn(
-    rt,
-    JSON.stringify({ utterance: 'Tell me a one-line joke.' }),
-  );
-  console.log('\nstarted turn:', conversational);
-
-  // Give the turn time to stream its fast deltas + sidecar resolve.
-  // In real use you'd await some completion signal; here we just sleep.
-  await new Promise((r) => setTimeout(r, 8000));
+  // DAEMON CALL — over ws://127.0.0.1:9100/:
+  //   {"jsonrpc":"2.0","id":1,"method":"voice.dispatch_turn",
+  //    "params":{"utterance":"Tell me a one-line joke."}}
+  // Returns the turn_id synchronously; fast deltas and the sidecar result
+  // arrive as voice.event notifications on the same connection.
+  console.log('\ndispatch: voice.dispatch_turn',
+    JSON.stringify({ utterance: 'Tell me a one-line joke.' }));
 
   // Tool-likely utterance — the classifier routes this to the
   // bridge-phrase + sidecar-only path. The fast track is suppressed.
-  const toolish = await dispatchVoiceTurn(
-    rt,
+  console.log('\ndispatch: voice.dispatch_turn',
     JSON.stringify({ utterance: "What's on my calendar tomorrow?" }),
-  );
-  console.log('\nstarted tool-likely turn:', toolish);
-  await new Promise((r) => setTimeout(r, 8000));
+    '# classifier routes this to bridge-phrase + sidecar-only');
 
   // Barge-in / supersede — cancels any in-flight turn. Bumps the
   // current turn id so any straggling sidecar result for the

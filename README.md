@@ -12,6 +12,31 @@ traces.
 This repo is the **public binary distribution** — install, docs, examples, issue
 tracker. The source is private (see *License*).
 
+## Two ways to use CAR
+
+**Using the `car` CLI or the flagship assistant as a product, not writing
+code against it?** Skip to *Install*, then read:
+
+- **[CLI.md](./CLI.md)** — every `car` subcommand (`car do`, `car code`,
+  `car agent`, `car voice`, 60+ more), generated straight from the binary's
+  own `--help` output.
+- **[ASSISTANT.md](./ASSISTANT.md)** — `car do` / **Parslee Core**, the
+  flagship general agent: its tools, approval tiers, sandboxing, and memory.
+- **[MCP.md](./MCP.md)** — drive CAR from Claude Code, Cursor, or Claude
+  Desktop over MCP, including the Claude Code plugin.
+
+**Embedding the CAR runtime as a library in your own agent?** The rest of
+this page, plus [SPEC.md](./SPEC.md) and [GUIDE.md](./GUIDE.md), are written
+for you.
+
+Everything above — plus the wire-protocol reference, the agent-bundle spec,
+the host protocol, the A2A bridge, and a full cookbook — is mirrored onto
+this repo as plain `.md` files: see **[llms.txt](./llms.txt)** for the full
+index. (The mdBook these were authored in is GitHub Pages built from the
+private source repo, and is not reachable by an anonymous reader — it 200s
+and then redirects to a GitHub sign-in page — so this repo is the only
+public copy.)
+
 ## What it does
 
 A single signed binary with:
@@ -36,7 +61,7 @@ A single signed binary with:
 
 → The data shapes and semantics these build on: **[SPEC.md](./SPEC.md)**.
 
-## What using it looks like
+## What using it looks like (embedding CAR as a library)
 
 ```python
 import json
@@ -63,7 +88,9 @@ if not check["valid"]:
     raise RuntimeError(check["issues"])
 
 # Execute with your tool dispatch.
-def tool_fn(tool, params_json):
+# The callback takes ONE argument: a JSON string of the whole call,
+# {"tool", "params", "action_id", "request_id", "timeout_ms", ...}.
+def tool_fn(call_json):
     return json.dumps({"stdout": "..."})
 
 result = json.loads(rt.execute_proposal(proposal, tool_fn))
@@ -82,12 +109,12 @@ package is in **[DISTRIBUTION.md](./DISTRIBUTION.md)**.
 |-----------|---------|
 | **CAR on a Mac, no terminal** | Download **`CAR-darwin-arm64.pkg`** from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest) and double-click. Installs the **CAR Host** menu-bar app *and* the `car` CLI. Signed, notarized, auto-updating. |
 | **To build on CAR** in Python / Node | `pip install car-runtime` · `npm install car-runtime` |
-| **The CLI on Linux / Windows**, or scripted installs | Homebrew · Scoop · install script · tarball — see [DISTRIBUTION.md](./DISTRIBUTION.md) |
+| **The CLI on Linux / Windows**, or scripted installs | install script · Scoop · tarball — see [DISTRIBUTION.md](./DISTRIBUTION.md) |
 
 ```bash
 # macOS + Linux convenience installer (inspect-then-run guidance in SECURITY.md):
 curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/install.sh | sh
-# pin a version with CAR_VERSION=v0.51.0
+# pin a version with CAR_VERSION=v0.52.0
 ```
 
 macOS is Apple Silicon only (15+). Linux x86_64/aarch64 and Windows x86_64 are
@@ -113,12 +140,17 @@ Python/Node:
 
 | Doc | What's in it |
 |-----|--------------|
+| **[CLI.md](./CLI.md)** | Every `car` subcommand's `--help` output, generated from the real binary. |
+| **[ASSISTANT.md](./ASSISTANT.md)** | `car do` / Parslee Core: tools, approvals, sandbox posture, memory. |
+| **[MCP.md](./MCP.md)** | Use CAR from Claude Code / Cursor / Claude Desktop over MCP — tool list, client config, plugin. |
+| **[api/car_runtime.pyi](./api/car_runtime.pyi)** · **[api/index.d.ts](./api/index.d.ts)** | The complete typed Python and Node surfaces — 229 and 200 methods, with docstrings. Read these before writing code; the examples below show a fraction of what exists. |
 | **[SPEC.md](./SPEC.md)** | Proposal/action shape, tool + agent contracts, policy semantics, verification guarantees, conformance. |
 | **[GUIDE.md](./GUIDE.md)** | Copy-paste-into-an-LLM prompts to build a single agent and a multi-agent learning system. |
 | **[DISTRIBUTION.md](./DISTRIBUTION.md)** | Platforms, every package (PyPI/npm/Homebrew/Scoop/winget/pkg/tarball), release-asset contract. |
 | **[SECURITY.md](./SECURITY.md)** | Signing/notarization, verifying a download, the sealed-binary trust boundary, reporting a vulnerability. |
 | **[BENCHMARKS.md](./BENCHMARKS.md)** | How the numbers are produced + how to reproduce; live results in [LEADERBOARD.md](./LEADERBOARD.md). |
 | **[CHANGELOG.md](./CHANGELOG.md)** | Per-release changes. |
+| **[llms.txt](./llms.txt)** | Full index: wire-protocol reference, agent-bundle spec, host protocol, A2A bridge, and the full cookbook. |
 
 ## Versioning
 

@@ -37,11 +37,13 @@ so it can do real work.
 
 ## 4. Ask it something
 
-From the menu-bar icon, open **CAR Dashboard**. It has tabs across the
-top — the one you want is **Chat**. It works like ChatGPT or Claude:
+From the menu-bar icon, open **CAR Dashboard**. A window opens with a
+list of sections down the **left-hand side** — the one you want is
+**Chat**. It works like ChatGPT or Claude:
 
-1. Pick an assistant from the **agent picker** ("Select an agent").
-   What's listed depends on what's been set up for you.
+1. Pick an assistant from the picker at the top ("Select an agent").
+   What's listed depends on what's been set up for you — the
+   **Assistants** tab is where they're managed.
 2. Type what you want in plain English and press send.
 3. Your conversations are saved in the sidebar — search them, pin
    them, start new ones.
@@ -69,9 +71,12 @@ that touch the real world go through you.
 - **Open the dashboard** — click the menu-bar icon → *CAR Dashboard*.
 - **Settings** — menu-bar icon → *Settings…* (or ⌘,). Models,
   connections, notifications, launch-at-login.
-- **Other tabs** — *Overview* (status at a glance), *Agents*,
-  *Capabilities*, *Approvals*, *Diagnostics*.
-- **Quit** — menu-bar icon → *Quit* (⌘Q). Quitting stops CAR
+- **The other sections** (same list on the left) — *Overview* (status
+  at a glance), *Build*, *Assistants*, *Models*,
+  *Runtime Capabilities*, *Approvals*, *Coder*, *Activity*, *A2UI*,
+  *Diagnostics*. You can ignore most of them; Chat and Approvals are
+  the two you'll actually use day to day.
+- **Quit** — menu-bar icon → *Quit CAR*. Quitting stops CAR
   entirely; relaunch it from Applications or Spotlight.
 
 That's it. Install, click the menu-bar icon, sign in, open Chat, ask.

@@ -26,7 +26,11 @@ double-click. Installs **CAR Host.app** → `/Applications` (the menu-bar app:
 agents, chat, approvals, diagnostics — it embeds and supervises `car-server`) and
 the **`car` CLI** → `/usr/local/bin`. Self-updates via Sparkle. Signed + notarized.
 
-Package-manager equivalent: `brew install --cask Parslee-ai/car/car-host`.
+There is no Homebrew cask. The Homebrew path was **removed** in May 2026
+(`bec680d90`): the `.pkg` installs CAR Host and updates it in place via
+Sparkle, and the cask carried a `car-server install` step that wrote a launchd
+LaunchAgent — the flow the `.pkg` exists to replace. The `.pkg` above is the
+macOS install.
 
 ### Python — PyPI
 
@@ -77,12 +81,13 @@ The CLI (`car`), server (`car-server`), eval bridge (`car-memgine-eval`), and
 stdio MCP server (`car-mcp`) ship
 as native binaries.
 
-- **Homebrew** (macOS + Linux): `brew install Parslee-ai/car/car`
-  (tap: `Parslee-ai/homebrew-car`)
+- **Homebrew**: **not supported.** Removed in May 2026 (`bec680d90`) when the
+  signed `.pkg` + Sparkle became the macOS path; the tap
+  `Parslee-ai/homebrew-car` is gone. Use the install script or a tarball below.
 - **Scoop** (Windows): `scoop bucket add car https://github.com/Parslee-ai/scoop-car && scoop install car`
 - **Winget** (Windows): submission in progress; manifests live under `winget/`.
   Will be `winget install Parslee.Car` once the `microsoft/winget-pkgs` PR lands.
-- **Install script** (macOS + Linux, no Homebrew):
+- **Install script** (macOS + Linux — the recommended CLI install today):
   `curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/install.sh | sh`
   — installs to `~/.car/bin`, prints the PATH line. Pin with `CAR_VERSION=…`,
   redirect with `CAR_INSTALL=…`. (See [SECURITY.md](./SECURITY.md) for the

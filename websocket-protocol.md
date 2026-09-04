@@ -16,21 +16,24 @@ Default port `9100`. Each WebSocket connection is its own session — runtime st
 
 ## Protocol version
 
-The JSON-RPC surface carries a **wire protocol version** (`car-proto::PROTOCOL_VERSION`, currently `2`) that is **independent of the package semver** — it is bumped only on a backward-incompatible change to request/response shapes or method semantics, not on every release. Version 2 makes `auth.complete.attempt_id` mandatory and replaces the ambiguous completion-status fallback with the typed `pending` / `complete` / `failed` / `stale` lifecycle described below.
+The JSON-RPC surface carries a **wire protocol version** (`car-proto::PROTOCOL_VERSION`, currently `3`) that is **independent of the package semver** — it is bumped only on a backward-incompatible change to request/response shapes or method semantics, not on every release. Protocol v3 adds immutable model/catalog identity and capability-negotiated inference controls; the two identity capabilities are mandatory for bundled v3 clients.
 
-Clients negotiate it with an additive `server.handshake` RPC, run once after `session.auth` and before the main request loop:
+Clients negotiate it with `server.handshake`, run once after `session.auth` and before the main request loop:
 
 ```json
 // → client request
 {"jsonrpc": "2.0", "id": 1, "method": "server.handshake",
- "params": {"protocol_version": 2, "client_version": "0.25.0"}}
+ "params": {"protocol_version": 3, "client_version": "0.51.0",
+            "required_capabilities": ["infer.model-identity.v1", "models.catalog-identity.v1"],
+            "optional_capabilities": []}}
 // ← server reply
 {"jsonrpc": "2.0", "id": 1,
- "result": {"protocol_version": 2, "server_version": "0.25.0", "client_protocol_version": 2,
-            "client_version": "0.25.0",
+ "result": {"protocol_version": 3, "server_version": "0.51.0", "client_protocol_version": 3,
+            "client_version": "0.51.0",
             "assistant_name": "Jarvis",
             "assistant_aliases": ["hey jarvis", "ok jarvis", "jarvis"],
-            "assistant_brand": "Parslee Core"}}
+            "assistant_brand": "Parslee Core",
+            "negotiated_capabilities": ["infer.model-identity.v1", "models.catalog-identity.v1"]}}
 ```
 
 The three `assistant_*` fields carry the name this user chose for the flagship
@@ -42,11 +45,13 @@ agent answers to another. They are **additive**, so they did not bump
 `PROTOCOL_VERSION`: an older client ignores them and keeps its built-in
 defaults. `assistant_brand` is the fixed product name and never changes.
 
-Protocol v2 is exact-version and fail-closed for the host/auth surface:
+Protocol v3 is exact-version and fail-closed:
 
 - On an auth-enabled daemon, await a successful `session.auth` response first; request dispatch is concurrent, so pipelining `server.handshake` before that response can race the auth gate.
 - `host.subscribe` and every `auth.*` method return `-32005` (`protocol handshake required:`) until the current WebSocket session has negotiated the exact version. This prevents a legacy host from opening a browser flow it cannot safely complete.
-- A missing, non-numeric, or differing request version returns `-32006` (`protocol version mismatch:`) and does not negotiate the session. A same-v2 repeat is idempotent.
+- A missing, non-numeric, or differing request version returns `-32006` (`protocol version mismatch:`) and does not negotiate the session. A same-v3 repeat is idempotent.
+- `required_capabilities` and `optional_capabilities` must be arrays of non-empty strings. Unsupported mandatory entries return `-32008` (`protocol capability mismatch:`) and do not negotiate; unsupported optional entries are ignored. A success returns the sorted, deduplicated `negotiated_capabilities`.
+- Bundled v3 clients require `infer.model-identity.v1` and `models.catalog-identity.v1`, and fail closed if a nominally successful reply omits either. `infer.cancel.v1` and `infer.deadline.v1` are optional and must not be inferred from protocol version alone.
 - Negotiation is per connection. A reconnect starts unnegotiated and repeats `session.auth` (when enabled) → `server.handshake` → `host.subscribe`.
 - Bundled clients reject an old daemon's unknown-method response, a malformed success, and a handshake timeout instead of proceeding on an unproven protocol.
 
@@ -467,7 +472,7 @@ cannot read, replace, or delete it. The complete reserved contract is:
 
 **All of these require the host-management role** (`session.auth { host_token }`),
 the same trust root as `openrouter.*`, `permission.*`, and `messaging.*`
-([car#661](https://github.com/Parslee-ai/car/issues/661)). They own the daemon's
+(car#661). They own the daemon's
 Parslee identity: `logout` clears the active login's tokens, `switch_org` /
 `switch_account` silently repoint which identity subsequent inference runs and
 bills against, and `remove_account` drops a stored login — so an authenticated
@@ -481,7 +486,7 @@ pure-dev), where the connection is the authority.
 This costs the CLI nothing: `car auth login` / `logout` / `orgs` / `switch-org` /
 `accounts` never call this surface — they use the `car-auth` crate in-process.
 The native CarHost WebSocket clients authenticate with the host token and
-negotiate protocol v2 before calling this surface.
+negotiate protocol v3 before calling this surface.
 
 Credential reads also emit `auth.credential.event` to host-management
 connections after authorization and protocol negotiation. The notification is
@@ -501,7 +506,7 @@ flow is unverified.
 ### Secret-store activity diagnostics
 
 `diagnostics.secret_store_activity {}` is a host-management-only, WS-only read
-of process-lifetime aggregate operation attempts. It requires protocol v2 and
+of process-lifetime aggregate operation attempts. It requires protocol v3 and
 returns exactly:
 
 ```json
@@ -536,7 +541,7 @@ render status, and may poll if a terminal notification is missed.
 
 **All four require the host-management role** (`session.auth { host_token }`),
 the same trust root as `permission.*` and `messaging.*`
-([car#650](https://github.com/Parslee-ai/car/issues/650)). The OAuth credential
+(car#650). The OAuth credential
 is daemon-private — `secret.put`/`get`/`delete` fail closed on the reserved slot
 — which left `openrouter.disconnect` as the only path that could delete it, and
 it was ungated: any authenticated local connection could log the user out of
@@ -739,8 +744,8 @@ car-server --no-auth --port 9100   # auth off (opt-out)
 {"jsonrpc":"2.0","id":0,"result":{"ok": true, "auth_enabled": true}}
 
 // Then negotiate this connection's exact wire protocol:
-{"jsonrpc":"2.0","id":1,"method":"server.handshake","params":{"protocol_version":2}}
-{"jsonrpc":"2.0","id":1,"result":{"protocol_version":2,"server_version":"0.40.0","client_protocol_version":2}}
+{"jsonrpc":"2.0","id":1,"method":"server.handshake","params":{"protocol_version":3,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocol_version":3,"server_version":"0.51.0","client_protocol_version":3,"negotiated_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"]}}
 
 // Subsequent calls work normally. Host/auth clients subscribe only after
 // the handshake succeeds:
@@ -952,7 +957,15 @@ handshake step is skipped entirely.
 
 ## Method reference
 
-73+ methods across 23 namespaces. Each section below documents params, returns, and notable behavior.
+411 methods across 71 namespaces. Each section below documents params, returns, and notable
+behavior. This section is long — for a compact map of every method with deep links into it, read
+[websocket-protocol-index.md](websocket-protocol-index.md) first and follow only the links you need.
+
+<!-- These counts are derived, not hand-maintained: `bash scripts/gen-ws-namespace-index.sh`
+     reports them and fails on coverage gaps. The previous figure here ("73+ methods across 23
+     namespaces") had drifted to ~5.6x wrong on namespaces while sitting live on the public
+     site, because nobody rereads 5000 lines to notice a stale summary. Re-run the generator
+     rather than editing these numbers by hand. -->
 
 ### accounts
 
@@ -1462,7 +1475,7 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 
 #### `host.agents`
 - **Params**: `{}`
-- **Returns**: `HostAgent[]` — agents explicitly registered into host state (callback clients via `host.register_agent`, multi-agent runners), **merged** with any registry-supervised agent that advertises `capabilities` (e.g. `car-assistant` with `["chat"]`) and in-daemon declarative agents (tagged `kind:"declarative"` with `capabilities:["chat"]`). Supervised agents attach via `session.auth { agent_id }` and don't register into host state, so their `AgentSpec.capabilities` are read from the supervisor at request time (status/pid reflect the live supervisor; an explicit registration for the same id wins). This lets a host show a Chat tab by checking `capabilities.contains("chat")`.
+- **Returns**: `HostAgent[]` — agents explicitly registered into host state (callback clients via `host.register_agent`, multi-agent runners), **merged** with any registry-supervised agent that advertises `capabilities` (e.g. the flagship assistant, `parslee-core`, with `["chat"]`) and in-daemon declarative agents (tagged `kind:"declarative"` with `capabilities:["chat"]`). Supervised agents attach via `session.auth { agent_id }` and don't register into host state, so their `AgentSpec.capabilities` are read from the supervisor at request time (status/pid reflect the live supervisor; an explicit registration for the same id wins). This lets a host show a Chat tab by checking `capabilities.contains("chat")`.
 
 #### `host.devices`
 - **Params**: `{}`
@@ -1472,9 +1485,11 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   remote-exec or sensor-invoke surface; privacy-heavy phone capabilities still
   require dedicated, policy-gated RPCs.
 - Parslee Core exposes this same read-only roster through its `linked_devices`
-  tool when it is running as the supervised `car-assistant`, so the assistant can
-  reason about the user's phone/tablet surfaces without gaining access to
-  contacts, location, photos, microphone, or other private device data.
+  tool when it is running as the supervised flagship assistant (agent id
+  `parslee-core`; `car-assistant` is accepted as a server-side compatibility
+  alias for pre-car#1107 clients), so the assistant can reason about the
+  user's phone/tablet surfaces without gaining access to contacts, location,
+  photos, microphone, or other private device data.
 - With full-access approval, Parslee Core can also call `notify_linked_device`
   for a device that advertises `notifications.deliver`. That path sends only a
   title/body notification through `host.notify`; it is not contacts, location,
@@ -2728,7 +2743,7 @@ All `state.*` methods accept an optional `tenant_id: string` sibling field (Pars
   can't run (no `uv`, no usable Python) is logged and the root is still
   returned; everywhere else it is the only local speech path and the call
   errors. Read `speech.health.runtime.installed` for the real state
-  ([Parslee-ai/car#649](https://github.com/Parslee-ai/car/issues/649)).
+  (Parslee-ai/car#649).
 
 #### `models.route`
 - **Params**: `{ prompt: string, intent?: IntentHint }`. `intent` is an
@@ -3262,6 +3277,43 @@ existence/owner oracle on the write path either).
 - Exposed as a **real** FFI binding (`runsStart` / `runs_start`) — the JS
   harness drives the capture pipeline through it.
 
+#### `runs.resume` (`runs.resume.v1`)
+- **Params**: exactly `{ run_id }`. Unknown fields are rejected; there is no
+  caller-supplied `client_id`, owner token, or idempotency key credential.
+- **Returns**:
+  `{ run_id, agent_id, client_id, resumed_from_client_id }`, where both client
+  ids were minted by this daemon. The immutable `RunStarted`/proposal/
+  `RunEnded` provenance remains bound to the original client; `client_id` is
+  the replacement socket now fenced as the one live producer.
+- The connection must negotiate `runs.resume.v1` and authenticate through
+  `session.auth { token, agent_id }` as the run's owning supervised agent.
+  Host-token and unbound authenticated sessions cannot resume a run. The old
+  owner must already be absent from the daemon's live session registry.
+- Reclaim is atomic: concurrent authenticated replacements have one winner,
+  and all stale/later owners are rejected. Outcome, failed, cancelled, and
+  `Incomplete` terminals are never reopened; neither are uncommitted,
+  cancellation-pending, terminal-pending, or corrupt runs.
+- A resumed run is recovery-only. `proposal.submit` may return the exact
+  completed response stored under the original durable client identity, or
+  finish that proposal's durable finalization. It never dispatches a new
+  proposal and never redispatches an outcome-unknown execution marker. Safe
+  per-action retries remain the existing proposal engine's explicit
+  `failure_behavior: "retry"` / `max_retries` semantics; recovery adds no new
+  permission to repeat a non-idempotent action.
+- If that completed proposal used a policy session, the replacement submits
+  through a newly minted policy session that is live on its own connection.
+  CAR validates the retained response's original authenticated policy
+  provenance; it does not reuse the closed session for new work.
+- When a producer that negotiated `runs.resume.v1` is removed from the live
+  session registry, the daemon starts a 10-second in-process resume lease.
+  Each resumed producer disconnect renews a fresh 10-second lease. Producer
+  sessions without this capability retain the legacy 250ms disconnect grace.
+  The lease is ephemeral and is not restored after a daemon restart; a
+  replacement must claim before its lease expires and the orphan is committed
+  as `Incomplete`.
+- This is a WebSocket newsroom recovery surface only. It has no NAPI, PyO3,
+  UniFFI, native, or mobile binding.
+
 #### `runs.complete`
 - **Params**: `{ run_id, outcome }` where `outcome` is an `AgentOutcome`
   (`{ status, summary, evidence, metrics, timestamp }`).
@@ -3275,6 +3327,35 @@ existence/owner oracle on the write path either).
   healthy run whose `runs.complete` is still in flight is therefore not
   raced into `Incomplete`.
 - Exposed as a **real** FFI binding (`runsComplete` / `runs_complete`).
+
+#### `runs.cancel` (`runs.cancel.v1`)
+- **Params**: exactly `{ run_id, idempotency_key, reason }`; all strings are
+  required and non-empty. Unknown fields are rejected. The key is limited to
+  128 bytes and the reason to 1024 bytes.
+- The connection must negotiate `runs.cancel.v1` and authenticate either as
+  the run's owning agent or as the host-management client. Unknown and
+  unauthorized run ids return the same error.
+- CAR first persists a body-free `cancellation_requested` row containing the
+  SHA-256 of the exact UTF-8 reason, then cancels the exact active callback
+  (`tools.cancel` with its `action_id` and `request_id`) and/or inference. A
+  confirmed stop commits `RunTermination::Cancelled` through the same
+  first-terminal-wins transaction as `runs.complete`; `runs.complete` cannot
+  overwrite it.
+- **Returns** a deterministic body-free receipt:
+  `{ receipt_version, run_id, idempotency_key, reason_digest, principal,
+  status, terminal_digest, action_id, request_id, receipt_digest }`.
+  `status` is one of `cancelled_confirmed`, `already_terminal`, or
+  `termination_unconfirmed`. `terminal_digest` is present for the first two
+  and null for an unconfirmed stop. `receipt_digest` is lowercase SHA-256 of
+  the RFC 8785/JCS serialization of every preceding receipt field.
+- Same-key retries with the same reason/principal return the same receipt and
+  digest. A different key after a terminal returns `already_terminal` bound to
+  the immutable terminal digest and appends nothing after `ended`.
+  Lost/ambiguous control persists `cancellation_result` with
+  `termination_unconfirmed`; this is a quarantined nonterminal state that
+  blocks proposals, completion, orphan adoption, and retention eviction.
+- This is a WebSocket newsroom/operator surface only; no NAPI, PyO3, UniFFI,
+  or mobile binding is part of this contract.
 
 #### `runs.record_turns`
 - **Params**: `{ run_id, turns: [RunTurn] }`.
@@ -3692,10 +3773,11 @@ no deadline (cancel it explicitly).
 
 #### `agents.chat`
 - **Params**: `{ agent_id: string, prompt: string, session_id?: string, stream?: boolean = true, voice_input?: boolean = false, model?: string, attachments?: ImageContentBlock[], goal?: { check: string, max_iterations?: number } }`.
+  - `agent_id` — the flagship assistant's canonical id is `parslee-core`; `car-assistant` (its pre-car#1107 id, still hardcoded by macOS) is accepted as a server-side alias. If the caller sends one spelling and the assistant is attached under the other, the daemon transparently resolves to whichever is actually attached — this only applies to the flagship assistant, not other supervised or declarative agents.
   - `session_id` — host-generated id threaded through every event so one CarHost window with multiple in-flight chats can demux. Auto-generated when omitted.
   - `model` — optional explicit CAR model ID for this turn. A non-empty value is a strict selection and reaches inference unchanged; CAR reports that model's failure rather than silently substituting another model. Omit it (or pass a blank string) to preserve the supervised agent's configured model and adaptive fallback policy.
   - `attachments` — optional array of image `ContentBlock`s the user attached: `{ "type": "image_base64", "data": "<b64>", "media_type": "image/png" }` or `{ "type": "image_url", "url": "https://…", "detail": "auto" }`. The daemon validates each entry's shape and content — `image_base64` must carry a string `data` and a `media_type` in `{image/png, image/jpeg, image/gif, image/webp}`; `image_url` must be http(s) — rejecting a malformed entry with a JSON-RPC error, then forwards the array verbatim to the agent's reverse-called `agent.chat` handler, which passes it to inference as `imagesJson`. Omitted when the turn has no images, so agents that don't read it see the legacy request shape. The daemon does **not** check provider vision capability; an agent or provider that can't accept images surfaces that error downstream.
-  - `goal` — optional deterministic completion contract for this chat turn. `check` is a shell command the agent runtime runs after each assistant iteration; exit 0 means the condition is met. `max_iterations` defaults to 8 and is clamped to 1–50. Goal-driven agents stream `goal_evaluated { iteration, met, grounded, reason }` after each verifier pass and emit terminal `done` once the deterministic check passes (`met` with `grounded: true`). The flagship assistant still cross-checks conservative final-summary operational claims such as "tests passed" against same-run tool receipts, but once the deterministic check has itself passed an unmatched claim only **annotates the reply text** (a `[claim check]` note appended to the `done` message) — it no longer re-opens a deterministically-verified iteration on prose wording, and `grounded` stays `true`. A summary claim can still keep a completion ungrounded when the met verdict rested on a model judge rather than deterministic ground truth (it fails closed and keeps iterating). If the governor halts first, the terminal event is `error`. Currently mutually exclusive with `attachments`.
+  - `goal` — optional deterministic completion contract for this chat turn. `check` is a shell command the agent runtime runs after each assistant iteration; exit 0 means the condition is met. `max_iterations` defaults to 8 and is clamped to 1–50. Goal-driven agents stream `goal_evaluated { iteration, met, grounded, reason }` after each verifier pass and emit terminal `done` once the deterministic check passes (`met` with `grounded: true`). The flagship assistant still cross-checks conservative final-summary operational claims such as "tests passed" against same-run tool receipts, but once the deterministic check has itself passed an unmatched claim only **annotates the reply text** (a `[claim check]` note appended to the `done` message) — it no longer re-opens a deterministically-verified iteration on prose wording, and `grounded` stays `true`. A summary claim can still keep a completion ungrounded when the met verdict rested on a model judge rather than deterministic ground truth (it fails closed and keeps iterating). If the governor halts on a condition that actually ran and was not met (turn/cost/wall-clock budget, no-progress, cancel), the terminal event is `error`, naming the halt reason. If the check itself never got to run within its own bound — a stuck approval wait, a wedged subprocess — the loop fails open instead of hanging or discarding a working reply: it halts on the *first* such stall (it does not burn the rest of `max_iterations` retrying a check that structurally cannot be evaluated), and the terminal event is still `done`, with the reply text carrying a `[goal check] not verified — …` note (mirroring the `[claim check]` annotation convention above), `finish_reason` set to a short "unevaluated" string, and `goal_unevaluated: true` — a machine-readable marker `goal.status`'s persistence layer reads to record `status: "unevaluated"` rather than `"met"`, so a client polling `chatGoal.status`/`goal.status` cannot misread an unchecked condition as a verified pass. Currently mutually exclusive with `attachments`.
   - If no inline `goal` is passed, the daemon looks for a standing goal stored for the same `session_id` via `goal.set` and forwards that contract to the agent.
 - **Returns**: an ack `{ accepted: true, session_id: string }`. The reply does **not** carry the answer — for attached supervised agents, the daemon reverse-calls the agent's `agent.chat` handler and fans the streamed reply back as `agents.chat.event` notifications (`kind: "token" | "tool_call" | "approval_pending" | "goal_evaluated" | "receipt_report" | "done" | "error"`) keyed by `session_id`. `receipt_report` is emitted immediately before the terminal frame and reports local verification, remote main, CI/CD, deployment, health, and production-browser proof separately; missing evidence remains absent rather than being inferred. For in-daemon declarative agents, no child process or reverse call is needed: the daemon runs the declarative runner directly and emits the same event stream. `stream: false` still returns via the same event channel as a single terminal frame.
 - Host-side method is WS-only (no FFI binding — a host like CarHost calls it directly). The **agent side** has FFI helpers (below). See [`docs/proposals/agent-chat-surface.md`](./proposals/agent-chat-surface.md) for the full host↔daemon↔agent flow.
@@ -3720,7 +3802,7 @@ no deadline (cancel it explicitly).
 - **Params**: `{ session_id?: string }`.
   - With `session_id`, returns `{ session_id, goal: ChatGoalState | null }`.
   - Without `session_id`, returns `{ goals: ChatGoalState[] }`.
-  - `ChatGoalState` carries `{ session_id, check, max_iterations, status, last_iteration?, last_met?, last_grounded?, last_reason?, terminal_kind?, terminal_message?, updated_at }`. `status` is updated from forwarded `goal_evaluated`, `done`, and `error` chat events and persisted. On daemon restart, a stale persisted `running` status is reloaded as `active` while verifier details are preserved.
+  - `ChatGoalState` carries `{ session_id, check, max_iterations, status, last_iteration?, last_met?, last_grounded?, last_reason?, terminal_kind?, terminal_message?, updated_at }`. `status` is one of `"active"` (set, not yet run), `"running"`, `"met"`, `"unevaluated"` (a `done` whose goal check never got the chance to run — see the fail-open case under `agents.chat`'s `goal` param above; `terminal_message` carries `finish_reason` for human-readable detail), or `"error"` (a check that ran and genuinely failed, or a governor halt). It is updated from forwarded `goal_evaluated`, `done`, and `error` chat events and persisted. On daemon restart, a stale persisted `running` status is reloaded as `active` while verifier details are preserved.
 
 #### `goal.clear`
 - **Params**: `{ session_id?: string }`.
@@ -3998,7 +4080,7 @@ default_max_iterations = 8                               # coder.start fallback 
 #### `coder.start`
 - **Params**: `{ repo?: string, project?: string, intent: string, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, model?: string, repair_invokes?: number, transient_retries?: number, discussion_id?: string }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `8`). `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis.
 - **Returns**: `{ session_id, state: "contract_proposed", engine, worktree, contract: { description, checks: [{ name, command, expect_exit_zero, output_contains?, timeout_secs }] }, baseline, baseline_gates_nothing, journal_path, model }` — `journal_path` is the `car_eventlog` JSONL this session journals its actions to (per-tool `action_id`, `ActionFailed`/`TurnCompleted`/…), so a caller (e.g. `car coder-ab`) can attribute the run's failure mechanisms via `harness_adapt::diagnose` without guessing the state dir. `model` is the **effective** native-loop pin (the per-session request, else the config, else `null` = adaptive routing) — surfaced so a caller can verify the coder is on the intended backbone rather than silently falling back to a local model.
-- **Red-green baseline** (car#707): before returning, the contract is evaluated once against the **unmodified** worktree. `baseline` is a `CheckResult[]` in check order, and `baseline_gates_nothing` is true when *every* check already passed — meaning the contract verifies nothing for this task and there is nothing to turn red-to-green. Only an all-green baseline sets the flag: individual passing checks are ordinary (a refactor's checks are green before and after by design), so flagging one would abort sessions over a non-fault. `validate()` already rejects contracts that gate nothing *structurally* (assertion-less checks, toolchain-only no-ops); this catches the semantic case that clears validation. Skipped for `agent`-kind projects, whose synthesized check is an in-daemon scenario run rather than a shell command. Costs one contract evaluation, bounded by the checks' own `timeout_secs`. The same results are pushed as a `coder.contract_baseline` event.
+- **Red-green baseline** (car#707): before returning, the contract is evaluated once against the **unmodified** worktree. `baseline` is a `CheckResult[]` in check order, and `baseline_gates_nothing` is true when *every* check already passed — meaning the contract verifies nothing for this task and there is nothing to turn red-to-green. Only an all-green baseline sets the flag: individual passing checks are ordinary (a refactor's checks are green before and after by design), so flagging one would abort sessions over a non-fault. `validate()` already rejects contracts that gate nothing *structurally* (assertion-less checks, toolchain-only no-ops); this catches the semantic case that clears validation. Skipped for `agent`-kind projects, whose synthesized check is an in-daemon scenario run rather than a shell command. Costs one contract evaluation, bounded by the checks' own `timeout_secs`. The same results are pushed as a `coder.contract_baseline` event. The baseline is a vacuity check, not a captured measurement a later evaluation compares against — every evaluation point sits before delivery, and none of them receives the baseline results, so a before/after claim about a live system is not expressible in a contract even though an individual check may reach one. See "What a contract cannot assert" in [`docs/car-code-task.md`](car-code-task.md).
 - **Visible while drafting.** The session is registered at `created` **before**
   contract derivation begins, so it appears in `coder.list` / `coder.watch` (and
   fans out a `coder.session_changed`) for the whole 3-5 minute drafting window,
@@ -5175,6 +5257,7 @@ Same pattern as `tools.execute`, but for delegating per-agent inference during `
 | `-32005` | Protocol handshake required; `host.subscribe` / `auth.*` did not dispatch |
 | `-32006` | Protocol version missing, malformed, or incompatible |
 | `-32007` | Content refused — something in front of the model (a managed gateway's content filter, a provider's moderation layer) declined the request's content. Not a fault: record it as a policy refusal and do not retry. Message is prefixed `content refused:` |
+| `-32008` | Protocol capability mismatch — a mandatory handshake capability is unsupported, or a capability-gated method was called without negotiating it. Message is prefixed `protocol capability mismatch:` |
 
 The error `message` field contains a human-readable description.
 

@@ -58,12 +58,19 @@ TOOLS = {
 }
 
 
-def tool_fn(name: str, params_json: str) -> str:
-    params = json.loads(params_json)
+def tool_fn(call_json: str) -> str:
+    """Dispatch one tool call.
+
+    The runtime passes a SINGLE JSON string describing the call — the tool
+    name, its params, and the action/request ids — not the name and params as
+    separate arguments. Returns the JSON-encoded result.
+    """
+    call = json.loads(call_json)
+    name = call["tool"]
     fn = TOOLS.get(name)
     if fn is None:
         return json.dumps({"error": f"unknown tool: {name}"})
-    return json.dumps(fn(params))
+    return json.dumps(fn(call["params"]))
 
 
 # ---------------------------------------------------------------------------

@@ -49,9 +49,14 @@ def main() -> None:
     print("verify:", report["valid"])
 
     # 5. Execute with a Python tool callback.
-    def tool_fn(tool: str, params_json: str) -> str:
-        params = json.loads(params_json)
-        print(f"  [{tool}] echoed: {params['msg']}")
+    #
+    # The callback takes ONE argument: a JSON string describing the whole call
+    # — {"tool", "params", "action_id", "request_id", "timeout_ms",
+    # "session_id", "attempt"} — and returns the JSON-encoded tool result.
+    def tool_fn(call_json: str) -> str:
+        call = json.loads(call_json)
+        params = call["params"]
+        print(f"  [{call['tool']}] echoed: {params['msg']}")
         return json.dumps({"ok": True, "echoed": params["msg"]})
 
     result = json.loads(rt.execute_proposal(proposal, tool_fn))
