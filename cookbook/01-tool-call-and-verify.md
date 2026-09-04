@@ -1,3 +1,4 @@
+{% raw %}
 # Tool call: register, verify, execute
 
 The canonical CAR lifecycle: register a tool, build a proposal, verify it statically, then execute it with a callback.
@@ -144,3 +145,5 @@ Verification cost is negligible compared to a tool round-trip, so verify everyth
 The callback receives `{"tool": str, "params": object}` as a JSON string and must return the tool's result as a JSON string. Errors should be raised — the runtime catches them and emits a failed `ActionResult`.
 
 For idempotent tools, set `idempotent: true` on the action so the runtime can cache the result and safely retry on transient failure.
+
+{% endraw %}

@@ -1,3 +1,4 @@
+{% raw %}
 # CAR as an MCP server
 
 > Describes CAR **0.52.0**. Check yours with `car --version`; if it
@@ -380,3 +381,5 @@ This is the mirror of everything documented above, not a replacement for it —
 use `car-mcp` / the daemon's `/mcp` endpoint to bring CAR's tools *into* an
 external agent, and `car-connectors` to bring an external MCP server's tools
 *into* CAR.
+
+{% endraw %}

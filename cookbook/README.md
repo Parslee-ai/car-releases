@@ -1,3 +1,4 @@
+{% raw %}
 # CAR Cookbook
 
 Short, focused recipes for the things people actually want to do with CAR. Each recipe is self-contained and runnable.
@@ -25,3 +26,5 @@ If you're just starting:
 | 14 | [Cross-host deployment](./14-cross-host-deployment.md) | daemon on Linux + client on Windows (or any split) via `$CAR_DAEMON_URL` + `$CAR_AUTH_TOKEN` |
 
 Recipes use TypeScript and Python interchangeably — pick whichever is clearer for the surface. The runtime behavior is identical across bindings.
+
+{% endraw %}

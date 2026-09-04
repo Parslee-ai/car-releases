@@ -1,3 +1,4 @@
+{% raw %}
 # CAR WebSocket Protocol Reference
 
 `car-server` exposes the runtime over a WebSocket using JSON-RPC 2.0. This is the **language-agnostic surface** for CAR — anything that can speak WebSocket and JSON can drive it.
@@ -5271,3 +5272,5 @@ The error `message` field contains a human-readable description.
   WebSocket beyond localhost.
 - **API keys** for remote inference (Anthropic, OpenAI, Google) are read from `~/.car/env` at server startup, not per-request. See README "Configuring API keys via `~/.car/env`".
 - **Source of truth.** This document is hand-maintained from `car-rs/crates/car-server-core/src/handler.rs`, `host.rs`, and `session.rs`. If you find drift, the Rust dispatcher wins.
+
+{% endraw %}

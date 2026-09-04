@@ -1,3 +1,4 @@
+{% raw %}
 # CAR CLI reference
 
 > **Generated file — do not hand-edit below the task map.** Produced by
@@ -3049,3 +3050,5 @@ Usage: car help [COMMAND]...
 Arguments:
   [COMMAND]...  Print help for the subcommand(s)
 ```
+
+{% endraw %}

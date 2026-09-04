@@ -1,3 +1,4 @@
+{% raw %}
 # Agent Bundle Specification
 
 > **Status:** draft. Not yet implemented. This document describes the target shape; tracking implementation in [`docs/agent-portability-roadmap.md`](./agent-portability-roadmap.md).
@@ -309,3 +310,5 @@ This separation is the whole point: bundles are declarative, portable, and signa
 2. **Tool capability granularity** — `email-send` covers a lot of ground. Do we need `email-send-plain`, `email-send-attachments`, etc.? Lean: keep it coarse for v1, refine if real bundles run into mismatches.
 3. **Dependency between bundles** — can agent A invoke agent B? Multi-agent already supports this in-runtime; bundles need a way to declare "I require parslee/researcher@^1.0.0 to be installed". Defer to v2.
 4. **Local bundles in `.car/`** — do project-local agents (development, not published) live in `.car/agents/` and bypass signing? Lean: yes, with a `--unsafe-local` flag for `car run`.
+
+{% endraw %}

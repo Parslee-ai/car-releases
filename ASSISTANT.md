@@ -1,3 +1,4 @@
+{% raw %}
 # Parslee Core — the `car do` assistant
 
 > Describes CAR **0.52.0**. Check yours with `car --version`; if it
@@ -489,3 +490,5 @@ even on failure.
 - Wiring CAR (including a poll-based handle onto this same assistant,
   `assistant_start`/`assistant_poll`) into Claude Code, Cursor, or another
   MCP host — [MCP.md](./MCP.md).
+
+{% endraw %}

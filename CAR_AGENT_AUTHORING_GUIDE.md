@@ -1,3 +1,4 @@
+{% raw %}
 # CAR Agent Authoring & Capability Guide
 
 > **Common Agent Runtime (CAR)** — a deterministic execution layer for AI agents.
@@ -8189,3 +8190,5 @@ These are gaps the multi-agent survey flagged between CAR's *shipped* capability
 #### Streaming/multi-turn inference parameters for chat agents
 - **Why it matters:** For a conversational single agent, the full infer_tracked surface (tools_json, tool_choice, parallel_tool_calls, messages_json, context_query, images_json for vision, response_format, intent_json) and the StreamEvent types (text/tool_start/tool_delta/usage/done) are essential, but cookbook 09 covers only basic per-token streaming. The multi-turn Message enum (User/Assistant-with-tool_calls/ToolResult) that enables proper tool_use conversation flow is mentioned in CLAUDE.md but not in user docs.
 - **Where to look:** `car-inference` `Message`, `GenerateRequest`, and `GenerateParams`; FFI `infer_tracked` signatures; and the WebSocket protocol's `infer` / `infer_stream` contract. The FFI streaming declarations document only always-error compatibility stubs.
+
+{% endraw %}

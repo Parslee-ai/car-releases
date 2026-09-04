@@ -1,3 +1,4 @@
+{% raw %}
 # Voice orchestration
 
 CAR's voice stack ships listener / VAD / TTS primitives in `car-voice`. To turn a finalized utterance into voice-shaped audio, callers also need *voice-tuned prompting* — without it, models emit markdown, ask clarifying questions, and dump multi-paragraph answers that take ten seconds to read out loud.
@@ -170,3 +171,5 @@ A complete runnable example lives at [`car-rs/examples/voice-loop/`](../../car-r
 ## From the FFI side (v0.7.0+)
 
 Once v0.7.0 ships, JS / Python / Swift / Kotlin hosts use `dispatchVoiceTurn` (or its language equivalent) and feed the events into the host's own TTS. The `voice.turn.*` event taxonomy is shared across all four bindings and the WebSocket protocol. See [`docs/websocket-protocol.md`](../websocket-protocol.md) for the JSON-RPC method shapes.
+
+{% endraw %}

@@ -1,3 +1,4 @@
+{% raw %}
 # Multi-agent: swarm, pipeline, and advisor
 
 CAR coordinates multiple agents through built-in patterns: `swarm`, `pipeline`, `supervisor`, `mapReduce`, `vote`, `tournament`, and `advisor`. The runtime owns the coordination; you provide an `agentFn` that runs one agent.
@@ -160,3 +161,5 @@ reference for the full contract.
 | `advisor` | stronger-model guidance while the original executor stays in control |
 
 For declarative, conditional, compensable orchestration, use `car-workflow` instead — see [`crates/car-workflow/`](../../car-rs/crates/car-workflow/).
+
+{% endraw %}

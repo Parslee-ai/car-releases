@@ -1,3 +1,4 @@
+{% raw %}
 # Agent IR Specification
 
 The **Agent Intermediate Representation** is the contract between models and the Common Agent Runtime. Models propose IR; the runtime validates and executes. Everything in this document is a stable wire-format guarantee — these shapes round-trip through the FFI bindings (NAPI, PyO3) and the WebSocket protocol unchanged.
@@ -675,3 +676,5 @@ observable at least once, after which the handle is consumed (`null`).
 | `verify`, `simulate`, `equivalent`, `optimize` | `car-rs/crates/car-verify/src/lib.rs` |
 | `PolicyEngine`, built-in rules | `car-rs/crates/car-policy/src/lib.rs`, `car-rs/crates/car-ffi-napi/src/lib.rs` (rule dispatch) |
 | Tool dispatch / DAG executor | `car-rs/crates/car-engine/src/lib.rs` |
+
+{% endraw %}

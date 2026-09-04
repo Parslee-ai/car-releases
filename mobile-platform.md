@@ -1,3 +1,4 @@
+{% raw %}
 # Mobile Platform Plan
 
 > **Status:** in progress. M1 ✅ shipped, M2 ✅ landed (XCFramework + AAR build chains, iOS and Android slices in CI), M3 🟡 scaffolded (iOS host SwiftPM package, Package.swift CI check, voice loop, typed ask, Parslee Core work-location chooser, local OS capability disclosure; TestFlight upload itself is a manual Xcode step). M4 🟡 Foundation Models shim builds for iOS device + simulator slices; runtime validation on real iOS 26 hardware pending. M6 🟡 scaffolded (Kotlin + Compose host app, Android speech/TTS loop, Parslee OAuth sign-in, automatic Parslee Core discovery, approvals, fixture mode, emulator runner, and local emulator validation). M5, M7 not started. See the [phased delivery section](#phased-delivery) for per-milestone status.
@@ -342,3 +343,5 @@ Each milestone is shippable on its own. M1 alone shipped real value to macOS use
 3. **Cross-runtime version skew.** Bundle `car_min_version` handles forward-compat at install. What about an installed bundle when the runtime updates and breaks something? Need a re-validation step on runtime upgrade.
 4. **Apple Foundation Models availability gating.** Pre-iOS 26 / pre-A17 devices won't have it. The router needs to handle "this device can't do OS-provided on-device inference" gracefully by falling back to remote Parslee models with clear consent and cost/data expectations.
 5. **Background execution policy.** Both OSes restrict it. Do we declare CAR agents as "foreground-only" by default, with an opt-in "may run briefly in background" flag? Lean: yes.
+
+{% endraw %}

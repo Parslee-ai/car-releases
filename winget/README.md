@@ -1,3 +1,4 @@
+{% raw %}
 # Winget manifests
 
 Authoritative source for the `Parslee.Car` package manifests. Winget discovers
@@ -19,3 +20,5 @@ copied into that repo via a pull request for each release.
 
 The first PR (the initial `Parslee.Car` submission) bootstraps the package;
 subsequent releases only add a new version directory.
+
+{% endraw %}

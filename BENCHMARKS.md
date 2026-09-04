@@ -1,3 +1,4 @@
+{% raw %}
 # Benchmarks
 
 How CAR's published numbers are produced, what each column means, and how to
@@ -75,3 +76,5 @@ leaderboard; the leaderboard above is the canonical public benchmark surface.
 - LLM-judged scores (`judged` track) carry the judge's variance — treat small
   quality gaps there as noise, not signal.
 - A `—` in Quality means every attempt was skipped (capability gap), not a zero.
+
+{% endraw %}

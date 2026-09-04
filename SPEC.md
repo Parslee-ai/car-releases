@@ -1,3 +1,4 @@
+{% raw %}
 # CAR specification
 
 The data shapes and semantics CAR guarantees across every binding (Python, Node,
@@ -167,3 +168,5 @@ passes the conformance tests or it isn't CAR-compatible.
 CAR is pre-1.0. Breaking changes between minor versions are possible — **pin to
 exact versions** until the API stabilizes. Each release lists breaking changes in
 its GitHub release notes and in `CHANGELOG.md`.
+
+{% endraw %}

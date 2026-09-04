@@ -1,3 +1,4 @@
+{% raw %}
 # Governed production assistant
 
 CAR's supervised assistant has an opt-in host mode for repository engineering:
@@ -78,3 +79,5 @@ CAR also maintains a hash-chained event journal and emits a `receipt_report`
 before the terminal chat event. Its completion matrix keeps local verification,
 remote-main state, CI/CD state, deployment identity, health, and browser-backed
 production proof separate; an absent receipt remains an absent gate.
+
+{% endraw %}

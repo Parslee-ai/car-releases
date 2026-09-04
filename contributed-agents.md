@@ -1,3 +1,4 @@
+{% raw %}
 # Contributed agents
 
 Third parties ship agents to CAR by packaging a **manifest** plus
@@ -358,3 +359,5 @@ step) is the intended primary flow and ships in a later phase.
 The proposal at
 [`docs/proposals/contributed-agents.md`](proposals/contributed-agents.md)
 covers the full scope. This doc tracks what shipped.
+
+{% endraw %}

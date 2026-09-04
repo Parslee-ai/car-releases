@@ -1,3 +1,4 @@
+{% raw %}
 # Memory: facts and 4-layer context
 
 CAR's memgine is a graph-based memory engine — facts are nodes, relationships are edges, retrieval uses spreading activation. The four-layer context assembly puts the right things in front of the model in the right order.
@@ -85,3 +86,5 @@ const factCount = rt.loadMemory('/path/to/memory.json');
 ```
 
 The on-disk format is backward-compatible JSON — safe to commit alongside a project's `.car/` directory if the facts are team knowledge rather than per-user.
+
+{% endraw %}

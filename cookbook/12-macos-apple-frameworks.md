@@ -1,3 +1,4 @@
+{% raw %}
 # macOS Apple-frameworks providers
 
 CAR ships first-class STT, TTS, and on-device LLM backends that lean on the frameworks macOS already provides — `SFSpeechRecognizer` (Speech), `AVSpeechSynthesizer` (AVFoundation), and `SystemLanguageModel` (FoundationModels). On macOS they are the default; Linux and Windows fall back to the cross-platform stack (`whisper.cpp`, ElevenLabs, the local OpenAI-compatible TTS server). No feature flags — gating is purely `cfg(target_os = "macos")`, plus runtime version checks where the framework requires them.
@@ -151,3 +152,5 @@ On Linux and Windows the Apple variants are not compiled in (`available: false`)
 
 - `docs/mobile-platform.md` — the iOS / Android plan that builds on these same providers.
 - `apps/host-macos/Resources/Info.plist` — concrete reference Info.plist for a host app that uses Speech + microphone.
+
+{% endraw %}

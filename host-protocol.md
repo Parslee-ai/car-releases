@@ -1,3 +1,4 @@
+{% raw %}
 # CAR Host Protocol
 
 CAR exposes a host-facing JSON-RPC surface over the existing `car-server`
@@ -827,3 +828,5 @@ Lifecycle agents that need to survive a daemon restart should:
 The "single-source-of-truth" framing applies here too — assume the daemon
 is the authority on what's in flight and treat the agent's local view as
 something that must be reconciled when the connection resumes.
+
+{% endraw %}

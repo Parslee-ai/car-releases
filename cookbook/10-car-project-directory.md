@@ -1,3 +1,4 @@
+{% raw %}
 # `.car/` project directory
 
 `.car/` is the team-shareable knowledge layer for a project. Checked into git. Auto-discovered by walking up from `cwd`. Where rubrics, policies, identity, and project-scoped facts live.
@@ -142,3 +143,5 @@ Commit it. Now everyone on the team gets the skill on next runtime boot.
 - for credentials / API keys — use `car-secrets` (OS keychain) and `~/.car/env`
 
 The split is the same as `.git/` (project) vs `~/.gitconfig` (user) — knowledge that's about *the project* belongs in `.car/`, knowledge that's about *the user* belongs in `~/.car/`.
+
+{% endraw %}

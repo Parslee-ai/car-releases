@@ -1,3 +1,4 @@
+{% raw %}
 # Security
 
 CAR ships as signed binaries you install and grant real OS permissions to. This
@@ -111,3 +112,5 @@ Trust-signal hardening we intend to add (tracked on this repo's issues):
 - **Build provenance attestations** (SLSA / GitHub artifact attestations) tying
   each asset to the CI run that built it.
 - **SBOM** for the shipped binaries.
+
+{% endraw %}

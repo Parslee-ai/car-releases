@@ -1,3 +1,4 @@
+{% raw %}
 # WebSocket client (non-Node)
 
 When you're not on Node or Python, the WebSocket protocol is your interface. Anything that speaks WebSocket and JSON can drive CAR.
@@ -178,3 +179,5 @@ After this, the server pushes `host.event` notifications to you alongside any ex
 ## Full method reference
 
 [`docs/websocket-protocol.md`](../websocket-protocol.md) — 73+ methods across 23 namespaces.
+
+{% endraw %}

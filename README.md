@@ -1,3 +1,4 @@
+{% raw %}
 # Common Agent Runtime (CAR)
 
 A deterministic execution layer for AI agents, written in Rust.
@@ -176,3 +177,5 @@ Two licenses — see [LICENSE](./LICENSE) for the authoritative text.
 
 Need source access, modification rights, or a commercial redistribution
 agreement? Contact Parslee AI.
+
+{% endraw %}

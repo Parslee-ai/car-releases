@@ -1,3 +1,4 @@
+{% raw %}
 # Common Agent Runtime
 
 A deterministic execution layer for AI agents. Models propose; the runtime validates and executes.
@@ -86,3 +87,5 @@ Working on a project that *uses* CAR? The repo ships two LLM-friendly bundles:
 
 - [`llms.txt`](https://car.parslee.ai/llms.txt) — navigational index. Tell your assistant where the docs live.
 - [`llms-full.txt`](https://car.parslee.ai/llms-full.txt) — concatenated full docs (~722 KB). Drop into a Claude Project, ChatGPT custom instructions, or Cursor docs to seed an assistant with everything it needs.
+
+{% endraw %}

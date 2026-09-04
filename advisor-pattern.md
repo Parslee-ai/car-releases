@@ -1,3 +1,4 @@
+{% raw %}
 # Advisor Pattern
 
 The Advisor pattern lets a primary executor ask a stronger model for bounded
@@ -203,3 +204,5 @@ The current CAR implementation is the foundation API. It does not prescribe:
 
 Those are product-level choices. Tokhn's advisor experiment is one concrete
 consumer of this pattern, not the generic contract.
+
+{% endraw %}

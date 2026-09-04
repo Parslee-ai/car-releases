@@ -1,3 +1,4 @@
+{% raw %}
 # MCP server in Claude Desktop / Cursor
 
 `car-mcp-server` exposes CAR's stateless capabilities as MCP (Model Context Protocol) tools. Wire it into any MCP-aware client — Claude Desktop, Cursor, etc. — and the model gets memory queries, skill lookup, and proposal verification as tools.
@@ -299,3 +300,5 @@ tail -f ~/Library/Logs/Claude/mcp-server-car.log
 - you need **streaming** inference, voice, browser, or meeting capture
 
 For those, run `car-server` and connect via WebSocket. See [`docs/websocket-protocol.md`](../websocket-protocol.md) and [recipe 06](./06-websocket-client.md).
+
+{% endraw %}

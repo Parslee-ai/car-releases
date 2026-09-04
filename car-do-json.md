@@ -1,3 +1,4 @@
+{% raw %}
 # `car do --json` — the machine-readable run contract
 
 `car do --json` is how another agent delegates work to CAR's assistant. It is
@@ -294,3 +295,5 @@ for the poll contract and its bounds.
 Additive fields are compatible and may appear without notice. Removing a field
 or changing its type is not, and takes a new schema id. Pin on the `schema`
 value if you need to.
+
+{% endraw %}

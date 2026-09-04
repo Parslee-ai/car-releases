@@ -1,3 +1,4 @@
+{% raw %}
 # Agent Portability Roadmap
 
 > **Status:** draft. Not yet implemented. Companion to [`docs/agent-bundle-spec.md`](./agent-bundle-spec.md) (the bundle format) and [`docs/mobile-platform.md`](./mobile-platform.md) (iOS/Android plan).
@@ -213,3 +214,5 @@ The mobile platform plan ([`docs/mobile-platform.md`](./mobile-platform.md)) seq
 3. **Can a synced agent be running concurrently on two devices?** What if both devices are online and active? Operations from each are independent and merge fine; the user might just see weird-feeling double-responses. Probably need device-of-record arbitration: the device that started a turn owns it through completion.
 4. **Bundle revocation.** A publisher's signing key is compromised; old bundles signed with it must be marked unsafe. Registry needs a revocation list, runtime checks it on install and periodically.
 5. **Stateful agents with no `persistence` declared** — runtime default? Lean: default to `session`. Authors who want persistence opt in explicitly. Surprise persistence is bad.
+
+{% endraw %}

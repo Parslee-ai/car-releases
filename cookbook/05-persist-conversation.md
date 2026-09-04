@@ -1,3 +1,4 @@
+{% raw %}
 # Persist and resume conversation
 
 CAR persists memory — including conversation turns — as a memory-graph
@@ -82,3 +83,5 @@ This runs the full dream pass (compaction + skill distillation + memory pruning 
 ## Routing-aware compaction signal
 
 When CAR's adaptive router estimates a request will exceed the model's context, it sets `needs_compaction=true` on the routing decision so the caller can preemptively call `consolidate()` (or compact a specific layer) before retrying. Hook this if you're building an agent shell that owns its own model calls.
+
+{% endraw %}

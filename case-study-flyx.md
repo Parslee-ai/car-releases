@@ -1,3 +1,4 @@
+{% raw %}
 # Design Note: Skill-First Execution on CAR (FlyX)
 
 > **This is a design note with projected numbers, not a measured case study.**
@@ -128,3 +129,5 @@ Each agent's decision loop:
 FlyX has been running 7 agents continuously on a production-grade flight management system. The agents create quotes, book flights, assign crew, dispatch aircraft, file flight logs, manage compliance, and process invoices — all autonomously.
 
 The runtime doesn't make the agents smarter. It makes them cheaper to run, harder to break, and able to learn from their own experience without the model having to remember anything.
+
+{% endraw %}

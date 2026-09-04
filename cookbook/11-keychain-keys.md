@@ -1,3 +1,4 @@
+{% raw %}
 # Storing API keys in the OS keychain
 
 CAR resolves remote-model API keys in this priority:
@@ -109,3 +110,5 @@ That drops `car-secrets` from the dependency graph — not just the runtime look
 ## Service namespace
 
 All CAR components use service `"car"` (per-app). One bucket. `car secrets put` writes the entry that `car-inference` reads. The `car-secrets::DEFAULT_SERVICE` constant defines this; pre-v0.5.2 it was `"car-runtime"` — entries written before that date live under the old name.
+
+{% endraw %}

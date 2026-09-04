@@ -1,3 +1,4 @@
+{% raw %}
 # Skills: ingest, find, report outcome
 
 Skills are learned procedures stored as first-class graph nodes with trigger context. CAR finds them by spreading activation, ranks by past success, and auto-degrades the broken ones.
@@ -91,3 +92,5 @@ const ingestedCount = rt.ingestDistilledSkills(JSON.stringify(distilled));
 ```
 
 This is how CAR's "the runtime gets smarter as you use it" loop closes. The dream/consolidation pass (`rt.consolidate()`) runs distillation periodically as part of the scheduler's idle work.
+
+{% endraw %}

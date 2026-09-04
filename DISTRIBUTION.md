@@ -1,3 +1,4 @@
+{% raw %}
 # Distribution
 
 Every way to get CAR, the platforms it supports, and the release-asset naming
@@ -134,3 +135,5 @@ this repo is a fallback for backfilling older tags. User-facing docs (this file,
 the README, `SECURITY.md`, `SPEC.md`, `GUIDE.md`, `BENCHMARKS.md`, `install.sh`,
 examples, winget manifests) are generated from `release-mirror/` in the source
 repo during the release, so they can't drift.
+
+{% endraw %}

@@ -1,3 +1,4 @@
+{% raw %}
 # `car code-task` — the headless coder contract
 
 `car code` drives the coder through the daemon: sessions outlive the client and
@@ -655,3 +656,5 @@ tree that holds nothing but new files.
 `SIGTERM`/`SIGINT` cancel the run between turns, so a budget-kill leaves through
 the ordinary terminal path instead of leaking a checkout and a worktree
 registration in the user's repository.
+
+{% endraw %}

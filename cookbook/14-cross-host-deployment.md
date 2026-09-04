@@ -1,3 +1,4 @@
+{% raw %}
 # Cross-host deployment — daemon and client on different machines
 
 CAR's FFI bindings, the `car` CLI, and the in-tree mcp-proxy all default to
@@ -84,3 +85,5 @@ connect — rather than once per shell session — handles restarts transparentl
   the Windows-surface workstream that this env var lands as F2
 - [`car-rs/crates/car-ffi-common/src/auth_token.rs`](../../car-rs/crates/car-ffi-common/src/auth_token.rs) —
   the source-of-truth for `read_for_client()` and `TOKEN_ENV_VAR`
+
+{% endraw %}

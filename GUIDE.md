@@ -1,3 +1,4 @@
+{% raw %}
 # Building agents on CAR
 
 Two copy-paste prompts that give an LLM (Claude / ChatGPT / Cursor) enough context
@@ -264,3 +265,5 @@ if __name__ == "__main__":
 
 Now write the multi-agent system for my TASK above.
 ````
+
+{% endraw %}

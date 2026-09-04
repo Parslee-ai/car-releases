@@ -1,3 +1,4 @@
+{% raw %}
 # Getting started on macOS (no code)
 
 For people who installed **CAR Host** and just want to use it. You
@@ -81,3 +82,5 @@ that touch the real world go through you.
 
 That's it. Install, click the menu-bar icon, sign in, open Chat, ask.
 Approve the things that matter. No terminal, ever.
+
+{% endraw %}

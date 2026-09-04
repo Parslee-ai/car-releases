@@ -1,3 +1,4 @@
+{% raw %}
 # CAR A2A (Agent2Agent) Bridge
 
 `car-a2a` exposes a CAR runtime as an [Agent2Agent](https://a2a-protocol.org/) v1.0 agent. Peer agents built on **any** A2A-compliant SDK (Python, JavaScript, Java, Go, .NET, Rust) can discover the runtime via an Agent Card and drive it as a remote agent.
@@ -482,3 +483,5 @@ Actions already in flight (tool calls dispatched to user-provided executors) can
 ## What this is, then
 
 Functionally complete for A2A v1.0 over JSON-RPC + SSE: spec-correct wire format, lifecycle, streaming, push delivery, auth, RFC 8785-canonical card signing, cooperative cancellation, outbound client. The single remaining gap (gRPC) is a separate workstream.
+
+{% endraw %}

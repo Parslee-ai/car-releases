@@ -1,3 +1,4 @@
+{% raw %}
 # Streaming inference
 
 Streaming is a daemon WebSocket feature. Send the `infer_stream` JSON-RPC
@@ -230,3 +231,5 @@ there is no positional streaming signature.
 
 Close the WebSocket to stop receiving notifications. Cooperative request-level
 cancellation is not currently a separate JSON-RPC method.
+
+{% endraw %}

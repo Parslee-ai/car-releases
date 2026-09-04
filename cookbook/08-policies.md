@@ -1,3 +1,4 @@
+{% raw %}
 # Policies: deny, gate, require state
 
 Policies are runtime guardrails that run on every action before execution. Four built-in rules cover the common cases without writing a custom callback.
@@ -237,3 +238,5 @@ rt.registerPolicy('no_writes_3', 'deny_tool', 'edit_file');
 // Approval-gated production deploys.
 rt.registerPolicy('prod_approved', 'require_state', null, 'prod_approval', null, 'true');
 ```
+
+{% endraw %}
