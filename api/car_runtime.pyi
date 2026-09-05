@@ -838,6 +838,27 @@ class CarRuntime:
         the ``cost_overage`` alert.
         """
 
+    def selfheal_status(self) -> str:
+        """Return watch-only detector status as JSON: cadence, last tick,
+        source route/path-or-refusal, detector IDs, active/dismissed counts,
+        and the fixed filing mode.
+        """
+
+    def selfheal_detections(self, query_json: Optional[str] = None) -> str:
+        """List active detections as JSON, including each route and optional
+        local issue path. ``query_json`` optionally carries ``kind``,
+        ``severity``, ``since``, ``offset``, and bounded ``limit``.
+        """
+
+    def selfheal_dismiss(self, dedup_key: str) -> str:
+        """Append a ledger-only operator dismissal marker for a detection.
+
+        This neither deletes history nor files/remediates anything.
+        """
+
+    def selfheal_run(self) -> str:
+        """Run one non-overlapping watch-only detection tick immediately."""
+
     # --- Execution ----------------------------------------------------
 
     def verify_proposal(self, proposal_json: str) -> str:

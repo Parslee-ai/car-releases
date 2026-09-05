@@ -3197,6 +3197,77 @@ follow-up behind the same trait. The device is the holder.
   monitor can fail loud when a goal condition was met through ungrounded
   evidence instead of CAR's deterministic runtime receipts.
 
+#### `selfheal.status`
+- **Params**: `null`
+- **Returns**: `{ cadence_secs, last_tick_at, route, source_checkout?,
+  refusal_reason?, detectors, detection_count, warning_count, critical_count,
+  dismissed_count, filing_mode }`.
+- `route` is `"local"` only when the tick validates a filesystem candidate as
+  the CAR source checkout; `source_checkout` then gives the canonical path.
+  Otherwise it fails closed to `"ledger-only"` and `refusal_reason` explains
+  why, including the actual origin remote when one was refused. `"feedback"`
+  is reserved for the separately gated feedback sink and is never selected by
+  this implementation.
+- Source candidates are bounded and deterministic: `[selfheal]
+  source_checkout = "/path/to/car"` in `<CAR_HOME>/config.toml` is authoritative,
+  followed (only when it is absent) by running-binary ancestors and the root of
+  the `.car/` project discovered from `CAR_PROJECT_DIR` or cwd. A candidate must
+  contain a `.git` directory or worktree file whose config names a GitHub
+  `Parslee-ai/car` origin. Detection performs file checks/reads only: no `git`
+  subprocess, network, or filesystem-wide scan.
+- `filing_mode` remains `"watch-only"`: local issue documents are private
+  handoff artifacts, not off-machine filings or remediation. The daemon runs
+  one non-overlapping tick immediately at boot and then every 900 seconds by
+  default. `CAR_SELFHEAL_INTERVAL_SECS` changes cadence only.
+- The five detector IDs are `metrics_alerts.v1`, `agent_gave_up.v1`,
+  `agent_log_errors.v1`, `recurring_tool_failure.v1`, and
+  `capability_miss.v1` (the unversioned detection `kind` values are listed
+  below).
+- FFI: `selfhealStatus()` (NAPI) / `selfheal_status()` (PyO3), returning JSON.
+
+#### `selfheal.detections`
+- **Params**: optional `{ kind, severity, since, offset, limit }`. `kind` is one
+  of `metrics_alert` / `agent_gave_up` / `agent_log_error` /
+  `agent_silently_idle` / `recurring_tool_failure` / `capability_miss`;
+  severity is `warning` / `critical`; `since` is RFC 3339.
+  Default limit is 100 and the server clamps it to 1..500.
+- **Returns**: `{ detections, total, offset, limit, next_offset }`, latest first.
+  Dismissed stable keys are omitted. Each detection carries its SHA-256
+  `dedup_key`, evidence/provenance, observation times, affected component,
+  detector/version identity, redacted summary/detail, the tick's `route`, and
+  `local_issue_path` when routed locally.
+- FFI: `selfhealDetections(queryJson?)` / `selfheal_detections(query_json=None)`.
+
+#### `selfheal.dismiss`
+- **Params**: `{ dedup_key }`, the 64-character SHA-256 hex key from a
+  detection.
+- **Returns**: `{ dedup_key, dismissed, already_dismissed, dismissed_at }`.
+- Appends a dismissal marker; it never rewrites/deletes history. Later ticks
+  suppress that key. FFI: `selfhealDismiss(dedupKey)` /
+  `selfheal_dismiss(dedup_key)`.
+
+#### `selfheal.run`
+- **Params**: `null`
+- **Returns**: a tick summary with `route`, `source_checkout?` or
+  `refusal_reason?`, evidence counts, and new/changed/suppressed detection
+  counts. A concurrent tick fails instead of overlapping.
+- Runs the same watch-only path as the cadence. It reads active session event
+  slices since the prior tick, current supervised-agent state, bounded
+  activity/stderr tails and activity-log metadata, and the observe-only
+  registry, invokes all five deterministic detectors, and
+  performs no network request, off-machine issue filing, proposal execution,
+  agent restart, or remediation.
+- FFI: `selfhealRun()` / `selfheal_run()`.
+
+All four methods share the daemon-wide private append-only ledger at
+`<CAR_HOME>/selfheal/detections.jsonl`. JSONL records are tagged `detection`,
+`dismissal`, or `tick`; new ticks append only new/changed detections plus their
+summary. A `local` route additionally renders one owner-private
+`<CAR_HOME>/selfheal/issues/<dedup-key>.md` per active key, stamped
+`Trust-Tier: trusted`, and updates its occurrence count in place. Directories
+and files are 0700/0600 on Unix. No self-heal path writes into the detected
+source checkout.
+
 #### `events.cost_by_agent`
 - **Params**: `null`
 - **Returns**: array of `{ agent, calls, tokens_in, tokens_out, cost_usd }` —
@@ -4788,13 +4859,18 @@ A per-session permission gate classifies each action's risk into `read_only` / `
 
 #### `agent_permissions.*` — per-agent approval policy (WS-only)
 
-Orthogonal to the per-session standing tier above: a durable **per-agent** posture stored at `~/.car/agent-permissions.json`. For each agent and each risk tier (`read_only`/`sandbox_edit`/`full_access`), CAR either **always allows**, **requires approval** (routes through the shared approval ledger where an interactive approval channel exists), or **denies**. The store is a fully-specified `default` posture (Balanced by default — auto-allow reads, ask before edits/consequential actions) plus sparse per-agent overrides; resolution is agent-override → default → a safe `require_approval` floor. The supervised `car do` assistant enforces the live policy per tool call (reloaded each call, so operator edits in the CarHost **Agent Permissions** screen take effect immediately). The shared coder/declarative `WorktreeExecutor` also resolves this policy: `deny` blocks any tier, and `require_approval` blocks `full_access` because those runners have no interactive approval channel; lower-tier `require_approval` proceeds so normal sandbox edits keep working under the Balanced default. Backed by `car_policy::agent_permissions`; host-facing, consumed by CarHost over the socket, so **WS-only** (no FFI proxy, like `runs.subscribe`/`coder.subscribe`). All mutations are read-modify-write and return the full updated policy `{ default, agents }`.
+Orthogonal to the per-session standing tier above: a durable **per-agent** posture stored at `~/.car/agent-permissions.json`. For each agent and each risk tier (`read_only`/`sandbox_edit`/`full_access`), CAR either **always allows**, **requires approval** (routes through the shared approval ledger where an interactive approval channel exists), or **denies**. The store is a fully-specified `default` posture (Balanced by default — auto-allow reads, ask before edits/consequential actions), sparse per-agent tier overrides, and optional exact agent/tool overrides. Resolution for a tool call is exact `(agent_id, tool)` override → the existing gate result; both identifiers are literal, with no wildcard, prefix, regex, or tier-wide grant. An exact `always_allow` is narrower still: the target agent must be live and authenticated, the tool must be an eligible reverse callback registered by that exact session, and CAR persists the canonical digest of the schema it observed. The only eligible callback profile is the non-idempotent `newsroom.publish` capability with one required non-empty `edition_id` string and no additional parameters; aliases and generic executable, payload, or destination shapes remain on ordinary HITL. Admission rechecks the current callback digest. A changed or missing schema falls back to ordinary mandatory HITL, and a governed skill's lower `deployment_tier` remains an effective ceiling for both `permission.evaluate` and `proposal.submit` even when an exact override exists. A durable human rejection always wins. Authenticated bound WebSocket agents use the same exact evaluator for `permission.evaluate` and `proposal.submit`; a valid override can admit the callback when no lower skill ceiling applies even though it remains classified `full_access` and `irreversible`. Decisions retain their required tier and reversibility, and exact-override decisions carry `authorization_source: "agent_tool_override"` plus `authorization_schema_digest` in the decision/audit data. Backed by `car_policy::agent_permissions`; host-facing, consumed over the socket, so **WS-only** (no FFI proxy, like `runs.subscribe`/`coder.subscribe`).
 
-- **`agent_permissions.get`** — Params `{}`. Returns the raw policy `{ default: TierPosture, agents: { <agent_id>: TierPosture } }`, where `TierPosture` is `{ read_only?, sandbox_edit?, full_access?: "always_allow"|"require_approval"|"deny" }` (a per-agent posture may be partial; absent tiers fall through to the default).
-- **`agent_permissions.set`** — Params `{ agent_id, mode: "always_allow"|"require_approval"|"deny", tier? }`. Sets one tier for an agent, or every tier when `tier` is omitted.
-- **`agent_permissions.set_default`** — Params `{ preset: "cautious"|"balanced"|"trusting" }` **or** `{ tier, mode }`. Moves the default posture applied to agents without an override.
-- **`agent_permissions.reset`** — Params `{ agent_id }`. Drops an agent's override so it reverts to the default.
+Clients that require this exact override surface must include `permissions.agent-tool-overrides.v1` in `server.handshake.required_capabilities` and verify it appears in `negotiated_capabilities`. An older daemon rejects that mandatory capability before the client calls an override RPC.
+
+- **`agent_permissions.get`** — Params `{}`. Returns the raw policy `{ default: TierPosture, agents: { <agent_id>: TierPosture }, tool_overrides?: { <agent_id>: { <tool>: { mode: ApprovalMode, schema_digest? } } } }`, where `TierPosture` is `{ read_only?, sandbox_edit?, full_access?: "always_allow"|"require_approval"|"deny" }`. `tool_overrides` is omitted when empty for backward-compatible persistence. Legacy string-valued tool overrides remain readable; a digestless `always_allow` is inactive and falls back to HITL.
+- **`agent_permissions.set`** — **Host-management-only.** Params `{ agent_id, mode: "always_allow"|"require_approval"|"deny", tier? }`. Sets one tier for an agent, or every tier when `tier` is omitted.
+- **`agent_permissions.set_default`** — **Host-management-only.** Params `{ preset: "cautious"|"balanced"|"trusting" }` **or** `{ tier, mode }`. Moves the default posture applied to agents without an override.
+- **`agent_permissions.reset`** — **Host-management-only.** Params `{ agent_id }`. Drops an agent's tier override so it reverts to the default; exact tool overrides are managed independently.
 - **`agent_permissions.evaluate`** — Params `{ agent_id, tier }`. Returns `{ agent_id, tier, mode, has_override }` — the resolved decision the executor/HITL path consults before an agent acts.
+- **`agent_permissions.set_tool`** — **Host-management-only and capability-gated.** Params `{ agent_id, tool, mode: "always_allow"|"require_approval"|"deny" }`. Sets one literal pair; a managed agent cannot self-grant. For `always_allow`, the named agent must currently be attached with the exact eligible `newsroom.publish` callback profile described above. The server records its schema digest; callers must not supply `schema_digest`.
+- **`agent_permissions.reset_tool`** — **Host-management-only.** Params `{ agent_id, tool }`. Removes one literal pair.
+- **`agent_permissions.evaluate_tool`** — **Host-management-only and capability-gated.** Params `{ agent_id, tool, tier }`. Returns the exact override when present, otherwise the tier posture, plus `has_tool_override`, `active`, `schema_bound`, `schema_digest_present`, the stored non-secret `schema_digest` when present, and `authorization_source`. For `always_allow`, `active` is true only while the exact authenticated agent callback is attached with the matching current schema.
 
 #### `infer`
 - **Params**: `GenerateRequest { model: string, messages: Message[], system?: string, max_tokens?: number, temperature?: number, tools?: ToolDef[], context_query?: string, memory_intervention?: boolean | ProactiveMemoryRequest, response_format?: ResponseFormat, intent?: IntentHint, ... }`

@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.51.0 (2026-09-03). Every subcommand the installed binary reports is
+> 0.52.1 (2026-09-04). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 66 top-level commands, 98 nested subcommands
+> 68 top-level commands, 101 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 66 subcommands spanning several different jobs:
+`car` is one binary with 68 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -164,11 +164,13 @@ commands on a cadence via launchd / cron / schtasks).
 | Command | Description |
 |---|---|
 | [`car info`](#car-info) | Show runtime info |
+| [`car capabilities`](#car-capabilities) | Print the deterministic CAR capability manifest |
 | [`car ui`](#car-ui) | Open the browser dashboard served by the daemon |
 | [`car verify`](#car-verify) | Statically verify a proposal |
 | [`car simulate`](#car-simulate) | Simulate a proposal's state effects without executing |
 | [`car optimize`](#car-optimize) | Optimize a proposal (remove phantom dependencies) |
 | [`car replay`](#car-replay) | Replay an event journal and show reconstructed state |
+| [`car run-cancel`](#car-run-cancel) | Cancel one active CAR run and print its deterministic durable receipt |
 | [`car run-task`](#car-run-task) | Run a goal autonomously against stdio MCP tool servers, emitting a JSONL transcript. Headless entry point for external eval harnesses |
 | [`car code-task`](#car-code-task) | Run a coder session headlessly and IN THIS PROCESS: derive or accept an outcome contract, work in a git worktree until the runtime's own re-run of that contract is green, then deliver the result as a pull request |
 | [`car coder-ab`](#car-coder-ab) | A/B-test CAR's coder against an external agent (Codex / Claude Code) over a corpus, and grow that corpus from git history — the productionized dogfooding loop (docs/proposals/coder-ab-dogfood.md) |
@@ -247,6 +249,19 @@ Options:
   -h, --help  Print help
 ```
 
+### car capabilities
+
+```text
+Print the deterministic CAR capability manifest
+
+Usage: car capabilities [OPTIONS]
+
+Options:
+      --json  Emit machine-readable JSON
+      --md    Emit generated Markdown (the default)
+  -h, --help  Print help
+```
+
 ### car ui
 
 ```text
@@ -316,6 +331,23 @@ Arguments:
 
 Options:
   -h, --help  Print help
+```
+
+### car run-cancel
+
+```text
+Cancel one active CAR run and print its deterministic durable receipt
+
+Usage: car run-cancel [OPTIONS] --run-id <RUN_ID> --idempotency-key <IDEMPOTENCY_KEY> --reason
+<REASON>
+
+Options:
+      --run-id <RUN_ID>
+      --idempotency-key <IDEMPOTENCY_KEY>
+      --reason <REASON>
+      --url <URL>                          [default: ws://127.0.0.1:9100/]
+      --json
+  -h, --help                               Print help
 ```
 
 ### car run-task
@@ -510,7 +542,7 @@ Usage: car coder-ab extract [OPTIONS] --out <OUT>
 Options:
       --repo <REPO>
           Repo to mine (default: current dir)
-          
+
           [default: .]
 
       --out <OUT>
@@ -521,7 +553,7 @@ Options:
           rather than `python3 -m pytest -q`: `python3` does not exist on a standard Windows
           python.org install, and `python` is often absent on macOS/Linux — pytest's console script
           is the portable spelling
-          
+
           [default: "pytest -q"]
 
       --path <PATH>
@@ -529,12 +561,12 @@ Options:
 
       --max <MAX>
           Limit to this many recent commits scanned
-          
+
           [default: 50]
 
       --max-files <MAX_FILES>
           Skip a commit whose changed-file count exceeds this (keep tasks small)
-          
+
           [default: 6]
 
       --full-tree
@@ -544,7 +576,7 @@ Options:
 
       --subject-filter <SUBJECT_FILTER>
           Keep only commits whose subject contains this substring (e.g. `fix(`).
-          
+
           On a Rust repo this is close to required: a `feat` commit's test imports a symbol the
           commit itself adds, so it cannot compile at the pre-fix parent. Such tasks are rejected
           anyway, but only after a full tree materialize + build, which costs 30-200s each.
@@ -584,8 +616,8 @@ from stdin (keeps it out of shell history)
 Usage: car keys set <NAME> [VALUE]
 
 Arguments:
-  <NAME>   
-  [VALUE]  
+  <NAME>
+  [VALUE]
 
 Options:
   -h, --help  Print help
@@ -610,7 +642,7 @@ Remove a stored provider key from the keychain
 Usage: car keys remove <NAME>
 
 Arguments:
-  <NAME>  
+  <NAME>
 
 Options:
   -h, --help  Print help
@@ -725,7 +757,7 @@ Evaluate one local model without downloading or loading it
 Usage: car models preflight [OPTIONS] <MODEL_ID>
 
 Arguments:
-  <MODEL_ID>  
+  <MODEL_ID>
 
 Options:
       --context-tokens <CONTEXT_TOKENS>  [default: 0]
@@ -740,7 +772,7 @@ Adopt an already-usable local artifact into CAR ownership
 Usage: car models adopt <MODEL_ID>
 
 Arguments:
-  <MODEL_ID>  
+  <MODEL_ID>
 
 Options:
   -h, --help  Print help
@@ -1411,7 +1443,7 @@ Options:
           Safety cap on agent turns. This is a backstop, not the expected stop: the loop ends on its
           own when the model finishes (stops calling tools). 12 was too low for whole-project builds
           — it cut real work off mid-task; raise it further for large jobs
-          
+
           [default: 50]
 
       --until <SHELL>
@@ -1427,7 +1459,7 @@ Options:
       --goal-max-iterations <GOAL_MAX_ITERATIONS>
           In goal mode, the hard cap on re-drive iterations (the governor's turn budget). A hard
           bound, not a soft prose clause
-          
+
           [default: 10]
 
       --serve
@@ -1442,6 +1474,45 @@ Options:
           Machine-readable output for a calling agent or script: exactly one JSON document on
           stdout, JSONL progress events on stderr, and no human progress rendering. Needs a goal —
           there is no JSON shape for an interactive REPL. See docs/car-do-json.md
+
+      --response-format <MODE>
+          Constrain the final answer to JSON. Applies to the final answer only; tool turns are
+          unconstrained (a JSON-constrained request suppresses tool use). The loop checks the final
+          answer itself and, if it is not a JSON object, re-asks the model ONCE with no tools and
+          JSON mode on before returning; an answer that already parses costs no extra call.
+          Provider-dependent on that repair turn: OpenAI-protocol and OpenRouter (which forwards it
+          to the upstream provider) enforce it; Anthropic-protocol models reject it. Mutually
+          exclusive with --json-schema. (Unrelated to --json, which shapes car's own output.)
+
+          [possible values: json_object]
+
+      --json-schema <FILE>
+          Constrain the final answer to JSON matching this JSON Schema file. The schema's `title`
+          names it for providers that want one. Applies to the final answer only, with the same
+          one-shot tool-less repair and provider caveats as --response-format; the loop validates
+          the final answer against the schema itself (a valid-JSON answer of the wrong shape is
+          repaired too). Mutually exclusive with --response-format
+
+      --strict-model
+          Use exactly the --model (or CAR_DO_MODEL) named, or fail. Without it `car do` substitutes
+          a usable tool-capable model when the named one is unavailable here (and says so); with it
+          a substitution is a startup error, and the inference layer will not fall back to an
+          on-device model on a remote failure either. Off by default: the substitution is the right
+          call for an interactive run
+
+      --context-window <TOKENS>
+          Bound the running conversation to this many tokens instead of the model's registry window
+          (older middle turns are compacted out to fit, as they are against the real window). Use it
+          to tighten: a value above the model's known window is clamped back down to it, because
+          letting the history overflow the real window is exactly the provider-side truncation
+          compaction exists to prevent
+
+      --max-delegations <N>
+          Run-level cap on `delegate` sub-agent calls. A call past the cap (or past the
+          300-child-turn budget) returns an error result to the assistant instead of spawning, so a
+          delegating run cannot amplify its model calls without bound
+
+          [default: 20]
 
   -h, --help
           Print help (see a summary with '-h')
@@ -1665,7 +1736,7 @@ Options:
 
       --max-attempts <MAX_ATTEMPTS>
           Max generate→validate→repair attempts per round
-          
+
           [default: 3]
 
   -h, --help
@@ -1766,11 +1837,11 @@ Store a secret. Value is read from --value or piped stdin
 Usage: car secrets put [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  
+  <KEY>
 
 Options:
-      --service <SERVICE>  
-      --value <VALUE>      
+      --service <SERVICE>
+      --value <VALUE>
   -h, --help               Print help
 ```
 
@@ -1782,10 +1853,10 @@ Retrieve a secret — prints the value on stdout
 Usage: car secrets get [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  
+  <KEY>
 
 Options:
-      --service <SERVICE>  
+      --service <SERVICE>
   -h, --help               Print help
 ```
 
@@ -1797,10 +1868,10 @@ Delete a secret (idempotent)
 Usage: car secrets delete [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  
+  <KEY>
 
 Options:
-      --service <SERVICE>  
+      --service <SERVICE>
   -h, --help               Print help
 ```
 
@@ -1812,10 +1883,10 @@ Check whether a secret exists, without returning the value
 Usage: car secrets status [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  
+  <KEY>
 
 Options:
-      --service <SERVICE>  
+      --service <SERVICE>
   -h, --help               Print help
 ```
 
@@ -2005,7 +2076,7 @@ Report current grant state for a domain
 Usage: car permissions status [OPTIONS] <DOMAIN>
 
 Arguments:
-  <DOMAIN>  
+  <DOMAIN>
 
 Options:
       --target <TARGET>  macOS Automation only: bundle ID of the target app to control. Ignored for
@@ -2021,10 +2092,10 @@ Trigger a native prompt if the OS supports one
 Usage: car permissions request [OPTIONS] <DOMAIN>
 
 Arguments:
-  <DOMAIN>  
+  <DOMAIN>
 
 Options:
-      --target <TARGET>  
+      --target <TARGET>
   -h, --help             Print help
 ```
 
@@ -2036,10 +2107,10 @@ Human-readable explanation and fix suggestion
 Usage: car permissions explain [OPTIONS] <DOMAIN>
 
 Arguments:
-  <DOMAIN>  
+  <DOMAIN>
 
 Options:
-      --target <TARGET>  
+      --target <TARGET>
   -h, --help             Print help
 ```
 
@@ -2106,7 +2177,7 @@ Remove an enrolled voiceprint by label
 Usage: car voice remove --label <LABEL>
 
 Options:
-      --label <LABEL>  
+      --label <LABEL>
   -h, --help           Print help
 ```
 
@@ -2132,10 +2203,14 @@ onboarding step)
 Usage: car approvals <COMMAND>
 
 Commands:
-  default  Set the default approval preset for all agents (`cautious` asks before any
+  default        Set the default approval preset for all agents (`cautious` asks before any
   edit/full-access, `balanced` allows sandboxed edits, `trusting` allows everything without asking)
-  get      Show the current default approval posture
-  help     Print this message or the help of the given subcommand(s)
+  get            Show the current default approval posture
+  set-tool       Set an approval mode for one exact agent and exact tool. `always_allow` requires
+  that agent to be attached with an eligible live callback
+  evaluate-tool  Show whether one exact agent/tool override is active and schema-bound
+  reset-tool     Remove one exact agent/tool approval override
+  help           Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
@@ -2162,6 +2237,53 @@ Options:
 Show the current default approval posture
 
 Usage: car approvals get
+
+Options:
+  -h, --help  Print help
+```
+
+#### car approvals set-tool
+
+```text
+Set an approval mode for one exact agent and exact tool. `always_allow` requires that agent to be
+attached with an eligible live callback
+
+Usage: car approvals set-tool <AGENT> <TOOL> <MODE>
+
+Arguments:
+  <AGENT>
+  <TOOL>
+  <MODE>   One of: always_allow | require_approval | deny
+
+Options:
+  -h, --help  Print help
+```
+
+#### car approvals evaluate-tool
+
+```text
+Show whether one exact agent/tool override is active and schema-bound
+
+Usage: car approvals evaluate-tool <AGENT> <TOOL>
+
+Arguments:
+  <AGENT>
+  <TOOL>
+
+Options:
+  -h, --help  Print help
+```
+
+#### car approvals reset-tool
+
+```text
+Remove one exact agent/tool approval override
+
+Usage: car approvals reset-tool <AGENT> <TOOL>
+
+Arguments:
+  <AGENT>
+  <TOOL>
 
 Options:
   -h, --help  Print help
@@ -2202,7 +2324,7 @@ Open the native account-management UI
 Usage: car accounts open [OPTIONS]
 
 Options:
-      --account-id <ACCOUNT_ID>  
+      --account-id <ACCOUNT_ID>
   -h, --help                     Print help
 ```
 
@@ -2282,11 +2404,11 @@ Free-text contact search
 Usage: car contacts find [OPTIONS] <QUERY>
 
 Arguments:
-  <QUERY>  
+  <QUERY>
 
 Options:
       --limit <LIMIT>            [default: 50]
-      --containers <CONTAINERS>  
+      --containers <CONTAINERS>
   -h, --help                     Print help
 ```
 
@@ -2331,7 +2453,7 @@ Inbox summaries per account
 Usage: car mail inbox [OPTIONS]
 
 Options:
-      --accounts <ACCOUNTS>  
+      --accounts <ACCOUNTS>
   -h, --help                 Print help
 ```
 
@@ -2344,7 +2466,7 @@ bounded: depth 8, 64 requests)
 Usage: car mail mailboxes [OPTIONS]
 
 Options:
-      --accounts <ACCOUNTS>  
+      --accounts <ACCOUNTS>
   -h, --help                 Print help
 ```
 
@@ -2357,7 +2479,7 @@ account, then concatenated)
 Usage: car mail messages [OPTIONS]
 
 Options:
-      --accounts <ACCOUNTS>  
+      --accounts <ACCOUNTS>
       --mailbox <MAILBOX>    Mailbox selector — a `full_name` from `car mail mailboxes`, or a bare
       leaf name like "Travel". Defaults to INBOX
       --limit <LIMIT>        [default: 50]
@@ -2374,7 +2496,7 @@ Fetch one message body by the `id` from `car mail messages`
 Usage: car mail body <ID>
 
 Arguments:
-  <ID>  
+  <ID>
 
 Options:
   -h, --help  Print help
@@ -2477,7 +2599,7 @@ Free-text note search
 Usage: car notes find [OPTIONS] <QUERY>
 
 Arguments:
-  <QUERY>  
+  <QUERY>
 
 Options:
       --limit <LIMIT>  [default: 50]
@@ -2665,8 +2787,8 @@ Sleep windows in an ISO-8601 time range
 Usage: car health sleep --start <START> --end <END>
 
 Options:
-      --start <START>  
-      --end <END>      
+      --start <START>
+      --end <END>
   -h, --help           Print help
 ```
 
@@ -2678,8 +2800,8 @@ Workouts in an ISO-8601 time range
 Usage: car health workouts --start <START> --end <END>
 
 Options:
-      --start <START>  
-      --end <END>      
+      --start <START>
+      --end <END>
   -h, --help           Print help
 ```
 
@@ -2691,8 +2813,8 @@ Daily activity summaries across a date range (YYYY-MM-DD)
 Usage: car health activity --start <START> --end <END>
 
 Options:
-      --start <START>  
-      --end <END>      
+      --start <START>
+      --end <END>
   -h, --help           Print help
 ```
 
@@ -2721,12 +2843,12 @@ Options:
           Registry source for `<namespace>/<name>` references: an `http(s)://…/index.json` URL or a
           LOCAL registry directory (or `file://` URL). Defaults to the public mirror. The private
           source needs a token — set `CAR_REGISTRY_TOKEN`
-          
+
           [default: https://raw.githubusercontent.com/Parslee-ai/car-releases/main/index.json]
 
       --url <URL>
           WebSocket URL of the running car-server daemon
-          
+
           [default: ws://127.0.0.1:9100/]
 
       --json

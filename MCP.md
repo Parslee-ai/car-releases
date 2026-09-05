@@ -1,7 +1,7 @@
 {% raw %}
 # CAR as an MCP server
 
-> Describes CAR **0.52.0**. Check yours with `car --version`; if it
+> Describes CAR **0.52.1**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 Wire CAR's graph memory, skill storage, static plan verification, and policy

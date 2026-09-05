@@ -10,7 +10,7 @@ readers to a sign-in page. This bundle intentionally excludes
 CLAUDE.md, the private repo's root README.md, and individual crate
 READMEs — see the header comment in scripts/build-llms-full.sh for why.
 
-SIZE: 1132 KB, roughly 283K tokens at ~4 chars/token — this bundle is LARGE. If your context budget is
+SIZE: 1150 KB, roughly 287K tokens at ~4 chars/token — this bundle is LARGE. If your context budget is
 tight, read llms.txt instead (a few KB) and fetch only the documents it
 names; every one of them is published individually.
 
@@ -124,17 +124,17 @@ Source: release-mirror/CLI.md
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.51.0 (2026-09-03). Every subcommand the installed binary reports is
+> 0.52.1 (2026-09-04). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 66 top-level commands, 98 nested subcommands
+> 68 top-level commands, 101 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 66 subcommands spanning several different jobs:
+`car` is one binary with 68 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -285,11 +285,13 @@ commands on a cadence via launchd / cron / schtasks).
 | Command | Description |
 |---|---|
 | [`car info`](#car-info) | Show runtime info |
+| [`car capabilities`](#car-capabilities) | Print the deterministic CAR capability manifest |
 | [`car ui`](#car-ui) | Open the browser dashboard served by the daemon |
 | [`car verify`](#car-verify) | Statically verify a proposal |
 | [`car simulate`](#car-simulate) | Simulate a proposal's state effects without executing |
 | [`car optimize`](#car-optimize) | Optimize a proposal (remove phantom dependencies) |
 | [`car replay`](#car-replay) | Replay an event journal and show reconstructed state |
+| [`car run-cancel`](#car-run-cancel) | Cancel one active CAR run and print its deterministic durable receipt |
 | [`car run-task`](#car-run-task) | Run a goal autonomously against stdio MCP tool servers, emitting a JSONL transcript. Headless entry point for external eval harnesses |
 | [`car code-task`](#car-code-task) | Run a coder session headlessly and IN THIS PROCESS: derive or accept an outcome contract, work in a git worktree until the runtime's own re-run of that contract is green, then deliver the result as a pull request |
 | [`car coder-ab`](#car-coder-ab) | A/B-test CAR's coder against an external agent (Codex / Claude Code) over a corpus, and grow that corpus from git history — the productionized dogfooding loop (docs/proposals/coder-ab-dogfood.md) |
@@ -368,6 +370,19 @@ Options:
   -h, --help  Print help
 ```
 
+### car capabilities
+
+```text
+Print the deterministic CAR capability manifest
+
+Usage: car capabilities [OPTIONS]
+
+Options:
+      --json  Emit machine-readable JSON
+      --md    Emit generated Markdown (the default)
+  -h, --help  Print help
+```
+
 ### car ui
 
 ```text
@@ -437,6 +452,23 @@ Arguments:
 
 Options:
   -h, --help  Print help
+```
+
+### car run-cancel
+
+```text
+Cancel one active CAR run and print its deterministic durable receipt
+
+Usage: car run-cancel [OPTIONS] --run-id <RUN_ID> --idempotency-key <IDEMPOTENCY_KEY> --reason
+<REASON>
+
+Options:
+      --run-id <RUN_ID>
+      --idempotency-key <IDEMPOTENCY_KEY>
+      --reason <REASON>
+      --url <URL>                          [default: ws://127.0.0.1:9100/]
+      --json
+  -h, --help                               Print help
 ```
 
 ### car run-task
@@ -631,7 +663,7 @@ Usage: car coder-ab extract [OPTIONS] --out <OUT>
 Options:
       --repo <REPO>
           Repo to mine (default: current dir)
-          
+
           [default: .]
 
       --out <OUT>
@@ -642,7 +674,7 @@ Options:
           rather than `python3 -m pytest -q`: `python3` does not exist on a standard Windows
           python.org install, and `python` is often absent on macOS/Linux — pytest's console script
           is the portable spelling
-          
+
           [default: "pytest -q"]
 
       --path <PATH>
@@ -650,12 +682,12 @@ Options:
 
       --max <MAX>
           Limit to this many recent commits scanned
-          
+
           [default: 50]
 
       --max-files <MAX_FILES>
           Skip a commit whose changed-file count exceeds this (keep tasks small)
-          
+
           [default: 6]
 
       --full-tree
@@ -665,7 +697,7 @@ Options:
 
       --subject-filter <SUBJECT_FILTER>
           Keep only commits whose subject contains this substring (e.g. `fix(`).
-          
+
           On a Rust repo this is close to required: a `feat` commit's test imports a symbol the
           commit itself adds, so it cannot compile at the pre-fix parent. Such tasks are rejected
           anyway, but only after a full tree materialize + build, which costs 30-200s each.
@@ -705,8 +737,8 @@ from stdin (keeps it out of shell history)
 Usage: car keys set <NAME> [VALUE]
 
 Arguments:
-  <NAME>   
-  [VALUE]  
+  <NAME>
+  [VALUE]
 
 Options:
   -h, --help  Print help
@@ -731,7 +763,7 @@ Remove a stored provider key from the keychain
 Usage: car keys remove <NAME>
 
 Arguments:
-  <NAME>  
+  <NAME>
 
 Options:
   -h, --help  Print help
@@ -846,7 +878,7 @@ Evaluate one local model without downloading or loading it
 Usage: car models preflight [OPTIONS] <MODEL_ID>
 
 Arguments:
-  <MODEL_ID>  
+  <MODEL_ID>
 
 Options:
       --context-tokens <CONTEXT_TOKENS>  [default: 0]
@@ -861,7 +893,7 @@ Adopt an already-usable local artifact into CAR ownership
 Usage: car models adopt <MODEL_ID>
 
 Arguments:
-  <MODEL_ID>  
+  <MODEL_ID>
 
 Options:
   -h, --help  Print help
@@ -1532,7 +1564,7 @@ Options:
           Safety cap on agent turns. This is a backstop, not the expected stop: the loop ends on its
           own when the model finishes (stops calling tools). 12 was too low for whole-project builds
           — it cut real work off mid-task; raise it further for large jobs
-          
+
           [default: 50]
 
       --until <SHELL>
@@ -1548,7 +1580,7 @@ Options:
       --goal-max-iterations <GOAL_MAX_ITERATIONS>
           In goal mode, the hard cap on re-drive iterations (the governor's turn budget). A hard
           bound, not a soft prose clause
-          
+
           [default: 10]
 
       --serve
@@ -1563,6 +1595,45 @@ Options:
           Machine-readable output for a calling agent or script: exactly one JSON document on
           stdout, JSONL progress events on stderr, and no human progress rendering. Needs a goal —
           there is no JSON shape for an interactive REPL. See docs/car-do-json.md
+
+      --response-format <MODE>
+          Constrain the final answer to JSON. Applies to the final answer only; tool turns are
+          unconstrained (a JSON-constrained request suppresses tool use). The loop checks the final
+          answer itself and, if it is not a JSON object, re-asks the model ONCE with no tools and
+          JSON mode on before returning; an answer that already parses costs no extra call.
+          Provider-dependent on that repair turn: OpenAI-protocol and OpenRouter (which forwards it
+          to the upstream provider) enforce it; Anthropic-protocol models reject it. Mutually
+          exclusive with --json-schema. (Unrelated to --json, which shapes car's own output.)
+
+          [possible values: json_object]
+
+      --json-schema <FILE>
+          Constrain the final answer to JSON matching this JSON Schema file. The schema's `title`
+          names it for providers that want one. Applies to the final answer only, with the same
+          one-shot tool-less repair and provider caveats as --response-format; the loop validates
+          the final answer against the schema itself (a valid-JSON answer of the wrong shape is
+          repaired too). Mutually exclusive with --response-format
+
+      --strict-model
+          Use exactly the --model (or CAR_DO_MODEL) named, or fail. Without it `car do` substitutes
+          a usable tool-capable model when the named one is unavailable here (and says so); with it
+          a substitution is a startup error, and the inference layer will not fall back to an
+          on-device model on a remote failure either. Off by default: the substitution is the right
+          call for an interactive run
+
+      --context-window <TOKENS>
+          Bound the running conversation to this many tokens instead of the model's registry window
+          (older middle turns are compacted out to fit, as they are against the real window). Use it
+          to tighten: a value above the model's known window is clamped back down to it, because
+          letting the history overflow the real window is exactly the provider-side truncation
+          compaction exists to prevent
+
+      --max-delegations <N>
+          Run-level cap on `delegate` sub-agent calls. A call past the cap (or past the
+          300-child-turn budget) returns an error result to the assistant instead of spawning, so a
+          delegating run cannot amplify its model calls without bound
+
+          [default: 20]
 
   -h, --help
           Print help (see a summary with '-h')
@@ -1786,7 +1857,7 @@ Options:
 
       --max-attempts <MAX_ATTEMPTS>
           Max generate→validate→repair attempts per round
-          
+
           [default: 3]
 
   -h, --help
@@ -1887,11 +1958,11 @@ Store a secret. Value is read from --value or piped stdin
 Usage: car secrets put [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  
+  <KEY>
 
 Options:
-      --service <SERVICE>  
-      --value <VALUE>      
+      --service <SERVICE>
+      --value <VALUE>
   -h, --help               Print help
 ```
 
@@ -1903,10 +1974,10 @@ Retrieve a secret — prints the value on stdout
 Usage: car secrets get [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  
+  <KEY>
 
 Options:
-      --service <SERVICE>  
+      --service <SERVICE>
   -h, --help               Print help
 ```
 
@@ -1918,10 +1989,10 @@ Delete a secret (idempotent)
 Usage: car secrets delete [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  
+  <KEY>
 
 Options:
-      --service <SERVICE>  
+      --service <SERVICE>
   -h, --help               Print help
 ```
 
@@ -1933,10 +2004,10 @@ Check whether a secret exists, without returning the value
 Usage: car secrets status [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  
+  <KEY>
 
 Options:
-      --service <SERVICE>  
+      --service <SERVICE>
   -h, --help               Print help
 ```
 
@@ -2126,7 +2197,7 @@ Report current grant state for a domain
 Usage: car permissions status [OPTIONS] <DOMAIN>
 
 Arguments:
-  <DOMAIN>  
+  <DOMAIN>
 
 Options:
       --target <TARGET>  macOS Automation only: bundle ID of the target app to control. Ignored for
@@ -2142,10 +2213,10 @@ Trigger a native prompt if the OS supports one
 Usage: car permissions request [OPTIONS] <DOMAIN>
 
 Arguments:
-  <DOMAIN>  
+  <DOMAIN>
 
 Options:
-      --target <TARGET>  
+      --target <TARGET>
   -h, --help             Print help
 ```
 
@@ -2157,10 +2228,10 @@ Human-readable explanation and fix suggestion
 Usage: car permissions explain [OPTIONS] <DOMAIN>
 
 Arguments:
-  <DOMAIN>  
+  <DOMAIN>
 
 Options:
-      --target <TARGET>  
+      --target <TARGET>
   -h, --help             Print help
 ```
 
@@ -2227,7 +2298,7 @@ Remove an enrolled voiceprint by label
 Usage: car voice remove --label <LABEL>
 
 Options:
-      --label <LABEL>  
+      --label <LABEL>
   -h, --help           Print help
 ```
 
@@ -2253,10 +2324,14 @@ onboarding step)
 Usage: car approvals <COMMAND>
 
 Commands:
-  default  Set the default approval preset for all agents (`cautious` asks before any
+  default        Set the default approval preset for all agents (`cautious` asks before any
   edit/full-access, `balanced` allows sandboxed edits, `trusting` allows everything without asking)
-  get      Show the current default approval posture
-  help     Print this message or the help of the given subcommand(s)
+  get            Show the current default approval posture
+  set-tool       Set an approval mode for one exact agent and exact tool. `always_allow` requires
+  that agent to be attached with an eligible live callback
+  evaluate-tool  Show whether one exact agent/tool override is active and schema-bound
+  reset-tool     Remove one exact agent/tool approval override
+  help           Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
@@ -2283,6 +2358,53 @@ Options:
 Show the current default approval posture
 
 Usage: car approvals get
+
+Options:
+  -h, --help  Print help
+```
+
+#### car approvals set-tool
+
+```text
+Set an approval mode for one exact agent and exact tool. `always_allow` requires that agent to be
+attached with an eligible live callback
+
+Usage: car approvals set-tool <AGENT> <TOOL> <MODE>
+
+Arguments:
+  <AGENT>
+  <TOOL>
+  <MODE>   One of: always_allow | require_approval | deny
+
+Options:
+  -h, --help  Print help
+```
+
+#### car approvals evaluate-tool
+
+```text
+Show whether one exact agent/tool override is active and schema-bound
+
+Usage: car approvals evaluate-tool <AGENT> <TOOL>
+
+Arguments:
+  <AGENT>
+  <TOOL>
+
+Options:
+  -h, --help  Print help
+```
+
+#### car approvals reset-tool
+
+```text
+Remove one exact agent/tool approval override
+
+Usage: car approvals reset-tool <AGENT> <TOOL>
+
+Arguments:
+  <AGENT>
+  <TOOL>
 
 Options:
   -h, --help  Print help
@@ -2323,7 +2445,7 @@ Open the native account-management UI
 Usage: car accounts open [OPTIONS]
 
 Options:
-      --account-id <ACCOUNT_ID>  
+      --account-id <ACCOUNT_ID>
   -h, --help                     Print help
 ```
 
@@ -2403,11 +2525,11 @@ Free-text contact search
 Usage: car contacts find [OPTIONS] <QUERY>
 
 Arguments:
-  <QUERY>  
+  <QUERY>
 
 Options:
       --limit <LIMIT>            [default: 50]
-      --containers <CONTAINERS>  
+      --containers <CONTAINERS>
   -h, --help                     Print help
 ```
 
@@ -2452,7 +2574,7 @@ Inbox summaries per account
 Usage: car mail inbox [OPTIONS]
 
 Options:
-      --accounts <ACCOUNTS>  
+      --accounts <ACCOUNTS>
   -h, --help                 Print help
 ```
 
@@ -2465,7 +2587,7 @@ bounded: depth 8, 64 requests)
 Usage: car mail mailboxes [OPTIONS]
 
 Options:
-      --accounts <ACCOUNTS>  
+      --accounts <ACCOUNTS>
   -h, --help                 Print help
 ```
 
@@ -2478,7 +2600,7 @@ account, then concatenated)
 Usage: car mail messages [OPTIONS]
 
 Options:
-      --accounts <ACCOUNTS>  
+      --accounts <ACCOUNTS>
       --mailbox <MAILBOX>    Mailbox selector — a `full_name` from `car mail mailboxes`, or a bare
       leaf name like "Travel". Defaults to INBOX
       --limit <LIMIT>        [default: 50]
@@ -2495,7 +2617,7 @@ Fetch one message body by the `id` from `car mail messages`
 Usage: car mail body <ID>
 
 Arguments:
-  <ID>  
+  <ID>
 
 Options:
   -h, --help  Print help
@@ -2598,7 +2720,7 @@ Free-text note search
 Usage: car notes find [OPTIONS] <QUERY>
 
 Arguments:
-  <QUERY>  
+  <QUERY>
 
 Options:
       --limit <LIMIT>  [default: 50]
@@ -2786,8 +2908,8 @@ Sleep windows in an ISO-8601 time range
 Usage: car health sleep --start <START> --end <END>
 
 Options:
-      --start <START>  
-      --end <END>      
+      --start <START>
+      --end <END>
   -h, --help           Print help
 ```
 
@@ -2799,8 +2921,8 @@ Workouts in an ISO-8601 time range
 Usage: car health workouts --start <START> --end <END>
 
 Options:
-      --start <START>  
-      --end <END>      
+      --start <START>
+      --end <END>
   -h, --help           Print help
 ```
 
@@ -2812,8 +2934,8 @@ Daily activity summaries across a date range (YYYY-MM-DD)
 Usage: car health activity --start <START> --end <END>
 
 Options:
-      --start <START>  
-      --end <END>      
+      --start <START>
+      --end <END>
   -h, --help           Print help
 ```
 
@@ -2842,12 +2964,12 @@ Options:
           Registry source for `<namespace>/<name>` references: an `http(s)://…/index.json` URL or a
           LOCAL registry directory (or `file://` URL). Defaults to the public mirror. The private
           source needs a token — set `CAR_REGISTRY_TOKEN`
-          
+
           [default: https://raw.githubusercontent.com/Parslee-ai/car-releases/main/index.json]
 
       --url <URL>
           WebSocket URL of the running car-server daemon
-          
+
           [default: ws://127.0.0.1:9100/]
 
       --json
@@ -3180,7 +3302,7 @@ Source: release-mirror/ASSISTANT.md
 
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.52.0**. Check yours with `car --version`; if it
+> Describes CAR **0.52.1**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -3678,7 +3800,7 @@ Source: release-mirror/MCP.md
 
 # CAR as an MCP server
 
-> Describes CAR **0.52.0**. Check yours with `car --version`; if it
+> Describes CAR **0.52.1**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 Wire CAR's graph memory, skill storage, static plan verification, and policy
@@ -4929,7 +5051,7 @@ Source: docs/CAPABILITIES.md
 
 <!-- Generated by scripts/build-capabilities.sh. Do not edit by hand. -->
 
-Schema v1. 14 groups claim 70 workspace crates and 22 named programs/binaries exactly once.
+Schema v1. 14 groups claim 71 workspace crates and 22 named programs/binaries exactly once.
 
 ## Capability groups
 
@@ -5194,6 +5316,7 @@ Tamper-evident events, telemetry, conformance, benchmarks, and StateBench memory
 | `car-conformance` | Conformance test runner — verifies Rust runtime matches Python spec | yes |
 | `car-eventlog` | Event log with JSONL persistence for Common Agent Runtime | yes |
 | `car-memgine-eval` | StateBench evaluation bridge for Rust car-memgine | yes |
+| `car-selfheal` | Deterministic self-healing signal detection core for Common Agent Runtime | yes |
 | `car-telemetry` | Tracing and OpenTelemetry initialization for CAR | yes |
 
 **Programs and binaries**
@@ -5242,7 +5365,10 @@ Hidden clap commands are excluded.
 | `car agent run` | Run a registered agent on an input |
 | `car approvals` | Agent approval policy — the default posture for what agents may do without asking. Proxies the daemon's `agent_permissions.*` surface (the CLI counterpart to the CarHost "Approvals" settings / onboarding step) |
 | `car approvals default` | Set the default approval preset for all agents (`cautious` asks before any edit/full-access, `balanced` allows sandboxed edits, `trusting` allows everything without asking) |
+| `car approvals evaluate-tool` | Show whether one exact agent/tool override is active and schema-bound |
 | `car approvals get` | Show the current default approval posture |
+| `car approvals reset-tool` | Remove one exact agent/tool approval override |
+| `car approvals set-tool` | Set an approval mode for one exact agent and exact tool. `always_allow` requires that agent to be attached with an eligible live callback |
 | `car auth` | Parslee account authentication for CAR cloud-backed features |
 | `car auth accounts` | List all stored Parslee logins (active marked) |
 | `car auth login` | Sign in with a Parslee account using browser-based OAuth + PKCE |
@@ -5378,6 +5504,12 @@ Hidden clap commands are excluded.
 | `car secrets migrate-from-env` | Walk known remote-model env vars and copy any non-empty values from process env into the OS keychain. Idempotent — running again only rewrites entries when the env value differs from what's stored |
 | `car secrets put` | Store a secret. Value is read from --value or piped stdin |
 | `car secrets status` | Check whether a secret exists, without returning the value |
+| `car selfheal` | Inspect and operate the daemon's deterministic self-healing detector |
+| `car selfheal dismiss` | Dismiss one active detection by dedup key |
+| `car selfheal list` | List active detections, optionally filtered by kind, severity, or time |
+| `car selfheal run` | Run one deterministic detection tick now |
+| `car selfheal show` | Print the trusted local issue document for one detection |
+| `car selfheal status` | Show cadence, active counts, and the route resolved by the last tick |
 | `car setup` | Set up the right model for this machine — detect hardware, recommend, and install. Run with no flags for an interactive walkthrough |
 | `car simulate` | Simulate a proposal's state effects without executing |
 | `car skills` | Manage learned skills (SkillRL-inspired) |
@@ -5713,7 +5845,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 **Not indexed, on purpose:** the separate "## Notification methods (server → client)" section (`host.event`, `voice.event`, `coder.event`, `coder.discuss.event`, `browser.signin_needed`/`resolved`) documents push-notification *payload shapes*, not additional namespaced RPC methods — read it directly in the full doc. Six headings documented **inside** "## Method reference" itself are excluded for the same reason — they are server-initiated pushes, not client-callable requests: `browser.view.event`, `models.pull_progress`, `models.upgrade_available`, `models.suggestion_available`, `runs.trace.event`, and `coder.session_changed` (documented a second time, briefly, in the separate Notification methods section above). The "a2a (in-core dispatcher)" subsection's 9-11 A2A v1.0 methods are also excluded: they're documented as a table of `PascalCase` / `slash/form` name pairs with no per-method heading to anchor to, and the source doc doesn't say which form is the literal wire `method` string.
 
-**71 namespaces, 411 methods.**
+**71 namespaces, 414 methods.**
 
 ## a2a (7)
 
@@ -5755,13 +5887,16 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`agent.browser.input`](websocket-protocol.md#agentbrowserinput-agentbrowsercontrol-agentbrowsercapture-agentbrowserhost_connected-daemon-agent-reverse-calls) — params are one of { op: "navigate", url } · { op:...
 - [`agent.chat`](websocket-protocol.md#agentchat-daemon-agent-reverse-call-agentchatevent) — For attached supervised agents, agents.chat...
 
-## agent_permissions (5)
+## agent_permissions (8)
 
 - [`agent_permissions.evaluate`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params { agent_id, tier }.
+- [`agent_permissions.evaluate_tool`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Host-management-only.
 - [`agent_permissions.get`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params {}. Returns the raw policy { default:...
 - [`agent_permissions.reset`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params { agent_id }.
+- [`agent_permissions.reset_tool`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Host-management-only.
 - [`agent_permissions.set`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params { agent_id, mode:...
 - [`agent_permissions.set_default`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params { preset: "cautious"|"balanced"|"trusting" }...
+- [`agent_permissions.set_tool`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Host-management-only.
 
 ## agents (22)
 
@@ -9543,6 +9678,77 @@ follow-up behind the same trait. The device is the holder.
   monitor can fail loud when a goal condition was met through ungrounded
   evidence instead of CAR's deterministic runtime receipts.
 
+#### `selfheal.status`
+- **Params**: `null`
+- **Returns**: `{ cadence_secs, last_tick_at, route, source_checkout?,
+  refusal_reason?, detectors, detection_count, warning_count, critical_count,
+  dismissed_count, filing_mode }`.
+- `route` is `"local"` only when the tick validates a filesystem candidate as
+  the CAR source checkout; `source_checkout` then gives the canonical path.
+  Otherwise it fails closed to `"ledger-only"` and `refusal_reason` explains
+  why, including the actual origin remote when one was refused. `"feedback"`
+  is reserved for the separately gated feedback sink and is never selected by
+  this implementation.
+- Source candidates are bounded and deterministic: `[selfheal]
+  source_checkout = "/path/to/car"` in `<CAR_HOME>/config.toml` is authoritative,
+  followed (only when it is absent) by running-binary ancestors and the root of
+  the `.car/` project discovered from `CAR_PROJECT_DIR` or cwd. A candidate must
+  contain a `.git` directory or worktree file whose config names a GitHub
+  `Parslee-ai/car` origin. Detection performs file checks/reads only: no `git`
+  subprocess, network, or filesystem-wide scan.
+- `filing_mode` remains `"watch-only"`: local issue documents are private
+  handoff artifacts, not off-machine filings or remediation. The daemon runs
+  one non-overlapping tick immediately at boot and then every 900 seconds by
+  default. `CAR_SELFHEAL_INTERVAL_SECS` changes cadence only.
+- The five detector IDs are `metrics_alerts.v1`, `agent_gave_up.v1`,
+  `agent_log_errors.v1`, `recurring_tool_failure.v1`, and
+  `capability_miss.v1` (the unversioned detection `kind` values are listed
+  below).
+- FFI: `selfhealStatus()` (NAPI) / `selfheal_status()` (PyO3), returning JSON.
+
+#### `selfheal.detections`
+- **Params**: optional `{ kind, severity, since, offset, limit }`. `kind` is one
+  of `metrics_alert` / `agent_gave_up` / `agent_log_error` /
+  `agent_silently_idle` / `recurring_tool_failure` / `capability_miss`;
+  severity is `warning` / `critical`; `since` is RFC 3339.
+  Default limit is 100 and the server clamps it to 1..500.
+- **Returns**: `{ detections, total, offset, limit, next_offset }`, latest first.
+  Dismissed stable keys are omitted. Each detection carries its SHA-256
+  `dedup_key`, evidence/provenance, observation times, affected component,
+  detector/version identity, redacted summary/detail, the tick's `route`, and
+  `local_issue_path` when routed locally.
+- FFI: `selfhealDetections(queryJson?)` / `selfheal_detections(query_json=None)`.
+
+#### `selfheal.dismiss`
+- **Params**: `{ dedup_key }`, the 64-character SHA-256 hex key from a
+  detection.
+- **Returns**: `{ dedup_key, dismissed, already_dismissed, dismissed_at }`.
+- Appends a dismissal marker; it never rewrites/deletes history. Later ticks
+  suppress that key. FFI: `selfhealDismiss(dedupKey)` /
+  `selfheal_dismiss(dedup_key)`.
+
+#### `selfheal.run`
+- **Params**: `null`
+- **Returns**: a tick summary with `route`, `source_checkout?` or
+  `refusal_reason?`, evidence counts, and new/changed/suppressed detection
+  counts. A concurrent tick fails instead of overlapping.
+- Runs the same watch-only path as the cadence. It reads active session event
+  slices since the prior tick, current supervised-agent state, bounded
+  activity/stderr tails and activity-log metadata, and the observe-only
+  registry, invokes all five deterministic detectors, and
+  performs no network request, off-machine issue filing, proposal execution,
+  agent restart, or remediation.
+- FFI: `selfhealRun()` / `selfheal_run()`.
+
+All four methods share the daemon-wide private append-only ledger at
+`<CAR_HOME>/selfheal/detections.jsonl`. JSONL records are tagged `detection`,
+`dismissal`, or `tick`; new ticks append only new/changed detections plus their
+summary. A `local` route additionally renders one owner-private
+`<CAR_HOME>/selfheal/issues/<dedup-key>.md` per active key, stamped
+`Trust-Tier: trusted`, and updates its occurrence count in place. Directories
+and files are 0700/0600 on Unix. No self-heal path writes into the detected
+source checkout.
+
 #### `events.cost_by_agent`
 - **Params**: `null`
 - **Returns**: array of `{ agent, calls, tokens_in, tokens_out, cost_usd }` —
@@ -11134,13 +11340,18 @@ A per-session permission gate classifies each action's risk into `read_only` / `
 
 #### `agent_permissions.*` — per-agent approval policy (WS-only)
 
-Orthogonal to the per-session standing tier above: a durable **per-agent** posture stored at `~/.car/agent-permissions.json`. For each agent and each risk tier (`read_only`/`sandbox_edit`/`full_access`), CAR either **always allows**, **requires approval** (routes through the shared approval ledger where an interactive approval channel exists), or **denies**. The store is a fully-specified `default` posture (Balanced by default — auto-allow reads, ask before edits/consequential actions) plus sparse per-agent overrides; resolution is agent-override → default → a safe `require_approval` floor. The supervised `car do` assistant enforces the live policy per tool call (reloaded each call, so operator edits in the CarHost **Agent Permissions** screen take effect immediately). The shared coder/declarative `WorktreeExecutor` also resolves this policy: `deny` blocks any tier, and `require_approval` blocks `full_access` because those runners have no interactive approval channel; lower-tier `require_approval` proceeds so normal sandbox edits keep working under the Balanced default. Backed by `car_policy::agent_permissions`; host-facing, consumed by CarHost over the socket, so **WS-only** (no FFI proxy, like `runs.subscribe`/`coder.subscribe`). All mutations are read-modify-write and return the full updated policy `{ default, agents }`.
+Orthogonal to the per-session standing tier above: a durable **per-agent** posture stored at `~/.car/agent-permissions.json`. For each agent and each risk tier (`read_only`/`sandbox_edit`/`full_access`), CAR either **always allows**, **requires approval** (routes through the shared approval ledger where an interactive approval channel exists), or **denies**. The store is a fully-specified `default` posture (Balanced by default — auto-allow reads, ask before edits/consequential actions), sparse per-agent tier overrides, and optional exact agent/tool overrides. Resolution for a tool call is exact `(agent_id, tool)` override → the existing gate result; both identifiers are literal, with no wildcard, prefix, regex, or tier-wide grant. An exact `always_allow` is narrower still: the target agent must be live and authenticated, the tool must be an eligible reverse callback registered by that exact session, and CAR persists the canonical digest of the schema it observed. The only eligible callback profile is the non-idempotent `newsroom.publish` capability with one required non-empty `edition_id` string and no additional parameters; aliases and generic executable, payload, or destination shapes remain on ordinary HITL. Admission rechecks the current callback digest. A changed or missing schema falls back to ordinary mandatory HITL, and a governed skill's lower `deployment_tier` remains an effective ceiling for both `permission.evaluate` and `proposal.submit` even when an exact override exists. A durable human rejection always wins. Authenticated bound WebSocket agents use the same exact evaluator for `permission.evaluate` and `proposal.submit`; a valid override can admit the callback when no lower skill ceiling applies even though it remains classified `full_access` and `irreversible`. Decisions retain their required tier and reversibility, and exact-override decisions carry `authorization_source: "agent_tool_override"` plus `authorization_schema_digest` in the decision/audit data. Backed by `car_policy::agent_permissions`; host-facing, consumed over the socket, so **WS-only** (no FFI proxy, like `runs.subscribe`/`coder.subscribe`).
 
-- **`agent_permissions.get`** — Params `{}`. Returns the raw policy `{ default: TierPosture, agents: { <agent_id>: TierPosture } }`, where `TierPosture` is `{ read_only?, sandbox_edit?, full_access?: "always_allow"|"require_approval"|"deny" }` (a per-agent posture may be partial; absent tiers fall through to the default).
-- **`agent_permissions.set`** — Params `{ agent_id, mode: "always_allow"|"require_approval"|"deny", tier? }`. Sets one tier for an agent, or every tier when `tier` is omitted.
-- **`agent_permissions.set_default`** — Params `{ preset: "cautious"|"balanced"|"trusting" }` **or** `{ tier, mode }`. Moves the default posture applied to agents without an override.
-- **`agent_permissions.reset`** — Params `{ agent_id }`. Drops an agent's override so it reverts to the default.
+Clients that require this exact override surface must include `permissions.agent-tool-overrides.v1` in `server.handshake.required_capabilities` and verify it appears in `negotiated_capabilities`. An older daemon rejects that mandatory capability before the client calls an override RPC.
+
+- **`agent_permissions.get`** — Params `{}`. Returns the raw policy `{ default: TierPosture, agents: { <agent_id>: TierPosture }, tool_overrides?: { <agent_id>: { <tool>: { mode: ApprovalMode, schema_digest? } } } }`, where `TierPosture` is `{ read_only?, sandbox_edit?, full_access?: "always_allow"|"require_approval"|"deny" }`. `tool_overrides` is omitted when empty for backward-compatible persistence. Legacy string-valued tool overrides remain readable; a digestless `always_allow` is inactive and falls back to HITL.
+- **`agent_permissions.set`** — **Host-management-only.** Params `{ agent_id, mode: "always_allow"|"require_approval"|"deny", tier? }`. Sets one tier for an agent, or every tier when `tier` is omitted.
+- **`agent_permissions.set_default`** — **Host-management-only.** Params `{ preset: "cautious"|"balanced"|"trusting" }` **or** `{ tier, mode }`. Moves the default posture applied to agents without an override.
+- **`agent_permissions.reset`** — **Host-management-only.** Params `{ agent_id }`. Drops an agent's tier override so it reverts to the default; exact tool overrides are managed independently.
 - **`agent_permissions.evaluate`** — Params `{ agent_id, tier }`. Returns `{ agent_id, tier, mode, has_override }` — the resolved decision the executor/HITL path consults before an agent acts.
+- **`agent_permissions.set_tool`** — **Host-management-only and capability-gated.** Params `{ agent_id, tool, mode: "always_allow"|"require_approval"|"deny" }`. Sets one literal pair; a managed agent cannot self-grant. For `always_allow`, the named agent must currently be attached with the exact eligible `newsroom.publish` callback profile described above. The server records its schema digest; callers must not supply `schema_digest`.
+- **`agent_permissions.reset_tool`** — **Host-management-only.** Params `{ agent_id, tool }`. Removes one literal pair.
+- **`agent_permissions.evaluate_tool`** — **Host-management-only and capability-gated.** Params `{ agent_id, tool, tier }`. Returns the exact override when present, otherwise the tier posture, plus `has_tool_override`, `active`, `schema_bound`, `schema_digest_present`, the stored non-secret `schema_digest` when present, and `authorization_source`. For `always_allow`, `active` is true only while the exact authenticated agent callback is attached with the matching current schema.
 
 #### `infer`
 - **Params**: `GenerateRequest { model: string, messages: Message[], system?: string, max_tokens?: number, temperature?: number, tools?: ToolDef[], context_query?: string, memory_intervention?: boolean | ProactiveMemoryRequest, response_format?: ResponseFormat, intent?: IntentHint, ... }`
@@ -12454,6 +12665,129 @@ Lifecycle agents that need to survive a daemon restart should:
 The "single-source-of-truth" framing applies here too — assume the daemon
 is the authority on what's in flight and treat the agent's local view as
 something that must be reconciled when the connection resumes.
+
+
+=================================================================
+FILE: Self-healing
+Source: docs/self-healing.md
+=================================================================
+
+# Self-healing
+
+CAR watches the evidence it already owns and turns recurring failures into durable,
+redacted detections. The detector is deterministic and runs inside `car-server`;
+there is no LLM judge in the detection or routing path.
+
+## Deterministic detectors
+
+The daemon runs five pure detectors: `metrics_alerts.v1`, `agent_gave_up.v1`,
+`agent_log_errors.v1`, `recurring_tool_failure.v1`, and `capability_miss.v1`.
+`agent_log_errors.v1` closes two supervisor blind spots:
+
+- **Healthy-but-erroring:** the process remains `running`, but its bounded
+  activity-log tail repeats the same genuine error signature. A line is an error
+  only when it carries an `ERROR`, `FATAL`, or `CRITICAL` level token or is a
+  traceback header. INFO/WARN/unlevelled lines remain routine even when they say
+  “failed”. Signatures normalize timestamps, UUIDs, long hex ids, numbers, and
+  whitespace before counting.
+- **Silently idle:** the process remains `running`, but the activity-log mtime is
+  older than the configured threshold. Deduplication uses only the monotone
+  `hour` / `day` / `week` / `month` age bucket, never a raw minute count or tick
+  time. A measured zero bytes on both stdout and stderr is listed by the
+  supervisor but produces no detection because no activity was observed.
+
+The detector core reads none of this itself. The daemon supplies bounded tails,
+stream sizes, and activity metadata explicitly on each supervisor snapshot.
+
+This is a **watch-only, ledger-first** capability. A detection is evidence, not a
+work order. CAR does not propose a fix, execute remediation, restart an agent, or
+grant itself new authority. Every tick appends detections and its summary to the
+owner-private `<CAR_HOME>/selfheal/detections.jsonl` ledger. Operator dismissals
+are append-only records too; history is not deleted.
+
+## Operator commands
+
+The CLI is a thin client over the daemon's `selfheal.*` JSON-RPC methods, so a
+running `car-server` (or CAR Host) is required.
+
+```bash
+car selfheal status
+car selfheal run
+car selfheal list
+car selfheal list --kind metrics_alert --severity critical --since 2026-09-01T00:00:00Z
+car selfheal show <dedup-key>
+car selfheal dismiss <dedup-key>
+```
+
+- `status` shows the cadence, active/dismissed counts, and the route resolved by
+  the last tick, including either a validated checkout path or a refusal reason.
+- `run` performs one tick immediately.
+- `list` renders active detections with their route and, for local routing, the
+  issue-document path.
+- `show` prints the trusted local issue document for one deduplication key.
+- `dismiss` suppresses that key from later active lists and ticks without
+  deleting ledger history.
+
+There are deliberately no filing-control commands yet. The feedback sink is
+pending Parslee-ai/car#1137, so `car selfheal enable-filing` and
+`disable-filing` are not shipped.
+
+## Source-presence gate and routing
+
+At each tick, the daemon checks a bounded set of local candidates for a Git
+checkout whose origin is `Parslee-ai/car`. It performs file reads only: no broad
+filesystem scan, Git subprocess, or network lookup. An explicit
+`[selfheal] source_checkout = "/path/to/car"` in `<CAR_HOME>/config.toml` is
+authoritative and fails closed when invalid rather than falling through to an
+auto-discovered candidate.
+
+The routing policy has two intended arms:
+
+1. **Source present — local route.** A validated CAR checkout identifies a
+   maintainer machine. Each active detection gets one owner-private
+   `<CAR_HOME>/selfheal/issues/<dedup-key>.md` document. Recurrence updates that
+   same document. CAR never writes into the source checkout.
+2. **Source absent — feedback route.** A consumer machine will submit to the
+   Parslee feedback database rather than a source repository. This arm is
+   **pending Parslee-ai/car#1137 and is not live**. Until that sink lands, source
+   absence or a refused checkout resolves to `ledger-only`, with the refusal
+   reason visible in `status`; nothing is filed off-machine.
+
+`CAR_SELFHEAL_INTERVAL_SECS` changes cadence only. It does not bypass the source
+check, enable filing, or select another implementation.
+
+## Trust tier policy
+
+Routing determines how backlog consumers must treat the evidence:
+
+- A local-route issue from a source-present machine is the **trusted tier**. It
+  is a private, fleet-harvested handoff backed by the daemon's redacted evidence
+  and validated checkout path.
+- A feedback-database auto-filed report is the **consumer tier**. It must be
+  reproduced before work begins; consumer routing does not inherit maintainer
+  trust merely because CAR generated the report. This pipeline remains pending
+  Parslee-ai/car#1137.
+
+Trust changes triage posture, not detector output. Both tiers originate from the
+same deterministic detector records; neither authorizes automatic remediation.
+
+## Relationship to car-tank
+
+The external `car-tank` agent's daemon-adjacent signal sources are subsumed by
+CAR's in-daemon deterministic detection. Its repository-side sources (open
+issues, CI, parity checks, and benchmark artifacts) remain the responsibility of
+whoever runs the repository backlog; they do not move into CAR's daemon.
+
+Tank's LLM judge is retired from this path. Its calibration record at
+`../car-tank/docs/calibration-probe-2026-08-11.md` reports a failed probe, while the
+ratified CAR design requires deterministic detection with no LLM judge.
+Goalpool filing is retired as the destination: routing is now source-presence
+gated, producing local issues for the fleet on validated source-present machines
+and, once Parslee-ai/car#1137 lands, feedback reports everywhere else.
+
+Decommissioning the external Tank process is an operator decision, not an action
+CAR takes. The principal may stop it with `car stop car-tank` or keep it
+permanently `watchOnly`; CAR neither changes Tank's configuration nor stops it.
 
 
 =================================================================

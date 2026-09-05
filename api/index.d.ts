@@ -1498,6 +1498,23 @@ export class CarRuntime {
    * `cost_overage` alert. */
   metricsAlerts(thresholdsJson?: string): Promise<string>;
 
+  /** Watch-only self-heal detector status as JSON: cadence, last tick, source
+   * `route`, validated `source_checkout` or `refusal_reason`, detector IDs,
+   * active/dismissed counts, and `filing_mode: "watch-only"`. */
+  selfhealStatus(): Promise<string>;
+
+  /** List active (not dismissed) self-heal detections as JSON. Each includes
+   * `route` and an optional `local_issue_path`. `queryJson` optionally carries
+   * `kind`, `severity`, `since`, `offset`, and `limit` (bounded to 500). */
+  selfhealDetections(queryJson?: string): Promise<string>;
+
+  /** Append a dismissal marker for a stable detection dedup key. This does not
+   * delete history, file an issue, use network, or remediate anything. */
+  selfhealDismiss(dedupKey: string): Promise<string>;
+
+  /** Run one non-overlapping watch-only detection tick immediately. */
+  selfhealRun(): Promise<string>;
+
   /** Execution log counts and approximate retained native bytes. Returns JSON. */
   eventLogStats(): Promise<string>;
 

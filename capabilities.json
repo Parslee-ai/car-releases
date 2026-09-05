@@ -540,6 +540,11 @@
           "readme": true
         },
         {
+          "name": "car-selfheal",
+          "description": "Deterministic self-healing signal detection core for Common Agent Runtime",
+          "readme": true
+        },
+        {
           "name": "car-telemetry",
           "description": "Tracing and OpenTelemetry initialization for CAR",
           "readme": true
@@ -669,8 +674,20 @@
       "description": "Set the default approval preset for all agents (`cautious` asks before any edit/full-access, `balanced` allows sandboxed edits, `trusting` allows everything without asking)"
     },
     {
+      "path": "approvals evaluate-tool",
+      "description": "Show whether one exact agent/tool override is active and schema-bound"
+    },
+    {
       "path": "approvals get",
       "description": "Show the current default approval posture"
+    },
+    {
+      "path": "approvals reset-tool",
+      "description": "Remove one exact agent/tool approval override"
+    },
+    {
+      "path": "approvals set-tool",
+      "description": "Set an approval mode for one exact agent and exact tool. `always_allow` requires that agent to be attached with an eligible live callback"
     },
     {
       "path": "auth",
@@ -1211,6 +1228,30 @@
     {
       "path": "secrets status",
       "description": "Check whether a secret exists, without returning the value"
+    },
+    {
+      "path": "selfheal",
+      "description": "Inspect and operate the daemon's deterministic self-healing detector"
+    },
+    {
+      "path": "selfheal dismiss",
+      "description": "Dismiss one active detection by dedup key"
+    },
+    {
+      "path": "selfheal list",
+      "description": "List active detections, optionally filtered by kind, severity, or time"
+    },
+    {
+      "path": "selfheal run",
+      "description": "Run one deterministic detection tick now"
+    },
+    {
+      "path": "selfheal show",
+      "description": "Print the trusted local issue document for one detection"
+    },
+    {
+      "path": "selfheal status",
+      "description": "Show cadence, active counts, and the route resolved by the last tick"
     },
     {
       "path": "setup",

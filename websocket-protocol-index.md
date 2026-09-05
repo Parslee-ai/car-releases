@@ -7,7 +7,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 **Not indexed, on purpose:** the separate "## Notification methods (server → client)" section (`host.event`, `voice.event`, `coder.event`, `coder.discuss.event`, `browser.signin_needed`/`resolved`) documents push-notification *payload shapes*, not additional namespaced RPC methods — read it directly in the full doc. Six headings documented **inside** "## Method reference" itself are excluded for the same reason — they are server-initiated pushes, not client-callable requests: `browser.view.event`, `models.pull_progress`, `models.upgrade_available`, `models.suggestion_available`, `runs.trace.event`, and `coder.session_changed` (documented a second time, briefly, in the separate Notification methods section above). The "a2a (in-core dispatcher)" subsection's 9-11 A2A v1.0 methods are also excluded: they're documented as a table of `PascalCase` / `slash/form` name pairs with no per-method heading to anchor to, and the source doc doesn't say which form is the literal wire `method` string.
 
-**71 namespaces, 411 methods.**
+**71 namespaces, 414 methods.**
 
 ## a2a (7)
 
@@ -49,13 +49,16 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`agent.browser.input`](websocket-protocol.md#agentbrowserinput-agentbrowsercontrol-agentbrowsercapture-agentbrowserhost_connected-daemon-agent-reverse-calls) — params are one of { op: "navigate", url } · { op:...
 - [`agent.chat`](websocket-protocol.md#agentchat-daemon-agent-reverse-call-agentchatevent) — For attached supervised agents, agents.chat...
 
-## agent_permissions (5)
+## agent_permissions (8)
 
 - [`agent_permissions.evaluate`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params { agent_id, tier }.
+- [`agent_permissions.evaluate_tool`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Host-management-only.
 - [`agent_permissions.get`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params {}. Returns the raw policy { default:...
 - [`agent_permissions.reset`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params { agent_id }.
+- [`agent_permissions.reset_tool`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Host-management-only.
 - [`agent_permissions.set`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params { agent_id, mode:...
 - [`agent_permissions.set_default`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Params { preset: "cautious"|"balanced"|"trusting" }...
+- [`agent_permissions.set_tool`](websocket-protocol.md#agent_permissions-per-agent-approval-policy-ws-only) — Host-management-only.
 
 ## agents (22)
 
