@@ -182,6 +182,35 @@ Proposed → Validated → Executing → Succeeded
 
 `ActionStatus` is observable through the event log, not part of the input contract.
 
+#### Execution outcome event data
+
+Every per-action `ActionFailed` event carries:
+
+- `params_digest`: lowercase SHA-256 of the RFC 8785/JCS-canonicalized action
+  `parameters` object. The event never copies raw parameters; consumers join
+  through `proposal_id` + `action_id` to the authoritative `ProposalReceived`
+  record and can use the digest to detect a mismatch.
+- `expected_effects`: the action's declared expected-effects object, unchanged.
+- `error_class`: one of `timeout`, `rejected_by_policy`, `tool_error`,
+  `validation`, or `unknown`.
+
+`ActionSucceeded` carries `params_digest` and `expected_effects` too, making the
+success/failure join symmetric without adding an error classification to a
+successful call.
+
+The normalized error mapping is intentionally low-cardinality:
+
+| `error_class` | Mapping |
+|---|---|
+| `timeout` | the engine's action deadline expired, or the daemon-to-host tool callback reported its own timeout |
+| `rejected_by_policy` | a dispatch-time tool guard returned the stable `denied by policy:` or `rejected by policy:` prefix |
+| `validation` | post-dispatch output or callback-state JCS/I-JSON, state-key-set, or serialization validation failed |
+| `tool_error` | any other error returned while dispatching a tool action |
+| `unknown` | a post-dispatch failure on an action with no tool |
+
+Normal action/schema/policy admission failures happen before execution and are
+`ActionRejected`, not `ActionFailed`, so this mapping does not reclassify them.
+
 ---
 
 ## Precondition
@@ -221,6 +250,7 @@ Registered when a tool is added to the runtime. Carries everything the runtime n
 ```jsonc
 {
   "name": "deploy",
+  "source": "user_defined",
   "description": "Deploys an artifact to a target environment.",
   "parameters": {
     "type": "object",
@@ -239,6 +269,7 @@ Registered when a tool is added to the runtime. Carries everything the runtime n
 | Field | Type | Required | Default | Notes |
 |-------|------|----------|---------|-------|
 | `name` | string | **yes** | — | unique within a runtime |
+| `source` | `builtin \| user_defined \| subprocess \| mcp` | no | `user_defined` | stable origin category assigned by the runtime; MCP server detail remains registry-private |
 | `description` | string | no | `""` | human-readable; included in tool catalog |
 | `parameters` | JSON Schema | no | `{}` | validated by the runtime before dispatch |
 | `returns` | JSON Schema | no | none | validated against tool return value when set |
@@ -563,15 +594,21 @@ allow = ["staging", "preview"]   # any other target — or none at all — is de
 | `allow` | no | permitted values; defaults to empty, which denies every call |
 
 #### `deny_tool_param_matching`
-The content counterpart to `deny_tool_param`, for prohibitions no fixed substring expresses — credential shapes, account numbers, an address family. `matches` is a regex over the string-coerced parameter value. The match is **unanchored**, so the pattern fires anywhere in the value; anchor it with `^`/`$` when that matters. Like `deny_tool_param`, an absent parameter is not a violation — use `allow_tool_param` when absence itself must be refused.
+The content counterpart to `deny_tool_param`, for conditions no fixed substring expresses — credential shapes, account numbers, an address family, or an open-ended trusted prefix. `matches` is a regex over the string-coerced parameter value. The match is **unanchored**, so the pattern fires anywhere in the value; anchor it with `^`/`$` when that matters.
 
-The pattern is compiled once when the rule set is applied, not per action. A pattern that fails to compile **denies every call to that tool** rather than disappearing, matching the loader's loud-error posture.
+By default a regex match denies and an absent parameter does not. Set `negate = true` for the "unless" form: a mismatch denies, and an absent parameter also denies because nothing proves the required pattern. The pattern is compiled once when the rule set is applied, not per action. A pattern that fails to compile **denies every call to that tool** rather than disappearing, matching the loader's loud-error posture.
 
 ```toml
 [[deny_tool_param_matching]]
 tool    = "http_request"
 param   = "body"
 matches = "sk-[A-Za-z0-9]{20,}"   # never let an API-key-shaped string leave in a body
+
+[[deny_tool_param_matching]]
+tool    = "docker.rm"
+param   = "name"
+matches = "^parslee-"
+negate  = true                     # deny unless the name has the trusted prefix
 ```
 
 | Param | Required | Notes |
@@ -579,6 +616,7 @@ matches = "sk-[A-Za-z0-9]{20,}"   # never let an API-key-shaped string leave in 
 | `tool` | yes | tool name the rule applies to |
 | `param` | yes | parameter key inspected on the action |
 | `matches` | yes | regex source; unanchored; an uncompilable pattern denies the tool outright |
+| `negate` | no | defaults to `false`; when `true`, deny mismatch or absence instead of match |
 
 #### `rate_limit_tool`
 A sliding-window cap on how often `tool` may be called. The call is denied when admitting it would make it the `max_calls + 1`-th call to `tool` within the trailing `interval_secs`. `max_calls = 0` denies every call. This bounds how much of a side effect an agent can produce in a stretch of wall-clock time, independently of whether any single call is legitimate.

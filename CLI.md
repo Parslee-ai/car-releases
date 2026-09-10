@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.52.1 (2026-09-04). Every subcommand the installed binary reports is
+> 0.52.1 (2026-09-06). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 68 top-level commands, 101 nested subcommands
+> 69 top-level commands, 106 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 68 subcommands spanning several different jobs:
+`car` is one binary with 69 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -175,6 +175,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car code-task`](#car-code-task) | Run a coder session headlessly and IN THIS PROCESS: derive or accept an outcome contract, work in a git worktree until the runtime's own re-run of that contract is green, then deliver the result as a pull request |
 | [`car coder-ab`](#car-coder-ab) | A/B-test CAR's coder against an external agent (Codex / Claude Code) over a corpus, and grow that corpus from git history — the productionized dogfooding loop (docs/proposals/coder-ab-dogfood.md) |
 | [`car keys`](#car-keys) | Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). The key is read env-first, keychain-fallback by the runtime |
+| [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
 | [`car models`](#car-models) | Manage local inference models |
 | [`car setup`](#car-setup) | Set up the right model for this machine — detect hardware, recommend, and install. Run with no flags for an interactive walkthrough |
@@ -643,6 +644,90 @@ Usage: car keys remove <NAME>
 
 Arguments:
   <NAME>
+
+Options:
+  -h, --help  Print help
+```
+
+### car selfheal
+
+```text
+Inspect and operate the daemon's deterministic self-healing detector
+
+Usage: car selfheal <COMMAND>
+
+Commands:
+  status   Show cadence, active counts, and the route resolved by the last tick
+  list     List active detections, optionally filtered by kind, severity, or time
+  show     Print the trusted local issue document for one detection
+  dismiss  Dismiss one active detection by dedup key
+  run      Run one deterministic detection tick now
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car selfheal status
+
+```text
+Show cadence, active counts, and the route resolved by the last tick
+
+Usage: car selfheal status
+
+Options:
+  -h, --help  Print help
+```
+
+#### car selfheal list
+
+```text
+List active detections, optionally filtered by kind, severity, or time
+
+Usage: car selfheal list [OPTIONS]
+
+Options:
+      --kind <KIND>          Detection kind (metrics_alert, agent_gave_up, agent_log_error,
+      agent_silently_idle, recurring_tool_failure, capability_miss)
+      --severity <SEVERITY>  Severity (warning or critical)
+      --since <SINCE>        Only detections observed at or after this RFC3339 timestamp
+  -h, --help                 Print help
+```
+
+#### car selfheal show
+
+```text
+Print the trusted local issue document for one detection
+
+Usage: car selfheal show <DEDUP_KEY>
+
+Arguments:
+  <DEDUP_KEY>  Detection SHA-256 dedup key
+
+Options:
+  -h, --help  Print help
+```
+
+#### car selfheal dismiss
+
+```text
+Dismiss one active detection by dedup key
+
+Usage: car selfheal dismiss <DEDUP_KEY>
+
+Arguments:
+  <DEDUP_KEY>  Detection SHA-256 dedup key
+
+Options:
+  -h, --help  Print help
+```
+
+#### car selfheal run
+
+```text
+Run one deterministic detection tick now
+
+Usage: car selfheal run
 
 Options:
   -h, --help  Print help

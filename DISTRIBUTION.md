@@ -33,6 +33,24 @@ Sparkle, and the cask carried a `car-server install` step that wrote a launchd
 LaunchAgent — the flow the `.pkg` exists to replace. The `.pkg` above is the
 macOS install.
 
+### Windows app + CLI — `.exe` installer (no terminal)
+
+Download **`CAR-setup-x64.exe`** from the
+[latest release](https://github.com/Parslee-ai/car-releases/releases/latest) and
+double-click. This is the Windows counterpart to the macOS `.pkg`. Installs
+**CarHost** (`car-tray.exe` — the system-tray host: daemon supervision, a native
+dashboard and setup wizard) together with the **`car` CLI**, `car-server`,
+`car-mcp`, and `car-memgine-eval` into `C:\Program Files\CAR`, adds that
+directory to the system PATH, creates a Start Menu shortcut (desktop shortcut
+optional), and registers an uninstaller that also clears the run-at-login entry.
+Requires admin rights.
+
+Not yet Authenticode-signed, so SmartScreen warns on first run — **More info →
+Run anyway**. Tracked in car#248. There is no Sparkle equivalent: update by
+downloading and running the newer installer. `car update` refreshes the CLI and
+daemon only, and needs an elevated terminal because `C:\Program Files` is not
+user-writable.
+
 ### Python — PyPI
 
 ```bash
@@ -86,6 +104,8 @@ as native binaries.
   signed `.pkg` + Sparkle became the macOS path; the tap
   `Parslee-ai/homebrew-car` is gone. Use the install script or a tarball below.
 - **Scoop** (Windows): `scoop bucket add car https://github.com/Parslee-ai/scoop-car && scoop install car`
+  Per-user, no admin. CLI binaries only — it does **not** install the CarHost
+  tray app; use `CAR-setup-x64.exe` above for that.
 - **Winget** (Windows): submission in progress; manifests live under `winget/`.
   Will be `winget install Parslee.Car` once the `microsoft/winget-pkgs` PR lands.
 - **Install script** (macOS + Linux — the recommended CLI install today):
@@ -120,6 +140,7 @@ to the newest:
 | `car-runtime.<platform>.node` | Node native addon, standalone |
 | `car_runtime-<ver>-cp39-abi3-<platform>.whl` | Python wheel (carries the version — no `latest` URL) |
 | `CAR-darwin-arm64.pkg` | macOS app + CLI installer (signed/notarized) |
+| `CAR-setup-x64.exe` | Windows tray app + CLI installer (not yet signed) |
 | `CarFfi.xcframework.zip` | Swift/Apple binding (signed/notarized) |
 | `appcast.xml` | Sparkle update feed (EdDSA-signed) |
 

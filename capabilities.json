@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "groups": [
     {
       "id": "runtime-foundations",
@@ -152,6 +152,11 @@
         {
           "name": "car-external-agents",
           "description": "Detection of installed agentic CLIs (Claude Code, Codex, Gemini) for the Common Agent Runtime.",
+          "readme": true
+        },
+        {
+          "name": "car-fleet",
+          "description": "Composite inventory of the CAR agents, capabilities and models reachable across a fleet of instances, and the wire contract for farming verified coding subtasks out to them.",
           "readme": true
         },
         {
@@ -830,6 +835,42 @@
       "description": "List standard account-backed file locations"
     },
     {
+      "path": "fleet",
+      "description": "What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon"
+    },
+    {
+      "path": "fleet enroll",
+      "description": "Enroll this machine as a fleet worker for the named repositories"
+    },
+    {
+      "path": "fleet run",
+      "description": "Run one coding goal across the fleet: decompose it, place the independent subtasks on the instances that have this repository, and gate the reassembly **here**"
+    },
+    {
+      "path": "fleet show",
+      "description": "Every agent, capability, and model across this daemon and every CAR instance it can reach"
+    },
+    {
+      "path": "fleet withdraw",
+      "description": "Stop taking work from peers. Keeps the repository list for next time"
+    },
+    {
+      "path": "fleet worker",
+      "description": "Show whether this machine takes coding subtasks farmed out by peers"
+    },
+    {
+      "path": "heal",
+      "description": "Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges"
+    },
+    {
+      "path": "heal run",
+      "description": "Run one sweep now instead of waiting for the cadence"
+    },
+    {
+      "path": "heal status",
+      "description": "Show whether the loop is enabled — and if not, why — plus its targets, review panel, and engine"
+    },
+    {
       "path": "health",
       "description": "Wearable / activity data (HealthKit + Fitbit/Garmin/Oura/etc.)"
     },
@@ -875,7 +916,7 @@
     },
     {
       "path": "info",
-      "description": "Show runtime info"
+      "description": "Show runtime and live machine state"
     },
     {
       "path": "init",
@@ -1238,12 +1279,16 @@
       "description": "Dismiss one active detection by dedup key"
     },
     {
+      "path": "selfheal fix",
+      "description": "Start one bounded coder round for an eligible recurring-tool key"
+    },
+    {
       "path": "selfheal list",
       "description": "List active detections, optionally filtered by kind, severity, or time"
     },
     {
       "path": "selfheal run",
-      "description": "Run one deterministic detection tick now"
+      "description": "Run one deterministic detection tick and its auto-fix cadence hook now"
     },
     {
       "path": "selfheal show",
@@ -1300,6 +1345,14 @@
     {
       "path": "tail-log",
       "description": "Tail the most recent stdout/stderr lines captured from a supervised agent (Parslee-ai/car#231 §5.2). Calls the daemon's `agents.tail_log`. Closes the DX gap where the daemon captured logs to `~/.car/logs/` (`%USERPROFILE%\\.car\\logs\\` on Windows) but offered no CLI surface to read them. Long alias: `logs`"
+    },
+    {
+      "path": "tools",
+      "description": "Invoke CAR's built-in runtime tools directly, in-process and without a daemon"
+    },
+    {
+      "path": "tools call",
+      "description": "Invoke one CAR built-in tool in this process; no daemon is contacted"
     },
     {
       "path": "ui",
@@ -1625,5 +1678,2259 @@
         "description": "Statically verify an ActionProposal: detect dependency cycles, missing tools, and simulate final state. No execution, no side effects. Each issue carries a 'tier' — decision_procedure | heuristic | sampled — naming which kind of check produced it, so a rule of thumb (loop detection) is distinguishable from an exact check (tool registration) without reading the message text."
       }
     ]
-  }
+  },
+  "rpc_namespaces": [
+    {
+      "namespace": "a2a",
+      "methods": [
+        {
+          "method": "a2a.peers.add",
+          "documented": true
+        },
+        {
+          "method": "a2a.peers.list",
+          "documented": true
+        },
+        {
+          "method": "a2a.peers.remove",
+          "documented": true
+        },
+        {
+          "method": "a2a.send",
+          "documented": true
+        },
+        {
+          "method": "a2a.start",
+          "documented": true
+        },
+        {
+          "method": "a2a.status",
+          "documented": true
+        },
+        {
+          "method": "a2a.stop",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "a2ui",
+      "methods": [
+        {
+          "method": "a2ui.action",
+          "documented": true
+        },
+        {
+          "method": "a2ui.apply",
+          "documented": true
+        },
+        {
+          "method": "a2ui.capabilities",
+          "documented": true
+        },
+        {
+          "method": "a2ui.get",
+          "documented": true
+        },
+        {
+          "method": "a2ui.ingest",
+          "documented": true
+        },
+        {
+          "method": "a2ui.reap",
+          "documented": true
+        },
+        {
+          "method": "a2ui.render_report",
+          "documented": true
+        },
+        {
+          "method": "a2ui.surfaces",
+          "documented": true
+        },
+        {
+          "method": "a2ui/replay",
+          "documented": true
+        },
+        {
+          "method": "a2ui/subscribe",
+          "documented": true
+        },
+        {
+          "method": "a2ui/unsubscribe",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "accounts",
+      "methods": [
+        {
+          "method": "accounts.list",
+          "documented": true
+        },
+        {
+          "method": "accounts.open",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "admission",
+      "methods": [
+        {
+          "method": "admission.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "agent",
+      "methods": [
+        {
+          "method": "agent/getAuthenticatedExtendedCard",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "agent_permissions",
+      "methods": [
+        {
+          "method": "agent_permissions.evaluate",
+          "documented": true
+        },
+        {
+          "method": "agent_permissions.evaluate_tool",
+          "documented": true
+        },
+        {
+          "method": "agent_permissions.get",
+          "documented": true
+        },
+        {
+          "method": "agent_permissions.reset",
+          "documented": true
+        },
+        {
+          "method": "agent_permissions.reset_tool",
+          "documented": true
+        },
+        {
+          "method": "agent_permissions.set",
+          "documented": true
+        },
+        {
+          "method": "agent_permissions.set_default",
+          "documented": true
+        },
+        {
+          "method": "agent_permissions.set_tool",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "agents",
+      "methods": [
+        {
+          "method": "agents.chat",
+          "documented": true
+        },
+        {
+          "method": "agents.chat.approve",
+          "documented": true
+        },
+        {
+          "method": "agents.chat.cancel",
+          "documented": true
+        },
+        {
+          "method": "agents.detect_external",
+          "documented": true
+        },
+        {
+          "method": "agents.health",
+          "documented": true
+        },
+        {
+          "method": "agents.health_external",
+          "documented": true
+        },
+        {
+          "method": "agents.install",
+          "documented": true
+        },
+        {
+          "method": "agents.invoke_external",
+          "documented": true
+        },
+        {
+          "method": "agents.list",
+          "documented": true
+        },
+        {
+          "method": "agents.list_external",
+          "documented": true
+        },
+        {
+          "method": "agents.message",
+          "documented": true
+        },
+        {
+          "method": "agents.message.approve",
+          "documented": true
+        },
+        {
+          "method": "agents.message.pending",
+          "documented": true
+        },
+        {
+          "method": "agents.peers",
+          "documented": true
+        },
+        {
+          "method": "agents.remove",
+          "documented": true
+        },
+        {
+          "method": "agents.restart",
+          "documented": true
+        },
+        {
+          "method": "agents.start",
+          "documented": true
+        },
+        {
+          "method": "agents.stop",
+          "documented": true
+        },
+        {
+          "method": "agents.tail_log",
+          "documented": true
+        },
+        {
+          "method": "agents.upsert",
+          "documented": true
+        },
+        {
+          "method": "agents.wait",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "assistant",
+      "methods": [
+        {
+          "method": "assistant.identity.get",
+          "documented": true
+        },
+        {
+          "method": "assistant.identity.set",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "assistants",
+      "methods": [
+        {
+          "method": "assistants.invoke",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "auth",
+      "methods": [
+        {
+          "method": "auth.accounts",
+          "documented": true
+        },
+        {
+          "method": "auth.authority_hint",
+          "documented": true
+        },
+        {
+          "method": "auth.complete",
+          "documented": true
+        },
+        {
+          "method": "auth.completion_status",
+          "documented": true
+        },
+        {
+          "method": "auth.logout",
+          "documented": true
+        },
+        {
+          "method": "auth.remove_account",
+          "documented": true
+        },
+        {
+          "method": "auth.snapshot",
+          "documented": true
+        },
+        {
+          "method": "auth.start",
+          "documented": true
+        },
+        {
+          "method": "auth.status",
+          "documented": true
+        },
+        {
+          "method": "auth.switch_account",
+          "documented": true
+        },
+        {
+          "method": "auth.switch_org",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "automation",
+      "methods": [
+        {
+          "method": "automation.run_applescript",
+          "documented": true
+        },
+        {
+          "method": "automation.run_powershell",
+          "documented": true
+        },
+        {
+          "method": "automation.shortcuts.list",
+          "documented": true
+        },
+        {
+          "method": "automation.shortcuts.run",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "bookmarks",
+      "methods": [
+        {
+          "method": "bookmarks.list",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "browser",
+      "methods": [
+        {
+          "method": "browser.close",
+          "documented": true
+        },
+        {
+          "method": "browser.producer.register",
+          "documented": true
+        },
+        {
+          "method": "browser.run",
+          "documented": true
+        },
+        {
+          "method": "browser.view.back",
+          "documented": true
+        },
+        {
+          "method": "browser.view.click",
+          "documented": true
+        },
+        {
+          "method": "browser.view.forward",
+          "documented": true
+        },
+        {
+          "method": "browser.view.hand_back",
+          "documented": true
+        },
+        {
+          "method": "browser.view.keypress",
+          "documented": true
+        },
+        {
+          "method": "browser.view.navigate",
+          "documented": true
+        },
+        {
+          "method": "browser.view.paste",
+          "documented": true
+        },
+        {
+          "method": "browser.view.reload",
+          "documented": true
+        },
+        {
+          "method": "browser.view.scroll",
+          "documented": true
+        },
+        {
+          "method": "browser.view.subscribe",
+          "documented": true
+        },
+        {
+          "method": "browser.view.tab_close",
+          "documented": true
+        },
+        {
+          "method": "browser.view.tab_open",
+          "documented": true
+        },
+        {
+          "method": "browser.view.tab_switch",
+          "documented": true
+        },
+        {
+          "method": "browser.view.take_control",
+          "documented": true
+        },
+        {
+          "method": "browser.view.type",
+          "documented": true
+        },
+        {
+          "method": "browser.view.unsubscribe",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "builder",
+      "methods": [
+        {
+          "method": "builder.build",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "calendar",
+      "methods": [
+        {
+          "method": "calendar.create_event",
+          "documented": true
+        },
+        {
+          "method": "calendar.delete_event",
+          "documented": true
+        },
+        {
+          "method": "calendar.events",
+          "documented": true
+        },
+        {
+          "method": "calendar.list",
+          "documented": true
+        },
+        {
+          "method": "calendar.update_event",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "cascade",
+      "methods": [
+        {
+          "method": "cascade.run",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "coder",
+      "methods": [
+        {
+          "method": "coder.approve_merge",
+          "documented": true
+        },
+        {
+          "method": "coder.cancel",
+          "documented": true
+        },
+        {
+          "method": "coder.confirm_contract",
+          "documented": true
+        },
+        {
+          "method": "coder.discuss.close",
+          "documented": true
+        },
+        {
+          "method": "coder.discuss.list",
+          "documented": true
+        },
+        {
+          "method": "coder.discuss.promote",
+          "documented": true
+        },
+        {
+          "method": "coder.discuss.send",
+          "documented": true
+        },
+        {
+          "method": "coder.discuss.start",
+          "documented": true
+        },
+        {
+          "method": "coder.discuss.subscribe",
+          "documented": true
+        },
+        {
+          "method": "coder.discuss.unsubscribe",
+          "documented": true
+        },
+        {
+          "method": "coder.get",
+          "documented": true
+        },
+        {
+          "method": "coder.list",
+          "documented": true
+        },
+        {
+          "method": "coder.projects.create",
+          "documented": true
+        },
+        {
+          "method": "coder.projects.get",
+          "documented": true
+        },
+        {
+          "method": "coder.projects.list",
+          "documented": true
+        },
+        {
+          "method": "coder.respond",
+          "documented": true
+        },
+        {
+          "method": "coder.revise_contract",
+          "documented": true
+        },
+        {
+          "method": "coder.start",
+          "documented": true
+        },
+        {
+          "method": "coder.subscribe",
+          "documented": true
+        },
+        {
+          "method": "coder.unsubscribe",
+          "documented": true
+        },
+        {
+          "method": "coder.unwatch",
+          "documented": true
+        },
+        {
+          "method": "coder.watch",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "concierge",
+      "methods": [
+        {
+          "method": "concierge.actions",
+          "documented": true
+        },
+        {
+          "method": "concierge.apply",
+          "documented": true
+        },
+        {
+          "method": "concierge.ask",
+          "documented": true
+        },
+        {
+          "method": "concierge.clear_default",
+          "documented": true
+        },
+        {
+          "method": "concierge.defaults",
+          "documented": true
+        },
+        {
+          "method": "concierge.dismiss",
+          "documented": true
+        },
+        {
+          "method": "concierge.refresh_catalog",
+          "documented": true
+        },
+        {
+          "method": "concierge.rollback",
+          "documented": true
+        },
+        {
+          "method": "concierge.set_default",
+          "documented": true
+        },
+        {
+          "method": "concierge.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "connectors",
+      "methods": [
+        {
+          "method": "connectors.add",
+          "documented": true
+        },
+        {
+          "method": "connectors.add_stdio",
+          "documented": true
+        },
+        {
+          "method": "connectors.authenticate",
+          "documented": true
+        },
+        {
+          "method": "connectors.complete_authentication",
+          "documented": true
+        },
+        {
+          "method": "connectors.disable_tools",
+          "documented": true
+        },
+        {
+          "method": "connectors.enable_tools",
+          "documented": true
+        },
+        {
+          "method": "connectors.list",
+          "documented": true
+        },
+        {
+          "method": "connectors.refresh",
+          "documented": true
+        },
+        {
+          "method": "connectors.remove",
+          "documented": true
+        },
+        {
+          "method": "connectors.tools",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "contacts",
+      "methods": [
+        {
+          "method": "contacts.containers",
+          "documented": true
+        },
+        {
+          "method": "contacts.find",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "declagents",
+      "methods": [
+        {
+          "method": "declagents.get",
+          "documented": true
+        },
+        {
+          "method": "declagents.invoke",
+          "documented": true
+        },
+        {
+          "method": "declagents.list",
+          "documented": true
+        },
+        {
+          "method": "declagents.remove",
+          "documented": true
+        },
+        {
+          "method": "declagents.route",
+          "documented": true
+        },
+        {
+          "method": "declagents.route_split",
+          "documented": true
+        },
+        {
+          "method": "declagents.routing_stats",
+          "documented": true
+        },
+        {
+          "method": "declagents.set_enabled",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "diagnostics",
+      "methods": [
+        {
+          "method": "diagnostics.secret_store_activity",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "discovery",
+      "methods": [
+        {
+          "method": "discovery.report",
+          "documented": true
+        },
+        {
+          "method": "discovery.resolve",
+          "documented": true
+        },
+        {
+          "method": "discovery.route_compose",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "events",
+      "methods": [
+        {
+          "method": "events.chain.enable",
+          "documented": true
+        },
+        {
+          "method": "events.chain.verify",
+          "documented": true
+        },
+        {
+          "method": "events.clear",
+          "documented": true
+        },
+        {
+          "method": "events.cost_by_agent",
+          "documented": true
+        },
+        {
+          "method": "events.count",
+          "documented": true
+        },
+        {
+          "method": "events.query",
+          "documented": true
+        },
+        {
+          "method": "events.retention",
+          "documented": true
+        },
+        {
+          "method": "events.stats",
+          "documented": true
+        },
+        {
+          "method": "events.truncate",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "evolution",
+      "methods": [
+        {
+          "method": "evolution.plan",
+          "documented": true
+        },
+        {
+          "method": "evolution.run",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "files",
+      "methods": [
+        {
+          "method": "files.locations",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "fleet",
+      "methods": [
+        {
+          "method": "fleet.composite",
+          "documented": true
+        },
+        {
+          "method": "fleet.inventory",
+          "documented": true
+        },
+        {
+          "method": "fleet.worker.get",
+          "documented": true
+        },
+        {
+          "method": "fleet.worker.set",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "foreman",
+      "methods": [
+        {
+          "method": "foreman.plan",
+          "documented": true
+        },
+        {
+          "method": "foreman.run",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "goal",
+      "methods": [
+        {
+          "method": "goal.clear",
+          "documented": true
+        },
+        {
+          "method": "goal.set",
+          "documented": true
+        },
+        {
+          "method": "goal.status",
+          "documented": true
+        },
+        {
+          "method": "goal.suggest",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "heal",
+      "methods": [
+        {
+          "method": "heal.run",
+          "documented": true
+        },
+        {
+          "method": "heal.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "health",
+      "methods": [
+        {
+          "method": "health.activity",
+          "documented": true
+        },
+        {
+          "method": "health.sleep",
+          "documented": true
+        },
+        {
+          "method": "health.status",
+          "documented": true
+        },
+        {
+          "method": "health.workouts",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "host",
+      "methods": [
+        {
+          "method": "host.agents",
+          "documented": true
+        },
+        {
+          "method": "host.approvals",
+          "documented": true
+        },
+        {
+          "method": "host.devices",
+          "documented": true
+        },
+        {
+          "method": "host.events",
+          "documented": true
+        },
+        {
+          "method": "host.notify",
+          "documented": true
+        },
+        {
+          "method": "host.register_agent",
+          "documented": true
+        },
+        {
+          "method": "host.register_device",
+          "documented": true
+        },
+        {
+          "method": "host.request_approval",
+          "documented": true
+        },
+        {
+          "method": "host.resolve_approval",
+          "documented": true
+        },
+        {
+          "method": "host.set_status",
+          "documented": true
+        },
+        {
+          "method": "host.subscribe",
+          "documented": true
+        },
+        {
+          "method": "host.unregister_agent",
+          "documented": true
+        },
+        {
+          "method": "host.update_device",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "image",
+      "methods": [
+        {
+          "method": "image.generate",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "infer",
+      "methods": [
+        {
+          "method": "infer.cancel",
+          "documented": true
+        },
+        {
+          "method": "infer.deadline",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "inference",
+      "methods": [
+        {
+          "method": "inference.register_runner",
+          "documented": true
+        },
+        {
+          "method": "inference.runner.complete",
+          "documented": true
+        },
+        {
+          "method": "inference.runner.event",
+          "documented": true
+        },
+        {
+          "method": "inference.runner.fail",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "keychain",
+      "methods": [
+        {
+          "method": "keychain.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "lease",
+      "methods": [
+        {
+          "method": "lease.acquire",
+          "documented": true
+        },
+        {
+          "method": "lease.release",
+          "documented": true
+        },
+        {
+          "method": "lease.renew",
+          "documented": true
+        },
+        {
+          "method": "lease.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "mail",
+      "methods": [
+        {
+          "method": "mail.accounts",
+          "documented": true
+        },
+        {
+          "method": "mail.inbox",
+          "documented": true
+        },
+        {
+          "method": "mail.mailboxes",
+          "documented": true
+        },
+        {
+          "method": "mail.message_body",
+          "documented": true
+        },
+        {
+          "method": "mail.messages",
+          "documented": true
+        },
+        {
+          "method": "mail.send",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "meeting",
+      "methods": [
+        {
+          "method": "meeting.get",
+          "documented": true
+        },
+        {
+          "method": "meeting.list",
+          "documented": true
+        },
+        {
+          "method": "meeting.start",
+          "documented": true
+        },
+        {
+          "method": "meeting.stop",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "memory",
+      "methods": [
+        {
+          "method": "memory.add_fact",
+          "documented": true
+        },
+        {
+          "method": "memory.admission_table",
+          "documented": true
+        },
+        {
+          "method": "memory.build_context",
+          "documented": true
+        },
+        {
+          "method": "memory.build_context_fast",
+          "documented": true
+        },
+        {
+          "method": "memory.consolidate",
+          "documented": true
+        },
+        {
+          "method": "memory.delete",
+          "documented": true
+        },
+        {
+          "method": "memory.evaluate",
+          "documented": true
+        },
+        {
+          "method": "memory.fact_count",
+          "documented": true
+        },
+        {
+          "method": "memory.intervene",
+          "documented": true
+        },
+        {
+          "method": "memory.load",
+          "documented": true
+        },
+        {
+          "method": "memory.maintain",
+          "documented": true
+        },
+        {
+          "method": "memory.persist",
+          "documented": true
+        },
+        {
+          "method": "memory.query",
+          "documented": true
+        },
+        {
+          "method": "memory.save_knowledge",
+          "documented": true
+        },
+        {
+          "method": "memory.save_procedural",
+          "documented": true
+        },
+        {
+          "method": "memory.set_admission_table",
+          "documented": true
+        },
+        {
+          "method": "memory.update_status",
+          "documented": true
+        },
+        {
+          "method": "memory.utility_get",
+          "documented": true
+        },
+        {
+          "method": "memory.utility_set",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "message",
+      "methods": [
+        {
+          "method": "message/send",
+          "documented": true
+        },
+        {
+          "method": "message/stream",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "messages",
+      "methods": [
+        {
+          "method": "messages.chats",
+          "documented": true
+        },
+        {
+          "method": "messages.send",
+          "documented": true
+        },
+        {
+          "method": "messages.services",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "messaging",
+      "methods": [
+        {
+          "method": "messaging.config.get",
+          "documented": true
+        },
+        {
+          "method": "messaging.config.set",
+          "documented": true
+        },
+        {
+          "method": "messaging.pairing.start",
+          "documented": true
+        },
+        {
+          "method": "messaging.pairing.status",
+          "documented": true
+        },
+        {
+          "method": "messaging.status",
+          "documented": true
+        },
+        {
+          "method": "messaging.test_send",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "metrics",
+      "methods": [
+        {
+          "method": "metrics.alerts",
+          "documented": true
+        },
+        {
+          "method": "metrics.summary",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "mobile",
+      "methods": [
+        {
+          "method": "mobile.runtime",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "models",
+      "methods": [
+        {
+          "method": "models.adopt",
+          "documented": true
+        },
+        {
+          "method": "models.catalog_snapshot",
+          "documented": true
+        },
+        {
+          "method": "models.check_concierge",
+          "documented": true
+        },
+        {
+          "method": "models.check_upgrade_nudge",
+          "documented": true
+        },
+        {
+          "method": "models.detect_upgrades",
+          "documented": true
+        },
+        {
+          "method": "models.dismiss_suggestion",
+          "documented": true
+        },
+        {
+          "method": "models.dismiss_upgrade",
+          "documented": true
+        },
+        {
+          "method": "models.install",
+          "documented": true
+        },
+        {
+          "method": "models.list",
+          "documented": true
+        },
+        {
+          "method": "models.list_unified",
+          "documented": true
+        },
+        {
+          "method": "models.preflight",
+          "documented": true
+        },
+        {
+          "method": "models.pull",
+          "documented": true
+        },
+        {
+          "method": "models.recommend",
+          "documented": true
+        },
+        {
+          "method": "models.register",
+          "documented": true
+        },
+        {
+          "method": "models.remove",
+          "documented": true
+        },
+        {
+          "method": "models.resource_policy.get",
+          "documented": true
+        },
+        {
+          "method": "models.resource_policy.set",
+          "documented": true
+        },
+        {
+          "method": "models.route",
+          "documented": true
+        },
+        {
+          "method": "models.route_provenance",
+          "documented": true
+        },
+        {
+          "method": "models.search",
+          "documented": true
+        },
+        {
+          "method": "models.setup_plan",
+          "documented": true
+        },
+        {
+          "method": "models.stats",
+          "documented": true
+        },
+        {
+          "method": "models.storage_roots",
+          "documented": true
+        },
+        {
+          "method": "models.unregister",
+          "documented": true
+        },
+        {
+          "method": "models.update_prefs_get",
+          "documented": true
+        },
+        {
+          "method": "models.update_prefs_set",
+          "documented": true
+        },
+        {
+          "method": "models.upgrades",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "multi",
+      "methods": [
+        {
+          "method": "multi.map_reduce",
+          "documented": true
+        },
+        {
+          "method": "multi.pipeline",
+          "documented": true
+        },
+        {
+          "method": "multi.subtask",
+          "documented": true
+        },
+        {
+          "method": "multi.supervisor",
+          "documented": true
+        },
+        {
+          "method": "multi.swarm",
+          "documented": true
+        },
+        {
+          "method": "multi.tournament",
+          "documented": true
+        },
+        {
+          "method": "multi.vote",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "nlp",
+      "methods": [
+        {
+          "method": "nlp.extract_entities",
+          "documented": true
+        },
+        {
+          "method": "nlp.identify_language",
+          "documented": true
+        },
+        {
+          "method": "nlp.tokenize",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "notes",
+      "methods": [
+        {
+          "method": "notes.accounts",
+          "documented": true
+        },
+        {
+          "method": "notes.find",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "notifications",
+      "methods": [
+        {
+          "method": "notifications.local",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "openrouter",
+      "methods": [
+        {
+          "method": "openrouter.auth_cancel",
+          "documented": true
+        },
+        {
+          "method": "openrouter.auth_start",
+          "documented": true
+        },
+        {
+          "method": "openrouter.disconnect",
+          "documented": true
+        },
+        {
+          "method": "openrouter.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "outcomes",
+      "methods": [
+        {
+          "method": "outcomes.resolve_pending",
+          "documented": true
+        },
+        {
+          "method": "outcomes.scoreboard",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "parslee",
+      "methods": [
+        {
+          "method": "parslee.auth",
+          "documented": true
+        },
+        {
+          "method": "parslee.capabilities",
+          "documented": true
+        },
+        {
+          "method": "parslee.m365.generate_document",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "permission",
+      "methods": [
+        {
+          "method": "permission.approve",
+          "documented": true
+        },
+        {
+          "method": "permission.classify",
+          "documented": true
+        },
+        {
+          "method": "permission.evaluate",
+          "documented": true
+        },
+        {
+          "method": "permission.get_tier",
+          "documented": true
+        },
+        {
+          "method": "permission.pending",
+          "documented": true
+        },
+        {
+          "method": "permission.reject",
+          "documented": true
+        },
+        {
+          "method": "permission.set_tier",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "permissions",
+      "methods": [
+        {
+          "method": "permissions.domains",
+          "documented": true
+        },
+        {
+          "method": "permissions.explain",
+          "documented": true
+        },
+        {
+          "method": "permissions.request",
+          "documented": true
+        },
+        {
+          "method": "permissions.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "photos",
+      "methods": [
+        {
+          "method": "photos.albums",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "policy",
+      "methods": [
+        {
+          "method": "policy.list",
+          "documented": true
+        },
+        {
+          "method": "policy.register",
+          "documented": true
+        },
+        {
+          "method": "policy.unregister",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "proposal",
+      "methods": [
+        {
+          "method": "proposal.submit",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "registry",
+      "methods": [
+        {
+          "method": "registry.heartbeat",
+          "documented": true
+        },
+        {
+          "method": "registry.list",
+          "documented": true
+        },
+        {
+          "method": "registry.reap",
+          "documented": true
+        },
+        {
+          "method": "registry.register",
+          "documented": true
+        },
+        {
+          "method": "registry.unregister",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "reminders",
+      "methods": [
+        {
+          "method": "reminders.items",
+          "documented": true
+        },
+        {
+          "method": "reminders.lists",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "replan",
+      "methods": [
+        {
+          "method": "replan.set_config",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "root",
+      "methods": [
+        {
+          "method": "CancelTask",
+          "documented": true
+        },
+        {
+          "method": "CreateTaskPushNotificationConfig",
+          "documented": true
+        },
+        {
+          "method": "DeleteTaskPushNotificationConfig",
+          "documented": true
+        },
+        {
+          "method": "GetExtendedAgentCard",
+          "documented": true
+        },
+        {
+          "method": "GetTask",
+          "documented": true
+        },
+        {
+          "method": "GetTaskPushNotificationConfig",
+          "documented": true
+        },
+        {
+          "method": "ListTaskPushNotificationConfigs",
+          "documented": true
+        },
+        {
+          "method": "ListTasks",
+          "documented": true
+        },
+        {
+          "method": "SendMessage",
+          "documented": true
+        },
+        {
+          "method": "SendStreamingMessage",
+          "documented": true
+        },
+        {
+          "method": "SubscribeToTask",
+          "documented": true
+        },
+        {
+          "method": "classify",
+          "documented": true
+        },
+        {
+          "method": "detokenize",
+          "documented": true
+        },
+        {
+          "method": "embed",
+          "documented": true
+        },
+        {
+          "method": "infer",
+          "documented": true
+        },
+        {
+          "method": "infer_stream",
+          "documented": true
+        },
+        {
+          "method": "rerank",
+          "documented": true
+        },
+        {
+          "method": "search",
+          "documented": true
+        },
+        {
+          "method": "synthesize",
+          "documented": true
+        },
+        {
+          "method": "tokenize",
+          "documented": true
+        },
+        {
+          "method": "transcribe",
+          "documented": true
+        },
+        {
+          "method": "verify",
+          "documented": true
+        },
+        {
+          "method": "web_fetch",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "runs",
+      "methods": [
+        {
+          "method": "runs.cancel",
+          "documented": true
+        },
+        {
+          "method": "runs.complete",
+          "documented": true
+        },
+        {
+          "method": "runs.get_trace",
+          "documented": true
+        },
+        {
+          "method": "runs.list",
+          "documented": true
+        },
+        {
+          "method": "runs.record_turns",
+          "documented": true
+        },
+        {
+          "method": "runs.resume",
+          "documented": true
+        },
+        {
+          "method": "runs.start",
+          "documented": true
+        },
+        {
+          "method": "runs.subscribe",
+          "documented": true
+        },
+        {
+          "method": "runs.unsubscribe",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "scheduler",
+      "methods": [
+        {
+          "method": "scheduler.create",
+          "documented": true
+        },
+        {
+          "method": "scheduler.os_install",
+          "documented": true
+        },
+        {
+          "method": "scheduler.os_list",
+          "documented": true
+        },
+        {
+          "method": "scheduler.os_reconcile",
+          "documented": true
+        },
+        {
+          "method": "scheduler.os_render",
+          "documented": true
+        },
+        {
+          "method": "scheduler.os_uninstall",
+          "documented": true
+        },
+        {
+          "method": "scheduler.run",
+          "documented": true
+        },
+        {
+          "method": "scheduler.run_loop",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "secret",
+      "methods": [
+        {
+          "method": "secret.available",
+          "documented": true
+        },
+        {
+          "method": "secret.delete",
+          "documented": true
+        },
+        {
+          "method": "secret.get",
+          "documented": true
+        },
+        {
+          "method": "secret.list",
+          "documented": true
+        },
+        {
+          "method": "secret.put",
+          "documented": true
+        },
+        {
+          "method": "secret.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "selfheal",
+      "methods": [
+        {
+          "method": "selfheal.detections",
+          "documented": true
+        },
+        {
+          "method": "selfheal.dismiss",
+          "documented": true
+        },
+        {
+          "method": "selfheal.fix",
+          "documented": true
+        },
+        {
+          "method": "selfheal.run",
+          "documented": true
+        },
+        {
+          "method": "selfheal.status",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "session",
+      "methods": [
+        {
+          "method": "session.auth",
+          "documented": true
+        },
+        {
+          "method": "session.bindSandbox",
+          "documented": true
+        },
+        {
+          "method": "session.bindSubstrate",
+          "documented": true
+        },
+        {
+          "method": "session.init",
+          "documented": true
+        },
+        {
+          "method": "session.policy.close",
+          "documented": true
+        },
+        {
+          "method": "session.policy.open",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "skill",
+      "methods": [
+        {
+          "method": "skill.adopt_pack",
+          "documented": true
+        },
+        {
+          "method": "skill.enforce_deployment",
+          "documented": true
+        },
+        {
+          "method": "skill.export",
+          "documented": true
+        },
+        {
+          "method": "skill.find",
+          "documented": true
+        },
+        {
+          "method": "skill.gate_deployment",
+          "documented": true
+        },
+        {
+          "method": "skill.import",
+          "documented": true
+        },
+        {
+          "method": "skill.ingest",
+          "documented": true
+        },
+        {
+          "method": "skill.ingest_governed",
+          "documented": true
+        },
+        {
+          "method": "skill.meta",
+          "documented": true
+        },
+        {
+          "method": "skill.repair",
+          "documented": true
+        },
+        {
+          "method": "skill.report",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "skills",
+      "methods": [
+        {
+          "method": "skills.distill",
+          "documented": true
+        },
+        {
+          "method": "skills.domains_needing_evolution",
+          "documented": true
+        },
+        {
+          "method": "skills.evolve",
+          "documented": true
+        },
+        {
+          "method": "skills.gate",
+          "documented": true
+        },
+        {
+          "method": "skills.ingest_distilled",
+          "documented": true
+        },
+        {
+          "method": "skills.ingest_provisional",
+          "documented": true
+        },
+        {
+          "method": "skills.list",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "speech",
+      "methods": [
+        {
+          "method": "speech.prepare",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "state",
+      "methods": [
+        {
+          "method": "state.exists",
+          "documented": true
+        },
+        {
+          "method": "state.get",
+          "documented": true
+        },
+        {
+          "method": "state.keys",
+          "documented": true
+        },
+        {
+          "method": "state.set",
+          "documented": true
+        },
+        {
+          "method": "state.snapshot",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "supervision",
+      "methods": [
+        {
+          "method": "supervision.decide",
+          "documented": true
+        },
+        {
+          "method": "supervision.pending",
+          "documented": true
+        },
+        {
+          "method": "supervision.subscribe",
+          "documented": true
+        },
+        {
+          "method": "supervision.unsubscribe",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "sync",
+      "methods": [
+        {
+          "method": "sync.append",
+          "documented": true
+        },
+        {
+          "method": "sync.assistant_action.get",
+          "documented": true
+        },
+        {
+          "method": "sync.assistant_action.put",
+          "documented": true
+        },
+        {
+          "method": "sync.assistant_checkpoint.get",
+          "documented": true
+        },
+        {
+          "method": "sync.assistant_checkpoint.put",
+          "documented": true
+        },
+        {
+          "method": "sync.checkpoint",
+          "documented": true
+        },
+        {
+          "method": "sync.fence_check",
+          "documented": true
+        },
+        {
+          "method": "sync.knowledge",
+          "documented": true
+        },
+        {
+          "method": "sync.pump",
+          "documented": true
+        },
+        {
+          "method": "sync.rebase",
+          "documented": true
+        },
+        {
+          "method": "sync.record_intent",
+          "documented": true
+        },
+        {
+          "method": "sync.record_turn",
+          "documented": true
+        },
+        {
+          "method": "sync.resume",
+          "documented": true
+        },
+        {
+          "method": "sync.status",
+          "documented": true
+        },
+        {
+          "method": "sync.transcript",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "tasks",
+      "methods": [
+        {
+          "method": "tasks.list",
+          "documented": true
+        },
+        {
+          "method": "tasks.schedule",
+          "documented": true
+        },
+        {
+          "method": "tasks.unschedule",
+          "documented": true
+        },
+        {
+          "method": "tasks/cancel",
+          "documented": true
+        },
+        {
+          "method": "tasks/get",
+          "documented": true
+        },
+        {
+          "method": "tasks/list",
+          "documented": true
+        },
+        {
+          "method": "tasks/pushNotificationConfig/delete",
+          "documented": true
+        },
+        {
+          "method": "tasks/pushNotificationConfig/get",
+          "documented": true
+        },
+        {
+          "method": "tasks/pushNotificationConfig/list",
+          "documented": true
+        },
+        {
+          "method": "tasks/pushNotificationConfig/set",
+          "documented": true
+        },
+        {
+          "method": "tasks/resubscribe",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "tools",
+      "methods": [
+        {
+          "method": "tools.cancel",
+          "documented": true
+        },
+        {
+          "method": "tools.list",
+          "documented": true
+        },
+        {
+          "method": "tools.poll",
+          "documented": true
+        },
+        {
+          "method": "tools.register",
+          "documented": true
+        },
+        {
+          "method": "tools.stream.subscribe",
+          "documented": true
+        },
+        {
+          "method": "tools.unregister",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "verify",
+      "methods": [
+        {
+          "method": "verify.monte_carlo",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "video",
+      "methods": [
+        {
+          "method": "video.generate",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "vision",
+      "methods": [
+        {
+          "method": "vision.ocr",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "voice",
+      "methods": [
+        {
+          "method": "voice.cancel_turn",
+          "documented": true
+        },
+        {
+          "method": "voice.dispatch_turn",
+          "documented": true
+        },
+        {
+          "method": "voice.enroll_speaker",
+          "documented": true
+        },
+        {
+          "method": "voice.list_enrollments",
+          "documented": true
+        },
+        {
+          "method": "voice.prepare_diarizer",
+          "documented": true
+        },
+        {
+          "method": "voice.prepare_parakeet",
+          "documented": true
+        },
+        {
+          "method": "voice.prewarm_turn",
+          "documented": true
+        },
+        {
+          "method": "voice.providers.list",
+          "documented": true
+        },
+        {
+          "method": "voice.remove_enrollment",
+          "documented": true
+        },
+        {
+          "method": "voice.sessions.list",
+          "documented": true
+        },
+        {
+          "method": "voice.transcribe_stream.push",
+          "documented": true
+        },
+        {
+          "method": "voice.transcribe_stream.start",
+          "documented": true
+        },
+        {
+          "method": "voice.transcribe_stream.stop",
+          "documented": true
+        },
+        {
+          "method": "voice.tts_stream.cancel",
+          "documented": true
+        },
+        {
+          "method": "voice.tts_stream.list",
+          "documented": true
+        },
+        {
+          "method": "voice.tts_stream.start",
+          "documented": true
+        }
+      ]
+    },
+    {
+      "namespace": "workflow",
+      "methods": [
+        {
+          "method": "workflow.build_automation",
+          "documented": true
+        },
+        {
+          "method": "workflow.chain",
+          "documented": true
+        },
+        {
+          "method": "workflow.list_paused",
+          "documented": true
+        },
+        {
+          "method": "workflow.resume",
+          "documented": true
+        },
+        {
+          "method": "workflow.run",
+          "documented": true
+        },
+        {
+          "method": "workflow.verify",
+          "documented": true
+        }
+      ]
+    }
+  ]
 }

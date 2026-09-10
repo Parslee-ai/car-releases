@@ -44,7 +44,23 @@ Daemon URL override: ``CAR_DAEMON_URL=ws://...`` (default
 ``ws://127.0.0.1:9100``).
 """
 
-from typing import Callable, List, NoReturn, Optional
+from types import ModuleType
+from typing import Any, Callable, List, NoReturn, Optional
+
+# Importable, versioned agent-loop helper: ``import car_runtime.agent_loop``.
+agent_loop: ModuleType
+
+
+# ---------------------------------------------------------------------------
+# Generic daemon bridge
+# ---------------------------------------------------------------------------
+
+class DaemonRpcError(Exception):
+    """Structured error returned by the daemon for a JSON-RPC call."""
+
+    code: int
+    message: str
+    data: Any
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +78,28 @@ class CarRuntime:
     """
 
     def __init__(self) -> None: ...
+
+    def daemon_call(self, method: str, params_json: str) -> str:
+        """Invoke any daemon JSON-RPC method and return result JSON.
+
+        ``daemon_call`` is the call-by-name escape hatch; use the typed wrappers
+        as the primary API. Daemon rejections raise :class:`DaemonRpcError`;
+        transport failures raise ``RuntimeError`` and do not invent a JSON-RPC
+        code.
+        """
+
+    def daemon_call_host_management(self, method: str, params_json: str) -> str:
+        """Host-management-token twin of :meth:`daemon_call`."""
+
+    def register_daemon_handler(
+        self, method: str, handler: Callable[[str], str]
+    ) -> None:
+        """Register a server-initiated request handler using JSON strings."""
+
+    def register_daemon_notification_handler(
+        self, method: str, handler: Callable[[str], None]
+    ) -> None:
+        """Register a server-initiated notification handler."""
 
     # --- Agent basics --------------------------------------------------
 
@@ -159,10 +197,15 @@ class CarRuntime:
         body: str,
         kind: str,
         confidence: Optional[float] = None,
+        fact_id: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        source: Optional[str] = None,
     ) -> int:
         """Ingest a fact. ``kind="constraint"`` flags it as a hard rule.
 
-        Returns the new fact count. Confidence is reserved for future use.
+        ``fact_id``, ordered ``tags``, and ``source`` are preserved by the
+        daemon. Returns the new fact count. Confidence is reserved for future
+        use.
 
         In Daemon mode, raises ``RuntimeError`` when the daemon is
         unreachable instead of silently returning 0 (#146).
@@ -172,7 +215,8 @@ class CarRuntime:
         """Query facts via spreading activation. Returns JSON array.
 
         Each result has the shape
-        ``{"subject": str, "body": str, "confidence": float}``.
+        ``{"fact_id": Optional[str], "subject": str, "body": str, "kind": str,``
+        ``"confidence": float, "tags": List[str], "source": str}``.
         """
 
     def fact_count(self) -> int:
@@ -331,9 +375,52 @@ class CarRuntime:
         """``sync.append`` (B6) — record an op on any surface:
         ``{ surface, payload, scope? }`` → ``{ op_id, seq, hlc }``."""
 
+    def host_agents(self) -> str:
+        """``host.agents`` — current host agent registry snapshot."""
+
+    def host_events(self, limit: int | None = None) -> str:
+        """``host.events`` — recent host events, newest last. Omit ``limit``
+        for the daemon default."""
+
+    def host_approvals(self) -> str:
+        """``host.approvals`` — pending host approvals."""
+
+    def host_register_agent(self, request_json: str) -> str:
+        """``host.register_agent`` — register an agent on this connection."""
+
+    def host_unregister_agent(self, request_json: str) -> str:
+        """``host.unregister_agent`` — unregister an agent owned by this
+        connection."""
+
+    def host_set_status(self, request_json: str) -> str:
+        """``host.set_status`` — publish status for an agent owned by this
+        connection."""
+
+    def host_register_device(self, request_json: str) -> str:
+        """``host.register_device`` — register a device on this connection."""
+
+    def host_update_device(self, request_json: str) -> str:
+        """``host.update_device`` — update a device owned by this connection."""
+
+    def host_devices(self) -> str:
+        """``host.devices`` — current host device registry snapshot."""
+
+    def host_notify(self, request_json: str) -> str:
+        """``host.notify`` — emit a user-facing host notification."""
+
+    def host_request_approval(self, request_json: str) -> str:
+        """``host.request_approval`` — request approval for a gated action."""
+
+    def host_resolve_approval(self, request_json: str) -> str:
+        """``host.resolve_approval`` — resolve one pending host approval."""
+
+    # ``host.subscribe`` event delivery is deferred to the callback-aware
+    # daemon-session API; subscribing without a consumer would drop the stream.
+
     def agents_peers(self, request_json: str) -> str:
-        """``agents.peers`` — agents this runtime can message. Sourced from the
-        daemon's live connection table, not the on-disk registry."""
+        """``agents.peers`` — visible peers as JSON. Each row distinguishes
+        kind-level ``can_receive`` from the current ``reachable`` delivery
+        preflight; the send remains authoritative."""
 
     def agents_message_pending(self, request_json: str) -> str:
         """``agents.message.pending`` — peer messages awaiting an operator
@@ -650,23 +737,93 @@ class CarRuntime:
         verify_command: list[str] | None = ...,
         union_verify_command: list[str] | None = ...,
         max_attempts: int | None = ...,
+        distributed: bool | None = ...,
+        workers: list[str] | None = ...,
     ) -> str:
         """Plan a coding ``goal``, then farm the subtasks to an external coding
         CLI (``adapter``, default ``claude-code``) in isolated worktrees, gating
         each worktree and the integrated union. ``verify_command`` is the
         per-worktree regression check; ``union_verify_command`` is the
         integrated-union goal check (falls back to ``verify_command``).
-        **Spends real agent quota.** Returns JSON ``{ plan, ran, run? }``."""
+
+        ``distributed`` spreads the subtasks over every CAR instance that has
+        this repository and is enrolled as a fleet worker; ``workers`` narrows
+        placement to named instances. This host is always in the pool, and the
+        merge gate always runs here.
+
+        **Spends real agent quota** — on other machines too, when distributed.
+        Returns JSON ``{ plan, ran, run?, placements? }``."""
+        ...
+
+    # --- Fleet --------------------------------------------------------
+
+    def fleet_inventory(self) -> str:
+        """This instance's agents, capabilities, and models — one
+        ``InstanceInventory`` JSON object. The same report peers receive over
+        A2A, plus this session's own registered tools and learned skills."""
+        ...
+
+    def fleet_composite(
+        self, include_remote: bool | None = ..., timeout_ms: int | None = ...
+    ) -> str:
+        """Every agent, capability, and model across this daemon and every
+        reachable CAR instance, folded so one row names every instance that
+        offers it. ``include_remote`` defaults to true. ``timeout_ms`` bounds
+        each peer individually: a sleeping machine appears as an unreachable row
+        carrying the reason, never a missing one. Returns ``FleetComposite``
+        JSON."""
+        ...
+
+    def fleet_worker_get(self) -> str:
+        """Whether this instance takes farmed-out coding work, and under what
+        limits. Returns ``{ config, profile }`` JSON."""
+        ...
+
+    def fleet_worker_set(
+        self,
+        accepts_work: bool | None = ...,
+        repos: list[str] | None = ...,
+        max_parallel: int | None = ...,
+        local_parallel: int | None = ...,
+        dispatches_per_hour: int | None = ...,
+        max_subtask_secs: int | None = ...,
+        allowed_tools: list[str] | None = ...,
+        fetch_missing_base: bool | None = ...,
+        fetch_remote: str | None = ...,
+    ) -> str:
+        """Enroll (or withdraw) this instance as a fleet worker.
+
+        **Operator-only, and a real grant**: enrolling lets a trusted peer run a
+        coding CLI against the checkouts named in ``repos``. Only the fields
+        supplied change.
+
+        The limits belong to this machine, not the caller:
+        ``dispatches_per_hour`` budgets one peer's spend (concurrency is not a
+        spend bound), ``max_subtask_secs`` caps the timeout a sender asks for,
+        and ``allowed_tools`` is intersected with whatever the dispatch
+        requests. ``fetch_missing_base`` makes this machine a **runner**: rather
+        than decline a base commit it lacks, it fetches from ``fetch_remote``
+        (its own, default ``origin``). Returns ``{ config, profile }`` JSON."""
         ...
 
     # --- Tools & policies ---------------------------------------------
 
     def register_tool(self, name: str) -> None: ...
 
+    def register_tool_schema(self, schema_json: str) -> None:
+        """Register caller-settable ``ToolSchema`` fields as a user-defined tool.
+
+        The daemon assigns ``source = "user_defined"``; callers cannot claim
+        another origin.
+        """
+        ...
+
     def list_tools(self) -> str:
         """Tools registered on this runtime, as a JSON array of ``ToolSchema``.
 
-        Sorted by name, so two calls with no registration in between are
+        Every schema includes its runtime-assigned ``source``
+        (``builtin|user_defined|subprocess|mcp``). Sorted by name, so two calls
+        with no registration in between are
         byte-identical and can be diffed. Counterpart to
         :meth:`register_tool` / :meth:`register_tool_schema`, which had none:
         a caller could add tools but never ask what was actually in effect, so
@@ -789,6 +946,10 @@ class CarRuntime:
         ``query_json`` is an ``EventQuery`` object
         (kinds/action_id/proposal_id/since/until/data_matches/limit); returns
         ``{count, events}`` as a JSON string, most-recent-first.
+        ``ActionFailed.data`` includes ``params_digest``, ``expected_effects``,
+        and ``error_class``
+        (``timeout|rejected_by_policy|tool_error|validation|unknown``), never
+        raw parameters. ``ActionSucceeded.data`` includes the first two.
         """
 
     def event_retention(self, policy_json: Optional[str] = None) -> str:
@@ -838,26 +999,46 @@ class CarRuntime:
         the ``cost_overage`` alert.
         """
 
+    def heal_status(self) -> str:
+        """Self-healing repair loop status: enabled/why-not, cadence, targets,
+        rejected targets, review panel, engine."""
+        ...
+
+    def heal_run(self) -> str:
+        """Run one self-healing repair sweep now. May open a pull request; never merges."""
+        ...
+
     def selfheal_status(self) -> str:
-        """Return watch-only detector status as JSON: cadence, last tick,
-        source route/path-or-refusal, detector IDs, active/dismissed counts,
-        and the fixed filing mode.
+        """Return self-heal status as JSON: cadence, ``auto_fix_enabled``,
+        ``max_concurrent``, ``max_per_day``, ``max_rounds_per_key``, optional
+        ``auto_fix_refusal_reason``, source
+        route/refusal, detector counts, and filing mode.
         """
 
     def selfheal_detections(self, query_json: Optional[str] = None) -> str:
         """List active detections as JSON, including each route and optional
-        local issue path. ``query_json`` optionally carries ``kind``,
-        ``severity``, ``since``, ``offset``, and bounded ``limit``.
+        local issue path. Recurring tool failures add ``eligible``, a
+        secret-safe ``reconstructed_call`` (``tool`` plus exact ``params``),
+        optional owner-private ``reconstructed_call_path``,
+        ``auto_fix_attempts``, ``auto_fix_exhausted``,
+        ``auto_fix_in_progress``, and ``last_auto_fix_attempt`` (including
+        ``exit_code`` and ``failure_class``). Remote deduplication adds
+        ``auto_fix_awaiting_review``, ``auto_fix_parked``,
+        ``remote_pr_number``, and ``remote_pr_url``. ``query_json``
+        carries ``kind``, ``severity``, ``since``, ``offset``, and bounded
+        ``limit``.
         """
 
     def selfheal_dismiss(self, dedup_key: str) -> str:
-        """Append a ledger-only operator dismissal marker for a detection.
+        """Append an operator dismissal marker without deleting history."""
 
-        This neither deletes history nor files/remediates anything.
+    def selfheal_fix(self, dedup_key: str) -> str:
+        """Start one bounded template-owned coder round for an eligible
+        recurring tool failure. Returns the durable attempt result as JSON.
         """
 
     def selfheal_run(self) -> str:
-        """Run one non-overlapping watch-only detection tick immediately."""
+        """Run one non-overlapping detection tick and default-on auto-fix hook."""
 
     # --- Execution ----------------------------------------------------
 
@@ -1038,6 +1219,23 @@ class CarRuntime:
         It names that dead lane, so a caller can tell the user their
         sign-in lapsed instead of silently serving a different model
         (Parslee-ai/car#888). Absent on the common path.
+
+        ``fallback_from`` is a LIST of every candidate the chain moved
+        past, in the order it tried them:
+        ``[{"candidate", "reason"}, ...]``, where ``reason`` is one of
+        ``"credential_rejected"``, ``"credential_absent"``,
+        ``"rate_limited"``, ``"quota_exhausted"``, ``"timed_out"`` or
+        ``"failed"``. Absent when the first candidate served. Before this,
+        a run whose backbone changed because of a rate limit or a timeout
+        recorded no cause anywhere, so a surprising result got attributed
+        to the code rather than to the model swap
+        (Parslee-ai/car#1351).
+
+        ``reason`` is classified from the runtime's typed error, not from
+        error prose. ``"credential_rejected"`` is deliberately BROADER
+        than ``auth_fallback_from``: it covers a provider refusing an API
+        key, whose remedy is to fix the key, not to sign in. Do not derive
+        one field from the other.
 
         ``time_to_first_token_ms`` is wall-clock from request start to
         the first sampled token. Populated by the local Candle/MLX
@@ -1377,6 +1575,8 @@ class CarRuntime:
         model: str | None = None,
         repair_invokes: int | None = None,
         transient_retries: int | None = None,
+        distributed: bool | None = None,
+        workers: list[str] | None = None,
         discussion_id: str | None = None,
     ) -> str:
         """Start a coder session (built-in coding agent): provisions an
@@ -1387,6 +1587,13 @@ class CarRuntime:
         overriding ``~/.car/coder.toml``; blank/omitted = the config default,
         then adaptive routing. Returns ``{"session_id", "state", "engine",
         "worktree", "contract", "model"}`` JSON, where ``model`` is the
+        ``distributed`` farms a **foreman** session's subtasks across every
+        reachable CAR instance that can serve the repository instead of this
+        machine alone; the merge-verify gate and delivery stay on the
+        orchestrating host, so the run still produces a gated pull request.
+        Only foreman decomposes a goal into subtasks, so any other engine runs
+        locally and reports that it did. Off by default — it spends agent quota
+        on other machines. ``workers`` restricts placement to named instances.
         effective pin (``null`` = adaptive). ``repair_invokes`` is the external
         engine's hypothesis budget (fresh repair invocations after a red pass;
         recurrence escalation needs >= 2 to reach the model) and
@@ -3481,7 +3688,18 @@ def start_a2a_server(rt: "CarRuntime", params_json: str) -> str:
     """Start an A2A listener. ``params_json`` is a JSON object with
     a required ``bind`` field (``"host:port"``) and optional
     ``public_url``, ``agent_name``, ``agent_description``,
-    ``organization``, ``organization_url``, ``share_session_runtime``.
+    ``organization``, ``organization_url``, ``share_session_runtime``,
+    ``allow_non_loopback_bind``.
+
+    ``allow_non_loopback_bind`` (bool, default ``False``): required to bind
+    anything but loopback. This listener serves **no authentication** —
+    there is no auth parameter, and its router is ``NoAuth`` — and with
+    ``share_session_runtime=False`` its runtime registers the
+    agent-basics filesystem tools, so a reachable bind publishes
+    ``write_file``/``edit_file`` to anyone who can reach the port. A
+    wildcard bind (``0.0.0.0:...``) is refused as well. If you want to be
+    reachable by other CAR daemons, you do not want this: ``car-server``
+    already runs a peer-authenticated, messaging-only listener for that.
 
     ``share_session_runtime`` (bool, default ``False``): when ``True``,
     the A2A dispatcher uses this ``CarRuntime``'s session runtime

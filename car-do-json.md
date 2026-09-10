@@ -183,7 +183,8 @@ What the run was actually bound to, not what was requested.
   "image": "python:3.11",      // null when local
   "network": "none",           // "host" when local
   "tier": "SandboxEdit",       // permission tier
-  "root": "/work",
+  "root": "/work",             // where the run stands
+  "mount": null,               // non-null ⇒ the container can reach MORE than root
   "fallback_notice": null      // non-null ⇒ sandbox was requested and unavailable
 }
 ```
@@ -191,6 +192,13 @@ What the run was actually bound to, not what was requested.
 `fallback_notice` is the field to check. A run that *silently fell back* to the
 local host is materially different from one that chose it, and a caller
 reporting on an autonomous run should say which happened.
+
+`mount` is non-null when the run started inside a subdirectory of a git
+repository. The repository root is mounted — otherwise `.git` sits outside the
+container and the run has no history, branch, or remote — while `root` stays the
+subdirectory the caller asked for. A caller reporting on what an autonomous run
+could *touch* must read `mount`, falling back to `root`; `root` alone answers
+only where the run stood.
 
 ## `goal` — only for `--until` / `--infer-until`
 

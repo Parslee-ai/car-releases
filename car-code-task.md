@@ -297,6 +297,7 @@ rather than answered.
 | `--contract-file <PATH>` | JSON `OutcomeContract`. **When present, derivation does not run.** Checks are bound by two limits the contract does not choose: each check's command is capped at `--max-check-timeout-secs`, and it passes `DenyCredentialAccess`, so a command naming a credential in one of the built-in spellings is refused. See [The contract](#the-contract). |
 | `--target-branch <NAME>` | Delivery branch, stable across sessions. Required for `--deliver pr`. |
 | `--pr-base <NAME>` | PR base. Defaults to the repo's default branch. |
+| `--body-prefix <TEXT>` | Trusted caller-supplied text placed verbatim at the start of the generated PR body. The model cannot edit it. Intended for stable orchestrator markers such as `<!-- car-selfheal:key=… -->`; do not pass untrusted model output. |
 | `--draft` | Open the pull request as a draft. |
 | `--deliver <MODE>` | `pr` \| `branch` \| `none`. Defaults to `pr` with a target branch, else `branch`. **Pull-request delivery supports GitHub and GitHub Enterprise only** and requires the authenticated `gh` CLI; GitLab, Azure DevOps, Bitbucket, and other forges are not supported. Use `branch` to publish the branch when an external orchestrator will open the review artifact on another forge. `branch` publishes a clean worktree whose HEAD is ahead of the base as a re-delivery, the same as `pr`; it fails only when the base already contains HEAD. |
 | `--model <ID>` | Pin the inference model. |
@@ -585,6 +586,12 @@ mid-run loop error that did not end the run.
   ]
 }
 ```
+
+`output_contains` normally performs a literal substring check. Its reserved
+`$json:<JSON Pointer>=<JSON value>` form parses the complete command output as
+JSON and compares the addressed value in the runtime; for example,
+`$json:/ok=true` requires the top-level `ok` field to be the boolean `true`, not
+merely text that resembles it.
 
 There is **no maximum check count** — a 95-check contract is legal, and every
 check runs and is reported. Two limits do bind, and neither is expressed in the

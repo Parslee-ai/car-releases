@@ -3540,7 +3540,9 @@ let resp = handler.parse_response(&body_str)?; // ApiResponse { text, tool_calls
 
 ```
 id ("provider/model:variant"), name, provider, family,
-capabilities (Vec<ModelCapability>), context_length, param_count, quantization,
+capabilities (Vec<ModelCapability>), context_length, param_count,
+quantization (Quantization { bits, scheme, group_size, label } — also accepts a
+bare label string such as "Q4_K_M"),
 performance, cost (CostModel { size_mb, ram_mb, input_per_mtok, output_per_mtok,
 cache_read_input_per_mtok, cache_write_input_per_mtok, pricing_tiers }),
 source (ModelSource), public_benchmarks, supported_params,

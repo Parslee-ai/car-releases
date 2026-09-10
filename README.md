@@ -109,13 +109,16 @@ package is in **[DISTRIBUTION.md](./DISTRIBUTION.md)**.
 | You want… | Do this |
 |-----------|---------|
 | **CAR on a Mac, no terminal** | Download **`CAR-darwin-arm64.pkg`** from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest) and double-click. Installs the **CAR Host** menu-bar app *and* the `car` CLI. Signed, notarized, auto-updating. |
+| **CAR on Windows, no terminal** | Download **`CAR-setup-x64.exe`** from the [latest release](https://github.com/Parslee-ai/car-releases/releases/latest) and double-click. Installs the **CarHost** system-tray app *and* the `car` CLI, and puts `car` on your PATH. Not yet code-signed — SmartScreen warns once. |
 | **To build on CAR** in Python / Node | `pip install car-runtime` · `npm install car-runtime` |
-| **The CLI on Linux / Windows**, or scripted installs | install script · Scoop · tarball — see [DISTRIBUTION.md](./DISTRIBUTION.md) |
+| **The CLI on Linux**, or scripted installs | install script · tarball — see [DISTRIBUTION.md](./DISTRIBUTION.md) |
+| **The CLI only on Windows** (no admin) | Scoop — see [DISTRIBUTION.md](./DISTRIBUTION.md) |
 
 ```bash
-# macOS + Linux convenience installer (inspect-then-run guidance in SECURITY.md):
+# macOS + Linux convenience installer (Windows: use CAR-setup-x64.exe or Scoop above;
+# inspect-then-run guidance in SECURITY.md):
 curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/install.sh | sh
-# pin a version with CAR_VERSION=v0.52.1
+# pin a version with CAR_VERSION=v0.53.0
 ```
 
 macOS is Apple Silicon only (15+). Linux x86_64/aarch64 and Windows x86_64 are

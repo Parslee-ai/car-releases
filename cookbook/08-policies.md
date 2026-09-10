@@ -132,7 +132,7 @@ It fails closed in all three directions, which is the whole point of a whitelist
 
 Comparison is exact and case-sensitive, and a rule governs exactly one tool — actions for any other tool are untouched.
 
-## `deny_tool_param_matching` — block a content *shape*
+## `deny_tool_param_matching` — block or require a content *shape*
 
 `deny_tool_param` needs a fixed substring. Credentials, account numbers and address families do not have one — they have a shape. This rule takes a regex over a single parameter:
 
@@ -150,14 +150,23 @@ matches = "(?i)demo-token-[A-Za-z0-9]{16,}"
 tool    = "http_request"
 param   = "body"
 matches = "sk-[A-Za-z0-9]{20,}"
+
+# The same matcher can enforce an open-ended allowlist. Docker removal is
+# denied unless the governed name starts with the trusted project prefix.
+[[deny_tool_param_matching]]
+tool    = "docker.rm"
+param   = "name"
+matches = "^parslee-"
+negate  = true
 ```
 
-Two things to know:
+Three things to know:
 
 - **The match is unanchored.** The pattern fires anywhere in the value. Anchor with `^` / `$` when you mean the whole value.
+- **`negate = true` denies a mismatch.** It is the "unless" form: the Docker example denies `foo` and allows `parslee-x`. The field defaults to `false`, preserving the ordinary deny-on-match behavior.
 - **An uncompilable pattern denies the tool.** A typo'd regex does not silently vanish — every call to that tool is refused until you fix it, with the compile error in the denial reason. It is compiled once when the rule set is applied, not once per action.
 
-An absent parameter is not a violation — this is a deny rule and only fires on what it can see. Use `allow_tool_param` when absence itself must be refused.
+With the default `negate = false`, an absent parameter is not a violation — the rule only fires on what it can see. A negated rule fails closed: absence cannot prove the required pattern, so the tool call is denied. Use `allow_tool_param` instead when the safe values are finite and enumerable.
 
 The violation reason names the tool and the parameter but never the matched text: the matched text is precisely the secret the rule exists to catch, and denial reasons go to the event log.
 

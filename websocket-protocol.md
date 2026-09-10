@@ -5,7 +5,19 @@
 
 As of **v0.8.0**, the WebSocket protocol is the only runtime entry point. The Node.js (`car-runtime` on npm) and Python (`car-runtime` on PyPI) bindings are thin clients that proxy every method over this same WebSocket — the embedded-engine fallback they shipped through v0.7.x has been retired (#139). For every consumer on a host, one daemon, one admission semaphore, one model cache.
 
-Use the bindings when you want the ergonomic per-language API. Use the WebSocket directly when you're building from a language without bindings (Go, Rust, browser, Swift, Kotlin), or when you need streaming / callback-bearing methods (`infer_stream`, `tools.execute`, voice turns) — those are not bridged into the FFI surface in v0.8.
+Use the bindings when you want the ergonomic per-language API. Use the WebSocket directly when you're building from a language without bindings. NAPI, PyO3, and UniFFI also expose a generic daemon bridge for methods that do not yet have a typed wrapper, including server-initiated request and notification handlers.
+
+## Binding escape hatch and JSON-RPC errors
+
+The package escape hatches accept JSON strings so the generated ABI does not change whenever a daemon request shape grows:
+
+- Node: `CarRuntime.daemonCall(method, paramsJson)` and `daemonCallHostManagement(...)` return result JSON. Rejected Promises carry the daemon's numeric `.code`, `.message`, and optional `.data`. `registerDaemonHandler(method, async paramsJson => resultJson)` and `registerDaemonNotificationHandler(method, paramsJson => {})` service arbitrary reverse calls.
+- Python: `CarRuntime.daemon_call(...)` and `daemon_call_host_management(...)` return result JSON. Daemon rejections raise `DaemonRpcError` with `code`, `message`, and optional `data` attributes. `register_daemon_handler` and `register_daemon_notification_handler` install the reverse-call equivalents; Python callables run on dedicated OS threads rather than the daemon client's Tokio workers.
+- Swift/Kotlin UniFFI: `CarDaemonClient.daemon_call(...)` returns result JSON and reports daemon rejections as `CarError.DaemonRpc { code, message, data_json }`. `DaemonHandler` and `DaemonNotificationHandler` provide the reverse-call bridge.
+
+The host-management twins retain the client's strict local allowlist and refuse non-host methods before reading or sending the host token. Generic calls do not bypass authentication, protocol negotiation, role gates, policy, approvals, or any other daemon admission check.
+
+The dispatcher follows standard JSON-RPC classification: an `unknown method: ...` response has code `-32601`; request parameter extraction/deserialization failures have code `-32602`; an actual handler failure remains `-32603`. Callers must use the numeric code—not English text—to distinguish reachability from a malformed request or an internal failure.
 
 ## Transport
 
@@ -506,8 +518,10 @@ flow is unverified.
 
 ### Secret-store activity diagnostics
 
-`diagnostics.secret_store_activity {}` is a host-management-only, WS-only read
-of process-lifetime aggregate operation attempts. It requires protocol v3 and
+#### `diagnostics.secret_store_activity`
+
+This host-management-only, WS-only method is a read of process-lifetime
+aggregate operation attempts. It requires protocol v3 and
 returns exactly:
 
 ```json
@@ -1555,13 +1569,42 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   intended for another linked device.
 
 #### `host.request_approval`
-- **Params**: `{ agent_id?: string, title: string, description?: string, context?: object, required_approvals?: number }`
+- **Params**: `CreateHostApprovalRequest` — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean }`
 - **Returns**: `HostApproval`
-- If `agent_id` is provided, the agent's status auto-flips to `waiting_for_approval`.
+- `action` is **required**: the one-line summary every approval surface shows.
+  `details` is the structured payload surfaces render underneath it (the macOS
+  dashboard as typed fields, the Windows tray and the iMessage/Slack prompts via
+  `car_proto::approval_summary`); for a gate-raised row it is
+  `{ method, params_preview }`. `options` defaults to `["approve", "deny"]`.
+- `system_level: true` opts the row out of per-session ownership so any
+  authenticated session (typically CarHost or `car-host approve`) can resolve it.
+  Agents requesting user approval should always set it — session-owned is only
+  correct when the requesting session is also the resolving session, which
+  approval-via-UI never is.
+- `agent_id` is **stamped by the server** from the session's authenticated agent
+  binding when the session has one, so an agent cannot attribute its request to
+  another agent or leave it unattributed; a client with no binding (the operator
+  surface) keeps what it sends. When the resulting id names an agent, that
+  agent's status auto-flips to `waiting_for_approval`.
+
+> Earlier revisions of this page documented the params as
+> `{ agent_id?, title, description?, context?, required_approvals? }`. No such
+> fields exist — the handler deserializes `CreateHostApprovalRequest`, and a
+> payload in the old shape is rejected because `action` is required.
 
 #### `host.resolve_approval`
-- **Params**: `{ approval_id: string, approved: boolean, notes?: string }`
+- **Params**: `ResolveHostApprovalRequest` — `{ approval_id: string, resolution: string }`
 - **Returns**: resolved `HostApproval`
+- `resolution` is the **verb**, matched against the row's `options` (default
+  `["approve", "deny"]`); the gate treats anything other than its approve label
+  as a denial. Both fields are required.
+
+> Earlier revisions documented the params as
+> `{ approval_id, approved: boolean, notes? }`. There is no `approved` or
+> `notes` field — a payload in that shape is rejected, because `resolution` is
+> required and has no default. The gate description above this section has always
+> described the real contract ("waiting for `host.resolve_approval` to land with
+> `resolution: \"approve\"`").
 
 ### a2ui
 
@@ -1630,6 +1673,10 @@ components): `Text`, `Row`, `Column`, `List`, `Card`, `Divider`, `Button`,
      CAR sends an A2A `SendMessage` continuation to `endpoint` with a data
      part shaped as `{ "a2uiAction": action }`.
 
+#### `a2ui.render_report`
+- **Params**: a renderer telemetry envelope with required `surfaceId` and `timestamp`, plus `signature`, `viewport`, density/count observations, correlation fields, and optional metadata.
+- **Returns**: `{ event: HostEvent }` after recording the report and broadcasting `a2ui.event { kind: "a2ui.render_report", result: <validated report> }` to subscribers. UI-improvement patches are best-effort and bounded server-side.
+
 #### `a2ui/subscribe`
 - **Params**: `{}`
 - **Returns**: `{ subscribed: true }`
@@ -1686,14 +1733,16 @@ The 11 A2A v1.0 JSON-RPC methods (and their v0.3 slash aliases)
 are dispatched in-core by `car-server-core` against an embedded
 `car_a2a::A2aDispatcher`. Embedders that consume `car-server-core`
 get A2A reachability automatically; no separate HTTP listener
-required for JSON-RPC peers. Streaming (`message/stream`,
-`tasks/resubscribe` and PascalCase aliases) returns
+required for JSON-RPC peers. Streaming (`message/stream` /
+`SendStreamingMessage`, `tasks/resubscribe` / `SubscribeToTask`) returns
 `MethodNotFound` from this transport — use
 `car-server`'s `--a2a-bind` HTTP+SSE listener for streaming peers.
 
 | v1.0 PascalCase | v0.3 slash form |
 |---|---|
 | `SendMessage` | `message/send` |
+| `SendStreamingMessage` | `message/stream` |
+| `SubscribeToTask` | `tasks/resubscribe` |
 | `GetTask` | `tasks/get` |
 | `ListTasks` | `tasks/list` |
 | `CancelTask` | `tasks/cancel` |
@@ -2042,7 +2091,7 @@ The same lifecycle is reachable from the FFI bindings as `startA2AServer` / `sto
 The spawned `car_engine::Runtime` is fresh — engine builtins via `register_agent_basics()`, no shared state with the per-WebSocket session runtime or the embedder's `CarRuntime`. Sharing state with the caller's runtime is future work.
 
 #### `a2a.start`
-- **Params**: `{ bind: string, public_url?: string, agent_name?: string, agent_description?: string, organization?: string, organization_url?: string, share_session_runtime?: boolean }`
+- **Params**: `{ bind: string, public_url?: string, agent_name?: string, agent_description?: string, organization?: string, organization_url?: string, share_session_runtime?: boolean, allow_non_loopback_bind?: boolean }`
 - **Returns**: `{ bound: string }`
 - Errors if a server is already running, the bind fails, or `bind` is malformed. `bind` accepts `host:port` (use `127.0.0.1:0` to ask the kernel for an ephemeral port, then read it back from `bound`). `public_url` defaults to `http://<bound>`; everything else has reasonable defaults.
 - **`agent_name` defaults to the user's chosen assistant name** (see
@@ -2058,6 +2107,16 @@ The spawned `car_engine::Runtime` is fresh — engine builtins via `register_age
   - a message carrying an explicit tool invocation (a `data` part `{ "tool", "parameters" }`) routes to the session's `tools.execute` callback;
   - a purely **conversational** message (free text, no tool `data` part) routes to the session's **`agent.chat`** handler — the daemon reverse-calls `agent.chat` on this session, aggregates the streamed `agent.chat.event` deltas (5s to ack, then a 180s cap on the full reply), and returns the reply as the A2A agent message (car-releases#65). A session that doesn't handle `agent.chat` never acks, so the call falls back to the `"Acknowledged."` acknowledgement after the ~5s ack timeout.
   With `share_session_runtime: false` (or started off a non-WS path), a conversational message keeps the `"Acknowledged."` acknowledgement — CAR's runtime executes proposals but does not itself plan.
+- **`allow_non_loopback_bind`** (default `false`): required to bind anything other
+  than loopback. This listener serves **no authentication** — there is no auth
+  parameter, and its router is `NoAuth` — and with `share_session_runtime: false`
+  its runtime registers the agent-basics filesystem tools, so a reachable bind
+  publishes `write_file`/`edit_file` to anyone who can route to the port. A
+  wildcard bind (`0.0.0.0:…`) is refused too, being the most reachable of all.
+  The same explicit-opt-in rule `a2a.peers.add` and `a2a.send` already apply to
+  their endpoints. **If you want to be reachable by other CAR daemons, you do
+  not want this** — `car-server` runs a peer-authenticated, messaging-only
+  listener for that by default (see `docs/a2a.md`).
 
 #### `a2a.stop`
 - **Params**: `{}`
@@ -2148,9 +2207,10 @@ The shared default is deliberate: facts ingested through the MCP endpoint show u
 If you key memory per project, bind a namespace. `session.auth { memory_namespace: "myapp-<projectID>" }` gives that connection a private graph, persisted under `~/.car/memory/memory-namespaces/<encoded-ns>.json` — the filename is a lowercase percent-encoding of the namespace's UTF-8 bytes (`a`-`z`, `0`-`9`, `-`, `_`, `.` pass through; everything else, including `%` and uppercase letters, becomes `%` plus two lowercase hex digits), which keeps the mapping injective so two namespaces can never share a snapshot file (#891) — and every `memory.*` call on that connection acts on it alone. A namespace is a **separate axis from `agent_id`** — one agent may work across several namespaces, and two hosts may share a namespace without sharing an identity. When both are supplied the namespace wins for the memory scope; the agent binding still governs identity and tokens. (Parslee-ai/car-releases#79.)
 
 #### `memory.add_fact`
-- **Params**: `{ subject: string, body: string, kind?: string = "pattern", committed_by?: string, verdicts?: VerifierVerdict[] }`
+- **Params**: `{ subject: string, body: string, kind?: string = "pattern", fact_id?: string, tags?: string[], source?: string = "user", committed_by?: string, verdicts?: VerifierVerdict[] }`
 - **Returns**: updated fact count
-- `kind: "constraint"` sets the constraint flag. WebSocket-ingested facts are auto-prefixed with `ws-` for provenance.
+- `kind: "constraint"` sets the constraint flag. A non-empty caller-supplied `fact_id` is the graph fact id; CAR mints a `ws-<count>` id only when the field is absent (bumping the counter past any id already in the graph, so a caller's literal `ws-7` can never be silently shadowed by a rewritten auto id). A duplicate caller id is rejected rather than silently rewritten — **except** for an identical-content re-add (same id, same subject and body), which resolves to the existing fact instead: that is the normal behavior of an at-least-once client retrying a call whose response it missed, or a caller replaying after a daemon restart re-loaded its snapshot. A duplicate id with **different** content is a genuine collision and errors, so a caller seeing that error knows someone else wrote this id with different content and can resolve it with a `memory.query`.
+- `tags` preserve caller order and `source` is stored as the fact's provenance source. All three caller values survive namespace/agent snapshots and manual `memory.persist` → `memory.load` for Fact rows — the flat snapshot format stays deliberately lossy for non-Fact kinds (Conversation `outcome` rows reload as plain facts, Skill/Conclusion rows collapse to `pattern`, Identity/Environment rows are not written), so full-graph fidelity is not claimed — and `memory.query` returns them unchanged.
 - This is the **externally-authored** memory write path, so it runs through the durable-state admission gate. With no admission table installed the gate is off and `committed_by` / `verdicts` are ignored — existing callers are unaffected. With a table installed, the candidate must satisfy that table's rule for the `memory` surface or the call fails with `memory admission refused for <id>: <refusals>`.
 - `produced_by` is fixed to `execution` and is **not** caller-settable: a peer calling this surface *is* the execution path, and letting it name its own producer would let it satisfy any rule by declaring itself whatever the rule expects.
 - **Limitation, stated plainly:** `committed_by` is a caller *claim* that this surface does not yet authenticate. With a table installed the gate therefore enforces **evidence** (a caller cannot conjure a passing verifier verdict) and structure, but not committer **identity**. Binding the committer to the authenticated session is follow-up work; until then treat that half as bookkeeping, not a security boundary.
@@ -2197,7 +2257,7 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 
 #### `memory.query`
 - **Params**: `{ query: string, k?: number = 5 }`
-- **Returns**: `[ { subject, body, kind, confidence }, ... ]`
+- **Returns**: `[ { fact_id: string | null, subject, body, kind, confidence, tags, source }, ... ]` (`fact_id` is non-null for facts written through `memory.add_fact`; other graph node kinds may not carry one)
 - Personalized PageRank retrieval over the memory graph. FFI parity with NAPI `query_facts` — same algorithm, same result shape, so the choice of transport does not shift ranking.
 
 #### `memory.intervene`
@@ -2228,7 +2288,7 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 #### `memory.persist`
 - **Params**: `{ path: string }`
 - **Returns**: number of facts written
-- Writes the session's memgine to a JSON file at `path` (flat fact format, backward-compatible with `memory.load`). FFI parity with NAPI `persist_memory`.
+- Writes the session's memgine to a JSON file at `path` (flat fact format, backward-compatible with `memory.load`). Each row includes `fact_id`, ordered `tags`, and provenance `source`; older snapshots without them still load with a generated `loaded-<count>` id and empty metadata. Fact rows round-trip that metadata verbatim; the flat format remains lossy for non-Fact kinds (they reload as plain facts, and Identity/Environment nodes are not written at all). FFI parity with NAPI `persist_memory`.
 - **Writes the whole graph, not a subset.** `path` names the destination file; it does not select what goes into it. On an unbound session that graph is the daemon-wide shared one, so per-project files each end up holding every project's facts. Bind a `memory_namespace` (see the scope table above) if you want a file to contain only one project's facts.
 - **Filesystem caveat**: `path` is interpreted on the daemon's filesystem, not the caller's. Cross-process file access requires shared paths.
 - **Sandbox**: `path` is sandboxed under `~/.car/memory/` on the daemon (same enforcement the FFI bindings have applied since v0.7.1 — see `car_ffi_common::memory_path::resolve`). Relative paths land under that base; `..` segments and symlinks pointing outside are rejected with a `memory.persist rejected path …` error. The audit-driven flip to require auth on the WS made this surface as exposed as the FFI; the sandbox guards both equally.
@@ -2252,9 +2312,14 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 - **`weights_ready`** is weights-already-on-disk, and it answers a different question from `available`. `available` means CAR can use the model *here* — for a local MLX entry with a declared `hf_repo` that is `true` before a single byte has been fetched, because `ensure_local()` lazy-downloads on first use (car#164). `weights_ready` is `false` until those bytes actually land, and remote models — which have no weights to install — report `true`. Reading `available` as "installed" is what made `car models list` print MLX rows as available on a machine where `car doctor` said `Models: none installed` (car#894); the CLI now renders the two as separate `RUNNABLE` and `INSTALLED` columns and the two commands agree. The field is additive: a client built against this version parsing a response from an older daemon sees `weights_ready` absent and defaults it to `false`, rather than failing the whole catalog.
 - **`downloads_weights`** is `true` only for entries whose weights CAR fetches before use (GGUF, MLX, managed vLLM-MLX, whisper.cpp). When it is `false` — OS-provided models such as `windows/speech-synthesis:os` and `apple/foundation:default`, runtime-only models such as Ollama, external `vllm_mlx` endpoints, and every remote API — there is nothing for CAR to install, so `weights_ready` carries no meaning and the CLI renders `INSTALLED` as `-` rather than a `yes`/`no` about nothing. Do not substitute `available` or `is_local`: a runtime-only row may be available with no downloadable artifact, and an external vLLM-MLX endpoint remains operator-owned even when its URL is loopback. The field is additive: a client built against this version parsing a response from an older daemon sees `downloads_weights` absent and defaults it to `false`, rather than failing the whole catalog.
 
-- **Management fields**: `car_enabled` is false after a receipt-backed Remove from CAR even when shared physical weights still exist; `can_remove` is true only for an enabled receipt-backed managed symlink/file that CAR can unlink without recursive pathname traversal. Receipt-backed directories remain usable but report `can_remove=false` and `management_evidence=install_receipt_directory_cleanup_unsupported` until object-bound cross-platform directory deletion is available. `in_use` reflects live request/residency/teardown/cross-process lease evidence; other `management_evidence` values are `install_receipt`, `shared_or_hand_installed`, `disabled_tombstone`, or absent. These additive fields do not expose paths.
+- **Management fields**: `car_enabled` is false after a receipt-backed Remove from CAR even when shared physical weights still exist; `can_remove` is true for an enabled receipt-backed managed symlink/file, and, on macOS and Linux, for an enabled receipt-backed managed directory (removed through a descriptor-bound walk of its quarantine). On other platforms receipt-backed directories remain usable but report `can_remove=false` and `management_evidence=install_receipt_directory_cleanup_unsupported` until a handle-relative directory delete exists there. `in_use` reflects live request/residency/teardown/cross-process lease evidence; other `management_evidence` values are `install_receipt`, `shared_or_hand_installed`, `disabled_tombstone`, or absent. These additive fields do not expose paths.
 - **Lifecycle projection rule**: clients must not reconstruct a destructive or use action from `available` alone. A CAR-downloadable row is Installed only when `downloads_weights=true`, `weights_ready=true`, and `car_enabled=true`; Use additionally requires an allowed `models.preflight`. A row with `downloads_weights=false` and `available=true` is runtime-available, not Installed. If required lifecycle fields are missing (for example, an older daemon), fail closed for Use. Missing management evidence fails closed for ownership-sensitive Adopt and Remove without erasing otherwise complete runtime/download evidence.
 - **Source ownership rule**: `managed_vllm_mlx` is an explicit CAR-owned local source. CAR downloads its artifact, admits and charges its memory, supervises its process group, and reaps it. `vllm_mlx` is an operator-owned external OpenAI-compatible endpoint. Endpoint location is not ownership evidence: a loopback `vllm_mlx` remains operator-owned and is never pulled, locally charged, or reaped by CAR. `operator_managed_external_runtime=true` is emitted only for this source. External describes ownership, not physical network locality; the endpoint may run on the same Mac, on a network host, or in a cloud service. Older rows that omit the additive field remain Unknown to clients and must not be classified from provider, id, or endpoint text.
+
+#### `models.catalog_snapshot`
+- **Params**: `{}`
+- **Returns**: `{ catalog_revision: string, models: [{ model: ModelSchema, row_digest: string }] }`. Rows are sorted by immutable model id. Each `row_digest` and the aggregate `catalog_revision` are deterministic SHA-256 content identities over the publishable catalog data.
+- Requires the `models.catalog-identity.v1` capability to have been negotiated by `server.handshake`. This is the content-addressed catalog to bind an optimistic inference precondition to; use `models.list_unified` for live availability and management state.
 
 #### `models.resource_policy.get`
 - **Params**: `{}` (unknown fields rejected).
@@ -2280,7 +2345,7 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 #### `models.remove`
 - **Params**: `{ model_id: string }` (host-management role required).
 - **Returns**: `{ model_id, removed_from_car: true, artifact_kind, shared_cache_preserved: true }`.
-- Requires a collision-checked receipt, serializes against new loads, drains and acknowledges runtime owners, rejects active leases and any in-use state, writes a tombstone, and unlinks only the CAR-managed link/copy. Hugging Face shared caches are never recursively deleted. A receipt-backed directory remains usable but is not removable until safe object-bound directory cleanup exists.
+- Requires a collision-checked receipt, serializes against new loads, drains and acknowledges runtime owners, rejects active leases and any in-use state, writes a tombstone, and removes only the CAR-managed link/copy/directory. Hugging Face shared caches are never recursively deleted: a managed directory is detached into a CAR-owned quarantine by no-replace rename and then deleted through a descriptor-bound walk (children opened by descriptor before they are trusted, symlinks unlinked and never followed, filesystem and mount crossings refused, entries captured first and each rechecked against its captured identity immediately before its unlink, directories removed only when empty and still the captured object; a name that appears after capture fails the removal closed with its journal intact; POSIX has no unlink-by-descriptor, so the recheck-to-unlink window on a captured name is the one residual, the same window `rm -rf` accepts). Directory removal is available on macOS and Linux; on other platforms a receipt-backed directory remains usable but is not removable until an equivalent handle-relative delete exists there.
 
 #### `models.route_provenance`
 - **Params**: `{ id: "parslee/openrouter/<alias>" }`
@@ -2351,7 +2416,7 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 #### `models.register`
 - **Params**: `ModelSchema` (the bare value) OR `{ schema: ModelSchema }`. Both shapes are accepted — `rt.registerModel(schemaJson)` from the FFI bindings passes the bare value; explicit JSON-RPC callers may prefer the wrapped form for readability.
 - **Returns**: `{ id, registered: true, path, note }` — `path` is the resolved `models.json` location (`~/.car/models.json`, or `$CAR_HOME/models.json` when the daemon was started with a state root); `note` carries the daemon-restart-required reminder (see below).
-- Persists the supplied `ModelSchema` to `models.json` under the daemon's state root (replacing any existing entry with the same `id`). The registry reads it back from the same resolved path on the next boot, so a registration against a relocated daemon takes effect on that daemon. Schema follows `car_inference::ModelSchema`: `{ id, name, provider, family, capabilities, source: ModelSource, context_length, ... }`. `ModelSource` is the load-bearing enum: `local | remote_api | ollama | mlx | vllm_mlx | managed_vllm_mlx | apple_foundation_models | proprietary | delegated`. `vllm_mlx` is always external/operator-owned; `managed_vllm_mlx` is the explicit CAR-owned local source.
+- Persists the supplied `ModelSchema` to `models.json` under the daemon's state root (replacing any existing entry with the same `id`). The registry reads it back from the same resolved path on the next boot, so a registration against a relocated daemon takes effect on that daemon. Schema follows `car_inference::ModelSchema`: `{ id, name, provider, family, capabilities, source: ModelSource, context_length, ... }`. `ModelSource` is the load-bearing enum: `local | remote_api | ollama | mlx | vllm_mlx | managed_vllm_mlx | apple_foundation_models | proprietary | delegated`. `vllm_mlx` is always external/operator-owned; `managed_vllm_mlx` is the explicit CAR-owned local source. `quantization` accepts **either** a bare label string (`"Q4_K_M"`, `"4bit"`) or an object `{ bits?, scheme, group_size?, label }`, where `scheme` is one of `affine_group_int | block_scaled_float | k_quant_mixed | rtn_block | unquantized | unknown`. The string form is parsed into the object form on read, and a value is written back as a bare string whenever parsing that string reproduces it exactly — so a row that carries no `group_size` and no disambiguating `scheme` serializes unchanged, and its `row_digest` does not move. The object form **requires `label`** and rejects unknown fields; a misspelled key is an error rather than a silently degraded row. Note that `scheme` names the numeric weight format only, never the engine — `ModelSource` carries that, and whisper.cpp's `q5_0` ggml checkpoints share `rtn_block` with llama.cpp's without being loadable by the GGUF text path.
 - **Trust boundary**: every persisted row is normalized to `trust_tier: "community"`, even when the payload omits `trust_tier` (legacy serde defaults it to Curated) or explicitly claims `"curated"`. The same rule applies to public Rust `UnifiedRegistry::register` and `InferenceEngine::register_model`. The reviewed `parslee/openrouter/<alias>` namespace is reserved: `models.register` rejects it and stale persisted user rows with those IDs are ignored, so no user schema can shadow CAR-managed provenance. Only compiled builtins and detached-signature-verified project catalogs retain Curated provenance. Community rows remain explicitly selectable and learn from outcomes, but an eligible Curated remote peer excludes them from latency-sensitive quality-first cold-start candidates and fallbacks.
 - **Visibility limitation (phase 1)**: the daemon's live `UnifiedRegistry` is not updated in-process. The model becomes visible to `models.list*` / `infer` / `infer_stream` on the **next daemon boot**, when `UnifiedRegistry::load_user_config` re-reads the file. Hot-update inside the running daemon requires interior mutability on `InferenceEngine` and is tracked as a separate follow-up. Callers SHOULD register models before issuing `infer` calls against them, or restart the daemon after a batch of registrations.
 - Closes [Parslee-ai/car-releases#39].
@@ -2546,8 +2611,11 @@ Schedule a **deterministic command** on a cadence expressed ONCE, with the OS ba
 ### session
 
 #### `session.init`
-- **Params**: `{ tools: ToolDefinition[], policies?: PolicyDefinition[] }`
+- **Params**: `SessionInitRequest` — `{ client_id: string, tools?: ToolDefinition[], policies?: PolicyDefinition[] }`
 - **Returns**: `{ session_id: string, tools_registered: number, policies_registered: number }`
+- `client_id` is **required** and was missing from this line in earlier
+  revisions; a payload without it is rejected before any tool is registered.
+  `tools` and `policies` both default to empty.
 - Initializes the per-session runtime. **Optional** — only required if the
   client wants to pre-declare tools or policies in a single batch.
   Connections that use only daemon-side capabilities (inference,
@@ -2957,6 +3025,9 @@ distribution are follow-ups).
 - Route a conversation turn **through the oplog** (a `Surface::Conversation` op) so `sync.resume` is a real, provider-valid transcript replay across devices. FFI: `syncRecordTurn` / `sync_record_turn`.
 - **Validated** (fails fast rather than persist a malformed turn): `conversation_id` must be non-empty — it's the scoping key `sync.resume` folds on, so a blank one would pool unrelated conversations into one anonymous thread. A turn must also carry `content`, **unless** it's a tool turn identified by `tool_use_id` (or carries `tool_calls`), which may have empty content.
 
+`sync.record_intent` and `sync.fence_check` carry an `agent_id` and are subject
+to the same bound-identity rule as `lease.*` below.
+
 #### `sync.record_intent`
 - **Params**: `{ agent_id: string, run_id: string, epoch: number, status: "pending" | "committed" | "failed", scope? }`
 - **Returns**: `{ recorded: boolean, op_id?: string, reason?: string }`
@@ -2995,6 +3066,29 @@ distribution are follow-ups).
 - The **executor dispatch fence** at the point of effect (B5's deferred exactly-once completion): the durable, fence-independent committed-run oracle read **first** (an already-committed run never re-executes, whatever the epoch), then the linearizable "am I still epoch N?" read (a stale-epoch zombie is refused). Only `may_dispatch == true` authorizes the external side effect. FFI: `syncFenceCheck` / `sync_fence_check`.
 
 ### lease
+
+**Bound-identity authorization (car#1295, car#1296).** A connection that
+authenticated as an agent — `session.auth { agent_id, token }` — may act only as
+that agent. `lease.acquire`, `lease.renew`, `lease.release`, `lease.status`,
+`sync.record_intent` and `sync.fence_check` refuse an `agent_id` naming a
+*different* agent: the bound identity wins over the parameter, the same rule
+`runs.start` applies to trace attribution. A matching id is redundant and
+accepted. `lease.status` is included because its answer names the holder and its
+fencing epoch — everything needed to decide when to try stealing the lease.
+
+For the five lease/sync **mutations** (`lease.acquire`, `lease.renew`,
+`lease.release`, `sync.record_intent`, `sync.fence_check`), an unbound
+connection carrying only the daemon-wide token is refused when the daemon has a
+host token. Only `session.auth { host_token }` may then supply an explicit
+`agent_id`; auth-disabled developer daemons preserve the legacy unbound path.
+`lease.status` remains a read: an unbound authenticated operator may name an
+agent explicitly, while a bound agent may read only its own status.
+
+This closes the daemon-token bypass for lease and fence mutations, but does not
+make the daemon-wide token an agent isolation boundary. Supervised processes can
+still obtain that token through the paths tracked by car#1297; every other
+identity-sensitive RPC must independently bind or authorize its resource until
+that credential design is resolved.
 
 Per-agent execution lease (B6). A `car_sync::LeaseCoordinator` — a **linearizable
 compare-and-swap register**, deliberately separate from the eventually-consistent
@@ -3116,6 +3210,25 @@ follow-up behind the same trait. The device is the holder.
     these string pairs (covers `caller`/`tenant`/`tool`/`gate`/`decision`).
   - `limit` (u64) — cap results (most-recent-first). Omit/0 = unlimited.
 - **Returns**: `{ count, events }` — the matching events, most-recent-first.
+- Runtime proposal-executor tool provenance is self-contained: each
+  tool-bearing `ActionExecuting`, `ActionSucceeded`, and `ActionFailed` event
+  emitted by that executor carries `data.tool` and `data.tool_source`, where
+  `tool_source` is `builtin`, `user_defined`, `subprocess`, or `mcp`. MCP server
+  names remain registry-private; the event category is deliberately stable
+  across connectors.
+- Every per-action `ActionFailed` emitted by that executor also carries
+  `data.params_digest` (lowercase SHA-256 over the RFC 8785/JCS-canonical
+  `parameters` object), the declared `data.expected_effects`, and
+  `data.error_class`. Raw parameters remain only in `ProposalReceived`; join on
+  `proposal_id` + `action_id` and use the digest to detect mismatches.
+  `ActionSucceeded` carries `params_digest` and `expected_effects` too. Error
+  classes map as follows: `timeout` is an engine deadline or host-callback
+  timeout; `rejected_by_policy` is a dispatch guard's stable
+  `denied by policy:` / `rejected by policy:` error; `validation` is a
+  post-dispatch output or callback-state JCS/I-JSON, state-key-set, or
+  serialization failure; `tool_error` is any other tool-dispatch error; and
+  `unknown` is a post-dispatch failure for an action with no tool. Pre-dispatch
+  admission failures remain `ActionRejected`.
 - The audit/compliance query (EPIC G / G2): "who ran what tool when, and which
   approvals applied" over the `SessionScope` / `PermissionDecision` /
   `ApprovalRecorded` / `GoalEvaluated` / action trail. Pairs with A9
@@ -3174,8 +3287,11 @@ follow-up behind the same trait. The device is the holder.
   `actions_failed` / `actions_rejected`, `success_rate` / `error_rate`,
   `cost_usd` (fold over the retained window), `cumulative_cost_usd`
   (monotonic lifetime spend — survives retention trims), `tokens_in` /
-  `tokens_out`, `avg_latency_ms`, `approvals_recorded`,
-  `permission_decisions`, `gate_rejections`, `policy_violations`,
+  `tokens_out`, `avg_latency_ms`, `approvals_recorded` (every durable human
+  decision) / `approvals_rejected` (the subset that were rejections — so a
+  consumer can compute the disagreement rate rather than seeing approvals and
+  rejections folded into one number), `permission_decisions`,
+  `gate_rejections`, `policy_violations`,
   `goal_evaluations`, `goals_met`, `goals_ungrounded`, and `cost_by_agent`
   (G3). The live operational rollup for a host dashboard (EPIC G / G1).
 
@@ -3197,11 +3313,228 @@ follow-up behind the same trait. The device is the holder.
   monitor can fail loud when a goal condition was met through ungrounded
   evidence instead of CAR's deterministic runtime receipts.
 
+### `heal.*` — the self-healing repair loop
+
+`selfheal.*` above **detects and never writes**. `heal.*` is the other half: it
+reads a configured issue tracker, runs a real coder session, gates the result on
+a multi-model review panel, and opens a pull request. It **never merges** —
+`coder.approve_merge` is where a human belongs, and a pull request is undone by
+closing it.
+
+**Default off, by absence rather than a flag.** There are no compiled-in
+targets: a daemon with no `<CAR_HOME>/heal.toml` starts nothing. A repository
+must also carry an explicit opt-in label on an issue (`self-heal` by default)
+before the loop can see it — silence is not consent.
+
+```toml
+# <CAR_HOME>/heal.toml
+review_models = ["claude-opus-5", "gpt-5.5", "gemini-3-pro"]
+engine = "foreman"            # optional; foreman by default
+
+[[target]]
+repo  = "acme/widgets"        # where the work QUEUE lives
+path  = "/Users/me/git/widgets"  # or `project = "<slug>"`; omit both for watch-only
+label = "self-heal"           # optional
+base  = "main"                # optional
+fix_repo = "acme/widgets-src" # optional; when fixes land in a different repo
+```
+
+`review_models` is not optional and must resolve to seats served by at least two
+attributable model vendors. The gate refuses a panel of zero, and a one-vendor
+panel is correlated by construction, so either configuration declines to start
+before spending a coder session and says which models resolved to which vendors.
+
+#### `heal.status`
+- **Params**: `null`
+- **Returns**: `{ config_path, enabled, cadence_secs, disabled_reason?,
+  targets[], rejected[{ repo, reason }], review_models[],
+  panel[{ model, vendor? }], panel_warning?, coder_pin?{ model, source },
+  run_refusal?, engine }`.
+- `heal.toml` is re-read on every call and on every sweep, so an edit takes
+  effect without a daemon restart and `heal.status` always reports what the next
+  sweep will use. `config_path` names the file it was read from — an operator
+  editing the wrong one otherwise learns nothing from a status that reports
+  exactly what they did not change.
+- `disabled_reason` distinguishes "no usable targets are configured" from
+  "targets are configured but there is no review panel", and also carries a
+  boot-time ASSEMBLY failure — an unknown model name, fewer than two attributable
+  serving vendors, or a `coder_model` that is also a review seat. Those are
+  validated when the loop is assembled rather than when the config is parsed,
+  so without this a rejected configuration would
+  leave `enabled: true` with no reason and a loop that never runs, which is the
+  state this field exists to make impossible. `rejected` carries
+  targets that were named but unusable (a malformed `owner/name`, both `path`
+  and `project` set) — a typo that silently dropped a target would present as a
+  loop that never does anything, which is the hardest failure to notice in a
+  subsystem whose normal state is idle.
+- `panel` is `review_models` after the deduplication the live panel applies,
+  with each seat resolved to the organization that actually serves it. That is
+  not the model's `provider`, which names the AGGREGATOR — everything routed
+  through OpenRouter reports `openrouter` and everything through the Parslee
+  gateway reports `parslee` — so three vendors behind one gateway would look
+  like one, and one vendor reached two ways like two. A `vendor` of `null` means
+  unknowable, not absent: a Parslee capability endpoint (`parslee/reasoning`) is
+  routed by the gateway to whatever it prefers, so no vendor can honestly be
+  attributed. Never count `null` as a distinct vendor.
+- Assembly REFUSES a panel with fewer than two attributable serving vendors.
+  The error names every configured model and its resolved vendor; an
+  unattributable seat is `unresolved` and does not invent a second provider.
+  Refusing rather than silently dropping seats matters because a smaller panel
+  has a different majority threshold and is a configuration the operator must
+  choose explicitly.
+- `panel_warning` covers the stronger condition that remains after that floor:
+  a panel can span two vendors while one vendor still holds the voting majority,
+  or include an unattributable seat alongside two attributable providers. The
+  warning reaches the pull request because that accepted panel is not fully
+  demonstrably independent even though it meets the minimum construction rule.
+- Every model that AUTHORED part of a change is recorded on the session
+  (`authored_by`, also on the `coder.list` row) and checked against the panel
+  when the gate runs. That is the case the assembly-time check below cannot
+  reach: it fires only for a PINNED coder, and unpinned — the default — the
+  router chooses, so on a machine with one reachable credential the coder can
+  be a panel seat and nothing knew. A set rather than one name, because
+  a turn terminal is journaled per iteration and an unpinned session may route
+  each iteration differently; a reviewer judges the accumulated diff, not the
+  last iteration. Models that served turns INSIDE an iteration another model
+  finished are counted too (car#1333) — the terminal names only whoever reached
+  it, so a model could otherwise write most of a change and still sit on the
+  panel judging it.
+
+  Both sides are canonicalized to registry ids before comparison. An unpinned
+  turn reports the model's display NAME while a seat is configured however the
+  operator spelled it, and `review_models` accepts an id or a name — so for
+  every model whose id and name differ these are two spellings of one model,
+  and comparing the strings would let it sit on both sides of the gate.
+
+  **Native-rung enforcement.** `authored_by` is empty for a foreman or external
+  session, whose CLI backbone CAR never resolved — that is most runs, since
+  `foreman` is the default engine, and it is permitted rather than refused: read
+  it as "CAR's own loop did not write this", not "nobody did". An empty set on a
+  session that RAN native IS refused — the engine the session RESOLVED to, not
+  the one `heal.toml` asked for. `engine = "auto"` is a legal setting and
+  resolves to native for any simple task and on any machine with no CLI
+  installed, so comparing the request let exactly this case through (car#1357), because every exit from that loop
+  journals a terminal — including the two that return early, an auth lapse and a
+  dead backbone after the edit landed (car#1333) — so an empty set means the
+  attribution was lost rather than that there was none to take.
+- A pinned coder that resolves to the same model as a review seat is REFUSED at
+  assembly: a model cannot review its own output, and counting it as a seat
+  reports an independence the gate does not have. Compared by resolved model
+  id, so two spellings of one model are recognized as one. `heal.toml`'s
+  `coder_model` is validated against the catalog alongside `review_models`.
+
+  **Two pin sources.** `coder.start` resolves a session's model as the request
+  pin, then `~/.car/coder.toml`'s `[coder] model` — and heal passes `heal.toml`'s
+  `coder_model` as the request pin. So an unset `coder_model` does NOT mean the
+  coder is unpinned; it means the coder runs on whatever `coder.toml` says, and
+  that value is checked against the panel too, with the error naming which file
+  the pin came from. Whichever source wins is also what heal pins the session
+  to, so the value checked is the value that runs. Only when NEITHER file pins
+  is the coder chosen by the router, and then it may still be a seat — which is
+  what the `authored_by` gate above exists to catch.
+
+  A `coder.toml` pin the daemon's catalog does not know is NOT refused, unlike
+  an unknown `coder_model`. That file is shared with `coder.start` and
+  `car code-task`, neither of which validates it, and on the `external` rung
+  the value is forwarded verbatim to a CLI's own namespace (`codex -m`,
+  `claude --model`) — so a name `car models list` has never heard of can be
+  exactly right for the rung that runs, and refusing would take the loop
+  offline over a working configuration.
+
+  **When it fires.** `heal.run` assembles per call, so it re-reads both files
+  and re-runs the check; a refusal there lands in `run_refusal`, so
+  `heal.status` cannot describe a configuration `heal.run` will not run on.
+  The cadence assembles ONCE at boot — an assembly
+  error there is reported through `disabled_reason` and the loop does not start
+  until the daemon restarts. Editing `coder.toml` after boot therefore does not
+  re-run this check for the cadence; the runtime `authored_by` gate is what
+  covers that window, and `coder_pin` makes the staleness visible by showing
+  what the next `heal.run` would use.
+- `coder_pin` is the model the coder will run on and which file pinned it —
+  `source` names the setting (`` `coder_model` in `heal.toml` `` or
+  `` `[coder] model` in `coder.toml` ``), so an operator goes straight to the
+  line in force rather than opening both files and re-deriving the precedence
+  by hand. That re-derivation is not hypothetical: doing it from one source
+  only is what let a coder sit on its own review panel (car#1360).
+
+  **Absent means unpinned, which is a third state.** Neither file names a
+  model, so adaptive routing picks per request and nothing before the run can
+  say what it will pick. That is different from "pinned to something the panel
+  rejects", and the two need different fixes.
+
+  `source` is a MACHINE value — `heal_toml` or `coder_toml` — not prose; `car
+  heal status` renders the operator-facing wording. The model is reported
+  verbatim rather than canonicalized, for the same reason an unknown
+  `coder.toml` pin is not refused (below): on the `external` rung it is
+  forwarded to a third-party CLI's own namespace, so what the file says is the
+  useful answer.
+
+  **What a RUNNING cadence uses may differ.** `coder.toml` is consulted only
+  when `heal.toml` does not pin, resolved through the one helper the sweep's
+  own check calls — so this cannot disagree with what the next `heal.run`
+  assembles. It is not a claim about a cadence already running: that assembles
+  once at boot and bakes the pin in, the same freeze this document notes for
+  the panel. A session started by `coder.start` can also differ, since it
+  re-reads `coder.toml` itself at start. Read `coder_pin` as what the next
+  `heal.run` would use.
+- `run_refusal` is why the most recent manual `heal.run` refused to ASSEMBLE,
+  cleared as soon as one gets past assembly. Deliberately not folded into
+  `disabled_reason`: a cadence that came up cleanly at boot keeps sweeping on
+  its boot-time setup, so a manual refusal is a warning that the config as it
+  stands now would not assemble — reporting it as "disabled" would describe a
+  dead loop that is in fact running.
+- `panel_warning` reports vendor CAPTURE of the majority beyond the enforced
+  two-vendor floor: approval needs a strict majority, so two OpenAI seats decide
+  a three-seat panel whatever the third says. That framing also catches one model
+  seated twice under different ids — a direct id, an OpenRouter id and a Parslee
+  alias can all be the same model — without having to prove they are the same
+  model, which is not reliably decidable.
+- The resolved panel and this caveat are also written into the PULL REQUEST
+  BODY, beside the gate verdict. "approved by 3/3 reviewers" is the number a
+  human uses to decide how closely to read the change, and a correction that
+  lives only here corrects the claim everywhere except where it is made.
+- Answerable whether or not the loop is enabled.
+- FFI: `healStatus()` (NAPI) / `heal_status()` (PyO3), returning JSON.
+
+#### `heal.run`
+- **Params**: `null`
+- **Returns**: `{ outcomes: [[repo, outcome]], skipped_overlap }`, where each
+  `outcome` is tagged: `{"outcome":"opened", repo, number, pr_url, gate}`,
+  `{"outcome":"rejected", repo, number, gate}`, `{"outcome":"idle", skipped[]}`,
+  or `{"outcome":"failed", detail}`.
+- One sweep now instead of waiting for the cadence: **at most one item per
+  configured target**, so a busy repository cannot starve the entries after it.
+- `skipped_overlap` is `true` when a sweep was already running and this one
+  stood down. Ticks are expected to collide — the claim TTL is 90 minutes and
+  the cadence is shorter — and queueing them would only do the same work twice.
+- This can run a real coder session and open a real pull request. It goes
+  through the same service the cadence uses, so it shares the single-sweep lock
+  and the claim ledger.
+- Errors rather than running when the loop is disabled or cannot be assembled:
+  no review panel, fewer than two attributable serving vendors, a coder that is
+  also a review seat, an unparseable engine name, or a `review_models` entry that
+  names no model this daemon knows. The error for insufficient diversity names
+  the models and providers. An unknown id is refused rather than dropped — a
+  panel silently shrunk from three seats to two lowers the approval threshold
+  without saying so.
+- Exempt from the handler's request deadline, and the sweep runs as its own
+  task. A sweep that was cut in half would leave a detached coder session
+  editing the repository with `coder.cancel` unable to reach it, so the sweep
+  outlives the request: the caller may miss the answer, the daemon never loses
+  the work.
+- The claim for an item reaches disk **before** its coder session starts, so a
+  daemon that dies mid-session does not re-pick work that is already in flight.
+- FFI: `healRun()` (NAPI) / `heal_run()` (PyO3), returning JSON.
+- `CAR_HEAL_INTERVAL_SECS` changes the cadence only (900 seconds by default).
+  The first tick is skipped on boot, so a daemon restart does not start a coder
+  session before the operator has seen it come up.
+
 #### `selfheal.status`
 - **Params**: `null`
-- **Returns**: `{ cadence_secs, last_tick_at, route, source_checkout?,
-  refusal_reason?, detectors, detection_count, warning_count, critical_count,
-  dismissed_count, filing_mode }`.
+- **Returns**: `{ cadence_secs, auto_fix_enabled, max_concurrent, max_per_day,
+  max_rounds_per_key, auto_fix_refusal_reason?, last_tick_at, route,
+  source_checkout?, refusal_reason?, detectors, detection_count, warning_count,
+  critical_count, dismissed_count, filing_mode }`.
 - `route` is `"local"` only when the tick validates a filesystem candidate as
   the CAR source checkout; `source_checkout` then gives the canonical path.
   Otherwise it fails closed to `"ledger-only"` and `refusal_reason` explains
@@ -3215,10 +3548,14 @@ follow-up behind the same trait. The device is the holder.
   contain a `.git` directory or worktree file whose config names a GitHub
   `Parslee-ai/car` origin. Detection performs file checks/reads only: no `git`
   subprocess, network, or filesystem-wide scan.
-- `filing_mode` remains `"watch-only"`: local issue documents are private
-  handoff artifacts, not off-machine filings or remediation. The daemon runs
-  one non-overlapping tick immediately at boot and then every 900 seconds by
-  default. `CAR_SELFHEAL_INTERVAL_SECS` changes cadence only.
+- `auto_fix_enabled` reflects `[selfheal] auto_fix` (default true) after
+  fail-closed config validation. The three limits default to 1 concurrent, 3
+  starts per UTC day, and 3 rounds per key and cannot be raised. A malformed or
+  raised-limit config disables auto-fix and sets `auto_fix_refusal_reason`.
+  `filing_mode` is `"pr-only"` after a local route is validated with auto-fix
+  enabled; otherwise it is `"watch-only"`. The daemon runs one non-overlapping
+  tick immediately at boot and then every 900 seconds by default.
+  `CAR_SELFHEAL_INTERVAL_SECS` changes cadence only.
 - The five detector IDs are `metrics_alerts.v1`, `agent_gave_up.v1`,
   `agent_log_errors.v1`, `recurring_tool_failure.v1`, and
   `capability_miss.v1` (the unversioned detection `kind` values are listed
@@ -3235,7 +3572,21 @@ follow-up behind the same trait. The device is the holder.
   Dismissed stable keys are omitted. Each detection carries its SHA-256
   `dedup_key`, evidence/provenance, observation times, affected component,
   detector/version identity, redacted summary/detail, the tick's `route`, and
-  `local_issue_path` when routed locally.
+  `local_issue_path` when routed locally. A `recurring_tool_failure` also has
+  `eligible: boolean`. It is true only when the matching `ActionFailed` names
+  `tool_source: "builtin"`, its `proposal_id` + `action_id` resolve against a
+  `ProposalReceived.data.proposal` in the same journal, and serializing the
+  recovered params through the self-heal redactor changes no bytes. A safe
+  recovered call appears as `reconstructed_call: { tool, params }`; any
+  redaction omits it rather than copying raw parameters. Local routing also
+  supplies `reconstructed_call_path` for the owner-private 0600
+  `<dedup-key>.call.json` sidecar beside the issue document. Durable coder state
+  adds `auto_fix_attempts`, `auto_fix_exhausted`, `auto_fix_in_progress`, and
+  `last_auto_fix_attempt` (round/trigger/timestamps/branch/workspace,
+  `spawned`, `exit_code`, and `failure_class`). Remote deduplication adds
+  `auto_fix_awaiting_review`, `auto_fix_parked`, `remote_pr_number`, and
+  `remote_pr_url`; an open stable-key PR is awaiting review, while a
+  closed-unmerged PR is parked and never reopened.
 - FFI: `selfhealDetections(queryJson?)` / `selfheal_detections(query_json=None)`.
 
 #### `selfheal.dismiss`
@@ -3246,27 +3597,49 @@ follow-up behind the same trait. The device is the holder.
   suppress that key. FFI: `selfhealDismiss(dedupKey)` /
   `selfheal_dismiss(dedup_key)`.
 
+#### `selfheal.fix`
+- **Params**: `{ dedup_key }`, an active eligible recurring-tool key.
+- **Returns**: `{ dedup_key, round, trigger, started_at, completed_at,
+  target_branch, workspace_dir, spawned, exit_code, failure_class }`.
+- Starts one explicit bounded round even when unattended `auto_fix` is off.
+  It requires a validated `Parslee-ai/car` checkout, a safe reconstructed
+  builtin call, an available daily/key budget, and no concurrent self-heal
+  operation. The daemon writes private intent/params/contract files, requires
+  `git fetch origin main` to succeed, and spawns `car code-task` with PR-only
+  delivery, the stable `car/selfheal/<dedup-key>` branch/worktree, isolated
+  `<CAR_HOME>/selfheal/target`, a 15-minute child wall limit, a private flushed
+  `code-task-round-<n>.jsonl` transcript, and the stable PR body marker. The
+  detector registry, not a model, owns the three contract checks. An exited
+  child whose stream has no terminal `run_end` records `failure_class` as
+  `missing_run_end`.
+- FFI: `selfhealFix(dedupKey)` / `selfheal_fix(dedup_key)`.
+
 #### `selfheal.run`
 - **Params**: `null`
 - **Returns**: a tick summary with `route`, `source_checkout?` or
   `refusal_reason?`, evidence counts, and new/changed/suppressed detection
   counts. A concurrent tick fails instead of overlapping.
-- Runs the same watch-only path as the cadence. It reads active session event
-  slices since the prior tick, current supervised-agent state, bounded
-  activity/stderr tails and activity-log metadata, and the observe-only
-  registry, invokes all five deterministic detectors, and
-  performs no network request, off-machine issue filing, proposal execution,
-  agent restart, or remediation.
+- Runs the same path as the cadence. It reads active session event slices since
+  the prior tick, current supervised-agent state, bounded activity/stderr tails
+  and activity-log metadata, and the observe-only registry, then invokes all
+  five deterministic detectors. After the detector ledger commit, an enabled
+  local route may start the first round for one eligible recurring-tool key.
+  Later ticks never start that key's initial round again. Other detectors remain
+  watch-only and CAR never executes a proposed repair or merges a PR itself.
 - FFI: `selfhealRun()` / `selfheal_run()`.
 
-All four methods share the daemon-wide private append-only ledger at
+All five methods share the daemon-wide private append-only ledger at
 `<CAR_HOME>/selfheal/detections.jsonl`. JSONL records are tagged `detection`,
-`dismissal`, or `tick`; new ticks append only new/changed detections plus their
-summary. A `local` route additionally renders one owner-private
+`dismissal`, `tick`, `fix_started`, or `fix_attempt`; new ticks append only
+new/changed detections plus their summary, while every accepted coder round has
+one durable start and terminal exit/failure-class record. A `local` route
+additionally renders one owner-private
 `<CAR_HOME>/selfheal/issues/<dedup-key>.md` per active key, stamped
-`Trust-Tier: trusted`, and updates its occurrence count in place. Directories
-and files are 0700/0600 on Unix. No self-heal path writes into the detected
-source checkout.
+`Trust-Tier: trusted`, and updates its occurrence count in place. A recurring
+key also gets the `<dedup-key>.call.json` eligibility sidecar described above.
+Directories and files are 0700/0600 on Unix. Auto-fix creates only its isolated
+`<checkout>/.worktrees/selfheal-<dedup-key>` worktree and Git refs; it never
+edits the maintainer's working tree or index.
 
 #### `events.cost_by_agent`
 - **Params**: `null`
@@ -3295,9 +3668,13 @@ disk store, the live `runs.trace.event` notification (`runs.subscribe`
 
 **Authorization (R16 + #254).** Every read/subscribe method —
 `runs.subscribe`, `runs.list`, `runs.get_trace` — verifies the calling
-connection is entitled to the run's owning `agent_id`: it either **owns**
-the agent (its `session.auth {agent_id}` binding matches) or it holds the
-**host-management role** (it authenticated via `session.auth { host_token }`
+connection is entitled to the run's owning `agent_id`. A supervised agent
+owns its runs after authenticating with its own credentials:
+`session.auth { token: CAR_AGENT_TOKEN, agent_id: CAR_AGENT_ID }`. That
+agent-bound session can list and replay only that same `agent_id`; it does
+**not** need the host token for its own history, and its token never grants
+access to another agent's runs. The wider alternative is the
+**host-management role** (authenticated via `session.auth { host_token }`
 with the per-launch host token). Merely having called `host.subscribe` is
 **not** sufficient — that check let any authenticated local connection
 self-elevate and read every agent's run traces (Parslee-ai/car#254); the
@@ -3506,9 +3883,21 @@ existence/owner oracle on the write path either).
   is unchanged.
 
 #### `runs.subscribe`
-- **Params**: `{ run_id }`.
+- **Params**: `{ run_id }` — or, with `runs.pagination.v1` negotiated,
+  `RunSubscribeRequest` `{ run_id, cursor, limit }` (all required).
+> **Paginated variant.** A session that negotiates the
+> `runs.pagination.v1` capability in `server.handshake` sends a **different,
+> stricter** params shape to `runs.subscribe`, `runs.list` and
+> `runs.get_trace`: `cursor` and `limit` become **required** (`limit` must be
+> between 1 and 500). Sessions that do not negotiate it keep the legacy shapes
+> documented below, where `cursor` is optional and `limit` does not exist. The
+> handler picks the shape from the negotiated capability, not from the payload,
+> so sending `limit` without negotiating is ignored and omitting it after
+> negotiating is an error.
+
 - **Returns** (the snapshot at cursor): `{ run_id, agent_id, turns_so_far,
-  cursor, status }` where
+  cursor, status }`. On the non-paginated lane, this also recovers pre-v3
+  durable traces that have no summary sidecar.
   - `turns_so_far` — the run's ordered `RunRecord::Turn` records captured
     at subscribe time. `cursor == turns_so_far.length`.
   - `cursor` — the turn boundary the daemon streams strictly after. Every
@@ -3570,7 +3959,8 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
 - `status` is the run's live status after this record.
 
 #### `runs.list`
-- **Params**: `{ agent_id }`.
+- **Params**: `{ agent_id }` — or, with `runs.pagination.v1` negotiated,
+  `RunListRequest` `{ agent_id, cursor, limit }` (all required).
 - **Returns**: `{ agent_id, runs }` where `runs` is an array of
   `RunSummary`, **newest first** (by `started_at`):
   - `RunSummary`: `{ run_id, agent_id, intent, started_at, ended_at?,
@@ -3582,14 +3972,18 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
   `agent_id` is the durable key.
 - An agent with no runs returns `{ agent_id, runs: [] }` (the empty state,
   not an error).
-- **Authorization (R16)** — see the section intro. The `agent_id` is
-  checked FIRST; an unentitled caller is rejected before any directory is
-  read (the param is an authorization subject, not a lookup key).
+- **Authorization (R16)** — see the section intro. An agent-bound session
+  may pass its own bound `agent_id` and receives its own durable runs. Passing
+  any other agent id is rejected before any directory is read; the param is
+  an authorization subject, not a lookup key. A host-management session may
+  list any agent.
 - **WS-only** — no FFI binding (CarHost consumes it over the socket, like
   `runs.subscribe`). The FFI parity table is unchanged.
 
 #### `runs.get_trace`
-- **Params**: `{ run_id, cursor? }`.
+- **Params**: `{ run_id, cursor? }` — or, with `runs.pagination.v1` negotiated,
+  `RunGetTraceRequest` `{ run_id, cursor, limit }`, where `cursor` becomes
+  required too (send `0` for the beginning).
   - `cursor` (optional) — a start index into the run's ordered `RunRecord`
     stream; the first record returned. Omitted / `0` returns the whole
     trace; a non-zero cursor pages a large run from that offset.
@@ -3614,6 +4008,8 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
   memory (R4).
 - **Authorization (R16)** — the owning `agent_id` is resolved from disk and
   the caller is authorized against it before any record is served. An
+  agent-bound session can replay a run only when that owner equals its bound
+  `agent_id`; a host-management session may replay any agent's run. An
   unauthorized rejection never leaks the run's prompts/outputs. (An
   unknown `run_id` returns the not-found marker without revealing whether
   the id exists, since there is no owner to authorize against.)
@@ -3629,7 +4025,7 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
 
 #### `tools.list`
 - **Params**: none
-- **Returns**: `{ tools: [ToolSchema], count: number }`, where each `ToolSchema` is `{ name, description, parameters, returns?, idempotent, cache_ttl_secs?, rate_limit? }` (optional fields omitted when unset)
+- **Returns**: `{ tools: [ToolSchema], count: number }`, where each `ToolSchema` is `{ name, source, description, parameters, returns?, idempotent, cache_ttl_secs?, rate_limit? }`; `source` is the runtime-assigned `builtin | user_defined | subprocess | mcp` origin category (other optional fields are omitted when unset)
 - The toolset actually in effect on this connection. The full schema comes back, not just names — what a tool accepts is part of the surface being proven.
 - **The array is sorted by tool name.** The underlying store is a hash map, so unsorted output would reorder between two calls that registered nothing in between; an audit surface whose order changes on its own cannot be diffed and is not usable as proof.
 - Scope is the connection: each WebSocket client gets its own runtime, so this reports what is in force on *this* session, not a daemon-wide set. It is also **not** the assistant's set — `car do` / `agents.chat` build their own runtime, so listing here does not describe the toolset those will execute with.
@@ -3732,6 +4128,34 @@ no deadline (cancel it explicitly).
 
 ### agents
 
+**Lifecycle authorization (car#1295).** A connection that authenticated as an
+agent — `session.auth { agent_id, token }` — may `agents.start`, `stop`, or
+`restart` only that same agent. A host-management connection may control any
+agent. When a host token is configured, an unbound daemon-token connection is
+not host authority and is refused; this closes the second-connection bypass
+where a supervised child reused `CAR_AUTH_TOKEN` without binding `agent_id`.
+On an auth-disabled/dev daemon with no host token, an unbound developer client
+continues to act as the authority.
+
+`agents.upsert`, `agents.install`, and `agents.remove` require host-management
+authority. They remain unavailable to a bound supervised agent even in the
+auth-disabled degraded mode: upsert/install define what the supervisor executes,
+and removal mutates the host-owned process inventory.
+
+`agents.wait` and `agents.tail_log` retain the narrower bound-identity rule: an
+agent may read only itself, while an unbound operator may read any id. The rule
+is listed per method rather than asserted for the namespace, because not every
+`agent_id` here is a subject: `agents.chat` and `agents.chat.*` take the agent as
+the RECIPIENT of a turn and are cross-agent by design. `agents.list` and
+`agents.health` enumerate and take no id at all.
+
+`declagents.remove` and `declagents.set_enabled` are also refused to a bound
+supervised-agent session. A declarative agent runs in-daemon and has no
+per-agent token, so there is no bound "itself" exception: only host-management
+authority (or an unbound developer on an auth-disabled daemon) may remove or
+disable one.
+
+
 > **Observe-only mode** (Parslee-ai/car-releases#44). The supervisor
 > takes an exclusive OS-level lock on `<manifest>.lock` so two
 > car-server processes can't supervise the same manifest and
@@ -3765,12 +4189,14 @@ no deadline (cancel it explicitly).
 - Driven by `car_registry::supervisor::Supervisor`. Closes [Parslee-ai/car-releases#27].
 
 #### `agents.upsert`
+- **Authorization**: host-management authority.
 - **Params**: `AgentSpec` — `{ id, name, command, args?, cwd?, env?, restart?, max_restarts?, backoff_secs?, auto_start?, interpreter? }`. `restart` is `never | on_failure | always`. `id` must be filename-safe (alphanumeric + `-_.`).
 - **Returns**: the resulting `ManagedAgent`.
 - Persists the manifest; the agent is NOT auto-started — call `agents.start` (or rely on `auto_start: true` for the next car-server boot).
 - **`interpreter` sugar (#171)**: instead of hand-coding `/opt/homebrew/bin/node` (or whatever the current PATH resolves to), pass `interpreter: "node" | "python" | "deno" | ...` and the supervisor resolves the bare program name against `$PATH` *once* at upsert and writes the absolute path into `command`. Resolution then freezes — subsequent PATH changes do not silently rewire which binary the spec points to. The strict no-PATH-lookup rule at upsert time still holds: an interpreter that resolves into `/tmp` or fails the executable-bit check is rejected.
 
 #### `agents.install`
+- **Authorization**: host-management authority.
 - **Params**: `AgentManifest` — the nested TOML shape from
   `docs/proposals/contributed-agents.md`, JSON-encoded for the
   wire: `{agent: {id, name, namespace?, version?, …}, publisher?,
@@ -3806,22 +4232,26 @@ no deadline (cancel it explicitly).
 - Use after a system upgrade to surface broken specs before `agents.start` does. Pairs with the `interpreter` sugar — when `ok: false` for an interpreter-resolved entry, the host can re-upsert with the same interpreter name to pick up the new path.
 
 #### `agents.remove`
+- **Authorization**: host-management authority.
 - **Params**: `{ id: string }`
 - **Returns**: `{ removed: bool }`
 - Stops the running child first if it's up. Idempotent.
 
 #### `agents.start`
+- **Authorization**: the same bound agent id or host-management authority.
 - **Params**: `{ id: string }`
 - **Returns**: `ManagedAgent`
 - Spawns the child if it isn't running. No-op when already `running` or `starting`. Resets `restart_count`.
 
 #### `agents.stop`
+- **Authorization**: the same bound agent id or host-management authority.
 - **Params**: `{ id: string, signal?: "term" | "kill" }`
 - **Returns**: `ManagedAgent`
 - `term` (default) sends SIGTERM and waits the supervisor's grace window before escalating to SIGKILL; `kill` skips the grace.
 
 #### `agents.restart`
-- **Params**: `{ id: string }`
+- **Authorization**: the same bound agent id or host-management authority.
+- **Params**: `{ id: string }
 - **Returns**: `ManagedAgent`
 
 #### `agents.wait`
@@ -3852,6 +4282,29 @@ no deadline (cancel it explicitly).
   - `goal` — optional deterministic completion contract for this chat turn. `check` is a shell command the agent runtime runs after each assistant iteration; exit 0 means the condition is met. `max_iterations` defaults to 8 and is clamped to 1–50. Goal-driven agents stream `goal_evaluated { iteration, met, grounded, reason }` after each verifier pass and emit terminal `done` once the deterministic check passes (`met` with `grounded: true`). The flagship assistant still cross-checks conservative final-summary operational claims such as "tests passed" against same-run tool receipts, but once the deterministic check has itself passed an unmatched claim only **annotates the reply text** (a `[claim check]` note appended to the `done` message) — it no longer re-opens a deterministically-verified iteration on prose wording, and `grounded` stays `true`. A summary claim can still keep a completion ungrounded when the met verdict rested on a model judge rather than deterministic ground truth (it fails closed and keeps iterating). If the governor halts on a condition that actually ran and was not met (turn/cost/wall-clock budget, no-progress, cancel), the terminal event is `error`, naming the halt reason. If the check itself never got to run within its own bound — a stuck approval wait, a wedged subprocess — the loop fails open instead of hanging or discarding a working reply: it halts on the *first* such stall (it does not burn the rest of `max_iterations` retrying a check that structurally cannot be evaluated), and the terminal event is still `done`, with the reply text carrying a `[goal check] not verified — …` note (mirroring the `[claim check]` annotation convention above), `finish_reason` set to a short "unevaluated" string, and `goal_unevaluated: true` — a machine-readable marker `goal.status`'s persistence layer reads to record `status: "unevaluated"` rather than `"met"`, so a client polling `chatGoal.status`/`goal.status` cannot misread an unchecked condition as a verified pass. Currently mutually exclusive with `attachments`.
   - If no inline `goal` is passed, the daemon looks for a standing goal stored for the same `session_id` via `goal.set` and forwards that contract to the agent.
 - **Returns**: an ack `{ accepted: true, session_id: string }`. The reply does **not** carry the answer — for attached supervised agents, the daemon reverse-calls the agent's `agent.chat` handler and fans the streamed reply back as `agents.chat.event` notifications (`kind: "token" | "tool_call" | "approval_pending" | "goal_evaluated" | "receipt_report" | "done" | "error"`) keyed by `session_id`. `receipt_report` is emitted immediately before the terminal frame and reports local verification, remote main, CI/CD, deployment, health, and production-browser proof separately; missing evidence remains absent rather than being inferred. For in-daemon declarative agents, no child process or reverse call is needed: the daemon runs the declarative runner directly and emits the same event stream. `stream: false` still returns via the same event channel as a single terminal frame.
+- **Task scoping on authenticated A2A surfaces.** `tasks/list` returns only the caller's own tasks; `tasks/get` and `tasks/cancel` answer `TaskNotFound` for a task created by a different verified caller (rather than confirming it exists); and a `message/send` whose `taskId` names another caller's task is refused instead of appending to their history. Tasks created on a surface with no caller identity are un-owned and stay visible to everyone, so unauthenticated embedder deployments are unchanged.
+- **Admission (agent callers only).** When the caller is an *agent* rather than
+  the host, this method now passes the same admission `agents.message` applies:
+  the per-recipient channel guard (identical-body dedupe inside 10s, 20 sends
+  per sender per minute — one shared budget per recipient across both methods)
+  and the `AgentPermissionPolicy` decision at the `read_only` tier. An agent set
+  to `Deny` is refused; one set to `RequireApproval` is refused too, with a
+  pointer to `agents.message`, because chat is request/response and has no hold
+  queue. **The host is exempt** — it is the operator's own client, and the dedupe
+  window would otherwise swallow a person retyping the same prompt. Before this,
+  `agents.chat` was the way around `agents.message`'s admission: a denied agent
+  could reach another agent by chatting at it, and two agents could answer each
+  other with nothing to terminate the loop.
+
+  Two failure modes follow from that and are worth anticipating: an `agent_id`
+  outside `[A-Za-z0-9._-]` (or over 128 chars) is refused as an invalid peer
+  name, and a refusal names the guard rule that stopped it. Admission runs
+  *after* the target is confirmed to exist, so an unroutable id is refused for
+  that reason and does not consume the caller's dedupe or rate budget. A
+  synchronous turn does not occupy the in-flight `QUEUE_CAP` slot that
+  `agents.message` takes, so the two methods cannot exhaust each other on that
+  axis; they do share the dedupe window and the rate budget, which is the point.
+  Every refusal is written to `~/.car/peer-messages.jsonl` with its outcome.
 - Host-side method is WS-only (no FFI binding — a host like CarHost calls it directly). The **agent side** has FFI helpers (below). See [`docs/proposals/agent-chat-surface.md`](./proposals/agent-chat-surface.md) for the full host↔daemon↔agent flow.
 
 #### `goal.suggest`
@@ -3889,16 +4342,17 @@ no deadline (cancel it explicitly).
 
 #### `agents.peers`
 - **Params**: none (`{}`).
-- Lists the agents this caller can send a peer message to.
-- **Returns**: `{ self: string | null, peers: [{ name, address, reference, kind, source, can_receive, display_name, capability, last_seen_ms }], count: number }`.
+- Lists the peers visible to this caller. Use each row's `reachable` field before offering a send.
+- **Returns**: `{ self: string | null, peers: [{ name, address, reference, kind, source, can_receive, reachable, display_name, capability, last_seen_ms }], count: number }`.
   - `self` is the caller's own name — the address other agents use to reach it. The caller is **never** among `peers`; addressing yourself is an error, not a loopback.
   - `address` is the form to pass as `agents.message`'s `to`. It is the bare `name` unless two live peers share that name, in which case it is `name [reference]`. References are assigned only where a name is genuinely ambiguous, so ordinary addresses stay readable.
-  - `kind` is `car_agent`, `external_cli`, or `remote_car`; `can_receive` is false for `external_cli`. CAR runs external CLIs as batch processes (the task goes in on stdin, which is closed immediately so the child sees EOF), so they can message CAR while running but have no inbox to deliver into.
+  - `kind` is `car_agent`, `external_cli`, or `remote_car`; `can_receive` is the stable capability of that kind and is false for `external_cli`. CAR runs external CLIs as batch processes (the task goes in on stdin, which is closed immediately so the child sees EOF), so they can message CAR while running but have no inbox to deliver into.
+  - `reachable` is the daemon's point-in-time delivery preflight over the same two descriptor guards `agents.message` applies: the kind must have an inbox (`can_receive`) and the emitted `source` must be trusted by default. It is false for an unpromoted `lan` peer even though that remote-CAR kind has `can_receive: true`. It is a snapshot, not a delivery guarantee: the send remains authoritative because sender policy, standing, message limits, recipient attachment, and remote liveness are evaluated later.
   - `source` is `attached`, `invocation`, `parslee`, or `lan`. Local peers come from the daemon's **live connection table**, not the on-disk agent registry — the registry is observe-only self-report whose reap sweep tolerates a 900s stale window, so a listing built from it would offer agents that exited a quarter of an hour ago.
   - **Cross-host discovery** has two independent routes, complementary rather than redundant:
     - `parslee` — this user's other machines, each announcing its A2A endpoint on the **synced oplog** (`Registry { kind: "host_endpoint" }`, folding LWW per device id so a machine that moves overwrites its own entry). The oplog is end-to-end encrypted, so Parslee relays the bytes without being able to read the endpoints. This is why discovery rides the oplog instead of an address field on the sync roster: the roster would publish a per-device address to the service. Requires a login; empty without one.
     - `lan` — CAR daemons advertising `_car-a2a._tcp.local.` over mDNS. Needs no login but reaches only one broadcast domain. The peer-reachable URL travels in a TXT record rather than being rebuilt from the resolved IP and port, because an operator can pass `--a2a-public-url` to declare a URL that differs from the bound socket.
-  - **A `lan` peer is listed but not addressable.** Anyone on a network can advertise any name, so discovery makes a peer *visible*, not reachable; `agents.message` refuses it with an error naming the remedy until an operator promotes it via `a2a.peers.add`. A promoted peer is reported under its trusted source instead, so it is not double-listed. Name collisions resolve toward the more *trusted* source, not the nearest one — a `parslee` device outranks a `lan` advertisement even though the LAN is the shorter path.
+  - **A `lan` peer is listed with `can_receive: true` and `reachable: false`.** Anyone on a network can advertise any name, so discovery makes a peer *visible*, not reachable; `agents.message` refuses it with an error naming the remedy until an operator promotes it via `a2a.peers.add`. A promoted peer is reported under its trusted source instead, so it is not double-listed. Name collisions resolve toward the more *trusted* source, not the nearest one — a `parslee` device outranks a `lan` advertisement even though the LAN is the shorter path.
   - Cross-host delivery addresses the remote **daemon's** A2A surface, never one of its agents. That daemon applies its own guard and policy before reverse-calling a local agent, so a cross-host message passes two admissions — the sender's and the recipient's — and neither can be skipped. `PeerAddress` deliberately has no variant naming a remote agent.
 
 #### `agents.message`
@@ -3917,10 +4371,74 @@ no deadline (cancel it explicitly).
   - Each limit returns a distinct error naming the remedy: batch for a rate limit, wait for a full queue.
 - **Returns**: `{ id, to, outcome }` where `outcome` is:
   - `delivered` — the recipient acknowledged.
-  - `unacknowledged` — the frame was written but no ack arrived within 5s. Reported honestly rather than as failure: an agent that does not implement `agent.peer_message` simply never answers, and the write did happen.
+  - `unacknowledged` — the frame was written but no ack arrived within 5s. Recorded as its own audit outcome rather than folded into `delivered` or `refused`: the frame demonstrably was written, so calling it a drop is as wrong as calling it a delivery. Reported honestly rather than as failure: an agent that does not implement `agent.peer_message` simply never answers, and the write did happen.
   - `held` — the recipient's configured posture stopped it; carries `reason` and `retained: true`. The message is kept for an operator decision — see `agents.message.pending` / `agents.message.approve` below.
   - A refusal is an error, not an outcome.
-- **Audit**: every attempted delivery, refusals included, appends to `~/.car/peer-messages.jsonl`. `agents.chat` writes to the same journal — it has driven another agent's turn since it shipped with no audit record of any kind, and adding a governed sibling beside an unrecorded surface would only have moved well-behaved callers onto the audited path.
+- **Cross-host delivery passes two admissions when the far side is a
+  peer-authenticated CAR listener** — the one `car-server` runs by default. That
+  qualifier matters: a `remote_car` peer whose URL points at an `a2a.start`
+  listener reaches a surface with no signature check and no broker, and the
+  outcome reported there is `accepted`, not `delivered`. A message addressed to
+  a peer-authenticated daemon lands on its **receiving-side broker**, which
+  decides it
+  before it reaches anyone: the sender is rebuilt from the *verified* signing
+  key rather than the name the caller supplied, the recipient must be an agent
+  attached to that host (a peer message is **never relayed** onward — that would
+  make the host an open relay forwarding under its own signature to hosts that
+  never trusted the origin), and the recipient's own channel guard applies. So
+  `delivered` means the far side admitted it and reverse-called its agent, and
+  the far side *said so* — the sender reads the broker's verdict out of the
+  reply rather than assuming it, so a message whose recipient never acknowledged
+  comes back `unacknowledged` on both hosts instead of being recorded as
+  delivered on either. A peer with no broker reports `accepted`, which claims
+  only what it can: the bytes were taken. A refusal returns as an error carrying
+  the remote broker's reason. Peer messages are delivered over
+  `message/send`; the streaming twin refuses them rather than compiling them
+  into a proposal. What the far side does **not** do is grade the sender against
+  a per-peer policy row: there is no local sender to resolve inbound, and a
+  remote-supplied name must never select which local posture governs it.
+- **Earned standing.** A sending principal — a verified peer key inbound, a
+  local agent id outbound — accumulates a record from *this daemon's own
+  observed outcomes*, never from message content (a body that could move a
+  sender's standing would make the envelope an authority channel). A record
+  degrades on the same rule that degrades a skill, `fail > success + 2`, now a
+  single shared definition rather than three copies. What counts as a failure is
+  narrow and deliberate: a chain over the hop cap, an oversized body, an illegal
+  name or malformed lineage, an unresolvable recipient, and an operator's
+  explicit denial through `agents.message.approve` — which is the only ground
+  truth among them. What does **not** count: a rate limit or an in-window
+  duplicate (the channel guard exists precisely because in a mutual loop neither
+  party is misbehaving, so charging them would price correct behaviour as
+  misconduct), a refusal by this host's own policy (our posture, not their
+  conduct), and an unacknowledged delivery (the recipient's agent did not
+  answer). The consequence is a **throttle, not a severance**: a degraded sender
+  is limited to 2 messages per minute, host-scoped and checked *before* the
+  per-recipient guard, so renaming agents or switching recipients does not buy a
+  fresh budget. Successes saturate, so headroom never grows without bound, and
+  both counters halve weekly, so a degraded peer recovers on its own without
+  anyone remembering to forgive it. `agents.peers` renders a record where one
+  exists — absent means nothing has been observed yet, which is not the same as
+  a clean record. Counters are in-memory: only an operator's ledger decision is
+  durable, by design.
+- **Lineage.** A peer message carries `trace` (the id of the message that began
+  the chain) and `via` (the ordered principals it passed through, origin first).
+  Segments are `agent:<id>`, `conn:<id>`, `mcp:external-cli`, or
+  `peer:<key>` — and a `peer:` segment is a **host-boundary marker stamped by
+  the receiving daemon from the key it verified, never by the sender**. So
+  everything before the last `peer:` marker is that key's *attestation*, and
+  everything after was observed by the daemon holding the message. The list
+  carries its own trust model; nothing downstream has to remember which half was
+  witnessed. Lineage crosses the hop inside the signed request body, so it
+  cannot be altered in flight — though the signer can still lie about its own
+  prefix, which is what the hop cap bounds and what earned peer standing is
+  meant to make expensive. A chain deeper than 8 **agent** hops is refused
+  (boundary markers do not count: crossing a host changes who attests, not how
+  far the work has travelled). This is the one hazard the dedupe and rate limits
+  structurally cannot see — eight agents each forwarding a different body are
+  eight legitimate sends by every per-pair rule, and still a runaway. Inbound
+  `via` is validated for shape before an agent is shown it; both fields default,
+  so a sender that predates lineage produces a root rather than an error.
+- **Audit**: every attempted delivery, refusals included, appends to the `ServerState`'s configured peer audit journal (`~/.car/peer-messages.jsonl` for the standalone daemon). The path is resolved once at state construction; a test or embedder with a custom state directory never re-resolves process-global `CAR_HOME` while writing. Rows carry `dir` (`out` / `in`), `trace`, and `via`; inbound rows also carry `attested_by` — the verified key the sender was derived from. The last `via` segment on an inbound row is therefore the receiver-appended `peer:<verified-key>` boundary, so an operator can distinguish what the remote key attested from what this daemon observed. Inbound rows are new: before the receiving broker existed there was no inbound admission to record. `agents.chat` writes to the same configured journal — it has driven another agent's turn since it shipped with no audit record of any kind, and adding a governed sibling beside an unrecorded surface would only have moved well-behaved callers onto the audited path.
 
 #### `agents.message.pending`
 - **Params**: none (`{}`).
@@ -3941,6 +4459,7 @@ no deadline (cancel it explicitly).
 #### `agents.chat.cancel`
 - **Params**: `{ session_id: string }`.
 - Best-effort cancellation. Attached supervised agents receive `agent.chat.cancel` so they can short-circuit their inference stream. In-daemon declarative agent sessions set a local cancellation flag and drop routing immediately; the runner stops at the next model/tool/goal-check boundary. Terminal for the session.
+- **Requires the originating host session or the host-management role**, the same check `agents.chat.approve` applies. Being authenticated to the daemon is not sufficient: without this, any session could abort any live turn by observing a `session_id`. A refused cancel leaves the chat session routing untouched.
 
 #### `agents.chat.approve`
 - **Params**: `{ session_id: string, approval_id: string, decision: boolean | string }`.
@@ -4036,8 +4555,11 @@ See `docs/proposals/verified-parallel-coding-orchestrator.md`.
 - **FFI**: `foremanPlan(goal, repo?, maxAttempts?)` (Node) / `foreman_plan(goal, repo=None, max_attempts=None)` (Python).
 
 #### `foreman.run`
-- **Params**: `{ goal: string, repo?: string, adapter?: string, verify_command?: [string], union_verify_command?: [string], max_attempts?: number }`
+- **Params**: `{ goal: string, repo?: string, adapter?: string, verify_command?: [string], union_verify_command?: [string], max_attempts?: number, distributed?: boolean, workers?: [string] }`
   - `adapter` selects the external coding CLI (`"claude-code"` default; `"codex"` / `"gemini"` as their adapters land).
+  - `distributed` (default `false`) spreads the subtasks across the **fleet**: every CAR instance that has this repository checked out and is enrolled as a worker (`fleet.worker.set`). This host is always in the pool, so a distributed run whose peers all decline still completes locally. `workers` narrows placement to named instances — the names `fleet.composite` reports.
+  - Distribution moves **where the editing happens and nothing else**. A peer reproduces the base commit in its own worktree, runs its own coding CLI, and returns a patch; this host applies it and runs the unchanged merge-verify gate. A peer that fails or declines hands the subtask to the next worker, and the worktree is reset to its base commit first so nobody inherits a half-finished attempt. See `docs/proposals/verified-parallel-coding-orchestrator.md` and the `fleet` namespace below.
+  - A decline names one of `not_accepting_work`, `repo_unavailable`, `commit_unavailable`, `adapter_unavailable`, `busy`, `rate_limited`, `policy_denied`. Only `busy` is re-offered to the same peer (once, after 2s): it clears in seconds, whereas a spent budget clears in tens of minutes and the rest are facts about that machine's configuration that a retry would hit identically.
   - `verify_command` is the **per-worktree regression** check — "does this one subtask's change compile / not break existing tests?" (e.g. `["cargo", "check"]`). A subtask implements only PART of the goal, so a goal-level test that needs every subtask must NOT run here, or it rejects each subtask.
   - `union_verify_command` is the **integrated-union goal** check — "does the merged result achieve the goal?" (e.g. `["cargo", "test"]`). **Falls back to `verify_command` when omitted**, so callers wanting one command for both set only `verify_command`. Omit both and the gate is `Inconclusive` (never accepts) unless a subtask is explicitly waived.
   - other params as for `foreman.plan`.
@@ -4046,8 +4568,64 @@ See `docs/proposals/verified-parallel-coding-orchestrator.md`.
   - `delivered` is `true` when the result is sound: the integrated union was accepted (parallel) or the single session was accepted (fallback).
   - `run` is the execution report: `{ schema_version, subtasks: [{ id, verdict?, error? }], integration?: { applied, apply_conflicts, integrated_cleanly, verdict?, blame? } }` (one subtask, no `integration`, in single-session mode). Each `verdict` is `{ outcome: "accepted"|"rejected"|"inconclusive", ... }` with structured `evidence` (containment violations, semantic conflicts, typed `build_test`, policy). Use `outcome == "accepted"` as the only accepting state (forward-compat `"unknown"` is non-accepting).
   - `integration.blame` is present **only when the union did not integrate cleanly** — structured attribution of *why*, for a UI ("why did this run fail") or a future regional replan: `{ apply_conflicts: [{ subtask_id, files, detail }], duplicate_conflicts: [{ file, symbol, candidate_subtask_ids }], build_test?: { code?, output_tail, candidate_subtask_ids } }`. `apply_conflicts.subtask_id` is the patch that failed to apply (definitive) plus the files involved; `duplicate_conflicts.candidate_subtask_ids` are the subtasks whose patches touched the offending file (candidates, not proven culprits — attribution is file-granular); `build_test` is the union goal-check failure with `candidate_subtask_ids` = the whole integrated set (a build failure isn't localized further — mapping a failing test back to a symbol is not done here — so the retry region is all of them).
-- **Cost note**: farms each subtask to a real external CLI — **burns subscription/API quota** and can run for minutes. Hosts should rate-limit.
-- **FFI**: `foremanRun(goal, repo?, adapter?, verifyCommand?, unionVerifyCommand?, maxAttempts?)` (Node) / `foreman_run(goal, repo=None, adapter=None, verify_command=None, union_verify_command=None, max_attempts=None)` (Python).
+  - `pool` (distributed runs only) says what the pool contained and what it left out: `{ remote_workers: [string], excluded: [{ instance, reason }], quarantined: [string], local_only: boolean, degraded_reason?: string }`. `reason` is one of `not_enrolled`, `repository_not_served`, `not_requested`, `unreachable`, `no_address`. **`local_only: true` is the quiet failure this exists to surface**: every peer turned out ineligible, so a run asked to be distributed completed correctly on one machine at local speed, which is otherwise indistinguishable from a distributed run that happened to be slow. `degraded_reason` is a single line naming the counts. `quarantined` is the mid-run counterpart to `excluded` (car#1323): instances that were in the pool and were then dropped for the remainder of the run because a failure was a fact about the machine — unreachable, not enrolled, missing the repo or the base commit, no usable coding CLI, or rate-limited — rather than about the subtask offered. Without it, a peer that dies mid-run is invisible: it stops appearing in `placements` and the run just gets slower. **Every other key in this object describes the pool as it was BUILT**, before any subtask ran, so `local_only` and `degraded_reason` cannot see a quarantine; a reader asking whether a run ended up local subtracts `quarantined` from `remote_workers`. A peer that recovers stays out until the next run — there is no mid-run liveness re-probe, and by the time one would fire the cost this avoids has already been paid.
+  - `run_id` correlates this run's subtasks in every participating host's audit log. `distributed` echoes the mode. On a distributed run, `workers` lists the pool and `placements` records where each subtask ran: `[{ subtask_id, worker, remote, failed_attempts: [{ worker, error }] }]` — `worker` is `null` when every worker failed, and `failed_attempts` is how a green run still shows which machine dropped a subtask first. Both are `null` on a local run, where the answer is always "here".
+- **Cost note**: farms each subtask to a real external CLI — **burns subscription/API quota** and can run for minutes. Hosts should rate-limit. A distributed run spends **other machines' quota** as well as this one's.
+- **FFI**: `foremanRun(goal, repo?, adapter?, verifyCommand?, unionVerifyCommand?, maxAttempts?, distributed?, workers?)` (Node) / `foreman_run(goal, repo=None, adapter=None, verify_command=None, union_verify_command=None, max_attempts=None, distributed=None, workers=None)` (Python).
+
+### fleet
+
+One composite view of every CAR instance this daemon can reach — their agents,
+capabilities, and models — plus the enrollment that lets `foreman.run` farm
+subtasks across them.
+
+`agents.peers` answers *who* is out there; `discovery.resolve` ranks services
+against a need. `fleet.*` answers what the reachable machines can actually do,
+folded so one row names every instance that offers it. That is the input a
+placement decision needs, and it is what was missing when "farm this subtask
+out" could only ever mean "to this machine".
+
+Transport and trust are unchanged: remote reads and dispatches ride the existing
+peer-signature-authenticated A2A listener (`--a2a-bind`), a LAN-discovered host
+stays a visible candidate until an operator promotes it with `a2a.peers.add`,
+and the merge-verify gate never leaves the orchestrating host.
+
+#### `fleet.inventory`
+- **Params**: none.
+- **Returns**: `InstanceInventory { schema_version, instance: { name, kind: "local", source, version, platform }, fidelity: "full", agents: [{ id, kind, display_name?, status?, capability?, addressable }], capabilities: [{ name, kind, description?, tags }], models: [{ id, kind: "local"|"cloud", provider?, available, context_window?, capabilities }], worker?: WorkerProfile, collected_at_ms }`.
+  - `agents[].kind` is one of `assistant`, `attached`, `supervised`, `declarative`, `external_cli`. `addressable` mirrors `agents.peers`' rule that an external CLI can message CAR while it runs but has no inbox.
+  - `capabilities[].kind` is one of `tool`, `skill`, `connector`, `a2a_skill`. Tools come from the calling session's runtime (so a client's own `tools.register`ed tools appear); skills come from its memory graph and are capped at 200 rows.
+- This is the same report peers receive over A2A, plus the session's own tools and skills.
+- **FFI**: `fleetInventory()` (Node) / `fleet_inventory()` (Python).
+
+#### `fleet.composite`
+- **Params**: `{ include_remote?: boolean, timeout_ms?: number }` — `include_remote` defaults to `true`; `timeout_ms` (default `10000`) bounds **each peer individually**.
+- **Returns**: `FleetComposite { schema_version, generated_at_ms, self_name, instances: [InstanceInventory], agents: [{ id, kind, instances: [string], capability? }], capabilities: [{ name, kind, instances: [string], description? }], models: [{ id, kind, provider?, instances: [string], available_on: [string], max_context_window? }], workers: [{ instance, kind, adapters: [string], max_parallel, repo_root_commits: [string] }], totals: { instances, reachable_instances, full_instances, agents, capabilities, models, workers, worker_slots } }`.
+  - Rollups are **by identity across instances**: the same tool on four machines is one capability row naming four instances, and `totals` counts distinct things, not the sum of the per-instance counts.
+  - A model served from local weights on one host and through a hosted API on another stays **two rows** (`kind` is part of the key) — different cost, latency, and failure modes, and a router picks between them. `available_on` is the subset that can serve it now; listed-but-unavailable says where a download or a login would unlock capacity.
+  - An instance that could not be read is still a row, with `fidelity: "unreachable"` and an `error` naming the reason. A peer that answered only its public agent card is `fidelity: "card_only"`: its capabilities are real, and its empty agent/model lists mean **unknown, not none**. A LAN host that has not been promoted appears as unreachable with the promotion instruction as its reason.
+  - `workers[].repo_root_commits` is how an orchestrator tells, before dispatching, whether a machine can reproduce a base tree. Root commits only — a repository path is local detail a peer has no business learning.
+- **FFI**: `fleetComposite(includeRemote?, timeoutMs?)` (Node) / `fleet_composite(include_remote=None, timeout_ms=None)` (Python).
+
+#### `fleet.worker.get`
+- **Params**: none.
+- **Returns**: `{ config: { accepts_work, repos: [string], max_parallel, local_parallel, dispatches_per_hour, max_subtask_secs, fetch_missing_base, fetch_remote, allowed_tools? }, profile: WorkerProfile { accepts_work, adapters: [string], max_parallel, repo_root_commits: [string] } }`.
+- `config` is what an operator set (`~/.car/fleet-worker.json`); `profile` is what peers see — paths never leave this host.
+- **FFI**: `fleetWorkerGet()` (Node) / `fleet_worker_get()` (Python).
+
+#### `fleet.worker.set`
+- **Params**: `{ accepts_work?: boolean, repos?: [string], max_parallel?: number, local_parallel?: number, dispatches_per_hour?: number, max_subtask_secs?: number, allowed_tools?: [string], fetch_missing_base?: boolean, fetch_remote?: string }` — only the fields supplied change.
+- **Returns**: the same `{ config, profile }` shape as `fleet.worker.get`.
+- **Operator-only, and a real grant.** Enrolling lets a trusted peer run a coding CLI against the checkouts named in `repos`, so it is refused for any session bound to an agent id — an agent cannot enroll the machine, least of all the one that would benefit. Deliberately *not* `is_host` (which the peer-approval surfaces use): this is a configuration change, and the operator's own CLI already holds the daemon's auth token. Off by default, and a malformed config file reads as *declining*, never as accepting under half-read limits.
+- Each entry in `repos` is validated as a git repository at set time, so a typo surfaces here rather than as a peer's subtask being declined for reasons that look like the peer's fault. A dispatch is matched to one of them by **root commit**; a peer that names a repository this host does not have, or a base commit it has never seen, is declined with the specific reason (`repo_unavailable` vs `commit_unavailable`) so the orchestrator can place the subtask elsewhere.
+- **The limits are this machine's, not the caller's.** Three of them exist because the dispatch itself is written by the sender:
+  - `dispatches_per_hour` (default 60) budgets the **payer's** spend. Deliberately *not* keyed by device fingerprint: a person with a laptop, a desktop and a CI box would then draw three separate allowances and the limit would scale with the caller's hardware instead of bounding it. Every caller that passes peer auth is provably a device of one account (`refresh_peer_trust` trusts only this login's roster, and installs an empty set without sync), so they share one bucket. When org attestation lands the key becomes the attested member id. `max_parallel` bounds *concurrency*, which is not a bound on spend — a peer that dispatches one subtask, waits, and dispatches the next never exceeds it and can still drain this machine's coding-CLI quota. The budget is charged **last**, immediately before the CLI runs, so declines that cost this machine nothing (wrong repo, no adapter) do not spend the caller's allowance. Over budget returns `outcome: "declined", reason: "rate_limited"`, whose detail says when capacity frees.
+  - `max_subtask_secs` (default 1800) is the ceiling a sender's `timeout_secs` is clamped to; an omitted one means this ceiling, not "unbounded".
+  - `allowed_tools` is **intersected** with whatever the dispatch requests — whichever side is stricter wins, and a sender naming nothing does not thereby get everything. Unset (the default) adds no restriction beyond the CLI's own, because a coding subtask needs to read, edit and usually build, and too narrow a list just fails every dispatch for reasons the sender cannot see.
+- `fetch_missing_base` (default `false`) makes this machine a **runner**: rather than decline a base commit it does not hold, it fetches from `fetch_remote` (default `origin`) and serves the subtask. This is what turns an idle pool into a working one — a runner tracking `origin` always has the commit, where a laptop on an unpushed branch declines every dispatch. It adds **no trust**: the fetch targets the remote this checkout is already configured with, never anything the dispatch supplied, and a commit that is not on that remote still declines. Off by default because on a person's machine a peer's dispatch should not cause a fetch in a repository they are working in.
+- `local_parallel` is this host's own share when *it* orchestrates a distributed run.
+- Every dispatch — accepted or declined — appends a record to `~/.car/fleet-work.jsonl`, carrying the **peer's verified key fingerprint** (`peer`), the run and subtask ids, the repository root commit, the outcome and its reason. The fingerprint comes from the request signature, never from anything the dispatch body claims about itself; a dispatch the transport cannot attribute is refused outright rather than run anonymously.
+- **FFI**: `fleetWorkerSet(acceptsWork?, repos?, maxParallel?, localParallel?)` (Node) / `fleet_worker_set(accepts_work=None, repos=None, max_parallel=None, local_parallel=None)` (Python).
 
 ### coder
 
@@ -4125,7 +4703,7 @@ terminal transitions (unless `keep_workspace_on_failure` is set — see below �
 in which case a `failed` session's worktree is retained for postmortem).
 
 **Operator config (`~/.car/coder.toml`)** — an optional, tolerant TOML file the
-operator can drop next to the coder state dir to tune three knobs. A missing
+operator can drop next to the coder state dir to tune a handful of knobs. A missing
 file, a missing `[coder]` table, or any missing/empty/zero key falls back to
 the documented default; a malformed file is logged and treated as absent (the
 daemon never fails to boot over it). `CAR_CODER_CONFIG` overrides the path (for
@@ -4136,6 +4714,9 @@ tests/embedders), mirroring `CAR_CODER_STATE_DIR`.
 engine_preference = ["claude-code", "codex", "gemini"]  # external/foreman delegation order
 keep_workspace_on_failure = false                        # keep the worktree for postmortem
 default_max_iterations = 8                               # coder.start fallback when max_iterations omitted
+model = "parslee/reasoning"                              # session model pin; coder.start's `model` overrides
+max_sessions = 200                                       # session-snapshot retention; 0 = unlimited
+max_session_age_days = 30                                # 0 = unlimited
 ```
 
 - `engine_preference` — the order in which a *ready* external CLI is chosen for
@@ -4148,10 +4729,245 @@ default_max_iterations = 8                               # coder.start fallback 
   `workspace_path`. Default `false` (reap, same as every other terminal state).
 - `default_max_iterations` — the iteration cap `coder.start` uses when the
   request omits `max_iterations`. Default `8`; a value of `0` is ignored.
+- `model` — pins the session's inference model; `coder.start`'s `model` param
+  overrides it, and a blank value here is "unset", not "pin blank". Unset =
+  adaptive routing. A pin sets `strict_model`, so a pinned session does not
+  degrade to another model on an outage — it fails, which is what keeps a
+  paired A/B honest. The pin applies to whichever engine runs the session (the
+  native loop reasons on it; an `external:<agent_id>` session forwards it to
+  the CLI) — foreman is the exception, since its farmed workers run their own
+  configured backbones. Nothing validates the value against CAR's catalog,
+  deliberately: on the external rung it belongs to the CLI's namespace.
+  **The self-heal loop reads this key**: `heal.toml`'s `coder_model` is passed
+  as `coder.start`'s request pin, so leaving that unset makes THIS the model
+  heal's coder runs on, and heal's assembly check refuses the configuration if
+  it resolves to a review seat.
+- `max_sessions` / `max_session_age_days` (car#1310) — retention for the coder
+  state dir, GC'd at daemon boot (right after orphan adoption, beside the
+  equivalent `[runs]` pass for run traces) **and thereafter amortized onto
+  `coder.start`, at most hourly** (car#1346's sibling, car#1339). Boot-only
+  meant the effective bound was `max_sessions` plus everything created since
+  the last start, and on a daemon that supervises agents for weeks the age cap
+  never fired between restarts at all.
+
+  The mid-lifetime sweep differs from boot's in two ways. It skips any id the
+  in-memory session registry still holds — deleting a snapshot under a live
+  entry does not free anything, it pins that entry in memory forever, because
+  the in-memory prune reads a missing snapshot as "keep the entry rather than
+  lose the session". And it does **not** sweep orphan journals: a CONCURRENT
+  `coder.start` registers itself after the sweep has read the live set, then
+  emits its first event — which is what opens the journal — so it has a
+  journal, no snapshot yet, and no entry in the set the sweep is holding. A
+  snapshot caught in that race is saved by carrying a non-terminal state; a
+  journal carries no state at all, so nothing can exempt it. At boot the
+  registry is empty and neither restriction applies.
+
+  Because registered sessions are filtered out before the count cap ranks
+  anything, the mid-lifetime bound is `max_sessions` plus whatever is still
+  registered, not `max_sessions` flat. And `car code-task` writes into the same
+  directory from its own process, where there is no registry to consult, so
+  that population is still swept only at daemon boot.
+
+  Defaults `200` and `30`. A
+  nonzero collection is logged at `info` with both caps, because this policy is
+  new and applies retroactively — the first boot after an upgrade can delete
+  years of snapshots under caps the operator never chose.
+
+  **`0` disables a cap**, here and in `config.toml`'s `[runs]`. The two used to
+  disagree — run-trace retention read `0` literally, so `max_per_agent = 0` or
+  `max_age_days = 0` deleted every collectable run instead of keeping it — which
+  made carrying what you learned from one file to the other a silent data loss.
+  car#1338 settled it in favour of "no cap", the meaning `max_session_wall_secs`
+  already had.
+
+  Nothing pruned this directory before, so `<id>.json` and the larger
+  `<id>.events.jsonl` beside it accumulated for the life of the installation —
+  and `coder.list` pays a read, a parse and a `stat` for every session ever run
+  on every call. The journal is unlinked first and the collection counted on the
+  snapshot: only `*.json` is enumerated, so a journal whose snapshot went first
+  and whose own unlink then failed would be stranded permanently. A separate
+  boot-only pass sweeps journals already stranded that way — a `coder.start`
+  opens the sink's journal before anything persists a snapshot, so a start that
+  dies in between leaves one nothing else can reach.
+
+  Two exemptions, both about not destroying CAR's only record of something that
+  still exists. A session that is not terminal is never collected — the same
+  rule run-trace retention applies to an in-progress run, and it covers
+  `needs_approval`, which is deliberately non-terminal because a change waiting
+  on a human is not garbage however old it is. And a session whose `worktree` is
+  still a directory is never collected: the snapshot is the only thing that
+  names it, so dropping it would turn a worktree an operator kept
+  (`keep_workspace_on_failure`) into an unattributable leak. Adoption now reaps a
+  CRASH orphan's worktree when rewriting it to `failed`, which is what a live
+  terminal transition would have done — otherwise every daemon crash would add a
+  permanently exempt snapshot, journal and git checkout.
+
+  **`max_sessions` bounds what retention manages, not the directory.** The count
+  cap ranks only collectable sessions, so an exempt one neither dies nor consumes
+  a keeper slot — an install running `keep_workspace_on_failure` holds every
+  failed session's snapshot, journal and worktree on top of the cap, by its own
+  request, and a preserved `needs_approval` orphan is permanent by construction.
+
+  It also bounds what is RETAINED, not what one call reads: `coder.list` still
+  returns every retained session, so retention caps that cost at O(retained)
+  rather than removing it, and `max_sessions = 0` does not bound it at all. (The
+  run store answered its read arm separately, with a paged summary index.)
+  Bounding this response is a wire change with its own paging question and is not
+  folded in here. Note the board's 4 s poll is `coder.watch { renew: true }`,
+  which builds no summaries — the whole-directory scan fires on connect and on
+  resync, not on the poll.
+
+  Boot-only, matching the run store. The in-memory registry's equivalent
+  (car#1262) instead amortizes onto `coder.start`; doing the same for disk needs
+  a live-id filter to avoid deleting a snapshot underneath a registered session,
+  and is tracked as car#1339.
 
 #### `coder.start`
-- **Params**: `{ repo?: string, project?: string, intent: string, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, model?: string, repair_invokes?: number, transient_retries?: number, discussion_id?: string }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `8`). `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis.
-- **Returns**: `{ session_id, state: "contract_proposed", engine, worktree, contract: { description, checks: [{ name, command, expect_exit_zero, output_contains?, timeout_secs }] }, baseline, baseline_gates_nothing, journal_path, model }` — `journal_path` is the `car_eventlog` JSONL this session journals its actions to (per-tool `action_id`, `ActionFailed`/`TurnCompleted`/…), so a caller (e.g. `car coder-ab`) can attribute the run's failure mechanisms via `harness_adapt::diagnose` without guessing the state dir. `model` is the **effective** native-loop pin (the per-session request, else the config, else `null` = adaptive routing) — surfaced so a caller can verify the coder is on the intended backbone rather than silently falling back to a local model.
+- **Params**: `{ repo?: string, project?: string, intent: string, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, model?: string, repair_invokes?: number, transient_retries?: number, distributed?: boolean, discussion_id?: string }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `8`). `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis.
+- **Returns**: `{ session_id, state: "contract_proposed", engine, worktree, contract: { description, checks: [{ name, command, expect_exit_zero, output_contains?, timeout_secs }] }, baseline, baseline_gates_nothing, journal_path, model }` — `journal_path` is the `car_eventlog` JSONL this session journals its actions to (subject to the coder state dir's retention — see `max_session_age_days` above; consume it before the session ages out) (per-tool `action_id`, `ActionFailed`/`TurnCompleted`/…), so a caller (e.g. `car coder-ab`) can attribute the run's failure mechanisms via `harness_adapt::diagnose` without guessing the state dir. `model` is the **effective** native-loop pin (the per-session request, else the config, else `null` = adaptive routing) — surfaced so a caller can verify the coder is on the intended backbone rather than silently falling back to a local model.
+- **`distributed`** (car#1243, default `false`) farms this session's subtasks
+  across every reachable CAR instance that can serve the repository, instead of
+  this machine alone. It applies to the **`foreman` engine only** — nothing else
+  decomposes a goal into independent subtasks, and a subtask is the unit a peer
+  can be handed. Asked for on any other engine, the session runs locally and
+  emits a `foreman: "not_distributed"` event naming the engine that ran, rather
+  than silently ignoring the flag: a run that quietly drops it is
+  indistinguishable from one that distributed and found no peers.
+  - Off by default and never inferred by `auto`, because distribution spends
+    agent quota on other people's machines.
+  - The merge-verify **decision** does not move. A peer edits its own worktree
+    and returns a patch; this host applies it, runs the union gate against the
+    session's `OutcomeContract`, and decides, and delivery stays here too. A
+    peer cannot widen what is accepted.
+  - It **can** cause code to run here, and that is inherent to gating a patch
+    rather than new in this change: verifying a peer's patch executes the
+    repository's own build and test commands locally, so a `build.rs`, a
+    proc-macro, or a test harness in that patch runs on the orchestrating host
+    before any human sees a diff. Enrol only peers you would let run code on
+    this machine — which is what enrolment already means (`fleet::serve` is an
+    operator grant, limited to named repositories, audited per dispatch).
+  - It offloads the **coding CLI**, not the build. Every subtask's regression
+    check and the union contract run here, so a machine that cannot build this
+    repository is not made able to by distributing it.
+  - `workers` restricts placement to named instances, mirroring
+    `foreman.run { workers }`; omitted means every instance that can serve the
+    repository.
+  - The pool is assembled inside the spawned run task, not at `coder.confirm`
+    — it is a network round-trip per peer, and doing it at confirm made
+    `coder.confirm_contract` block on the inventory timeout while the session
+    was already `Running` with no task handle. A `foreman: "pool"` event
+    reports which instances joined and `degraded` names why any were left out.
+    An unreachable peer slows a run; it never refuses one, since the pool
+    always contains this host.
+
+    `pool_workers` on the session is that membership, PERSISTED (car#1346).
+    The event reaches only a subscriber that was attached when it fired, and
+    `workers` above is the operator's restriction filter rather than what the
+    filter resolved to — so before this there was no durable record of which
+    machines a run actually went to. It is written before any subtask runs,
+    which is what lets it answer that question for a run that was cancelled,
+    crashed, or is still going.
+  - **Where each subtask actually ran** is recorded (car#1322), as TWO records
+    that answer two different questions.
+
+    `placements` on the session is the DIAGNOSTIC ledger: every subtask a worker
+    was handed, as
+    `{ subtask_id, worker, remote, failed_attempts: [{ worker, error }] }` — the
+    same shape `foreman.run` reports, from the same type. Failed attempts belong
+    here rather than in a run-level degradation note: a subtask that failed on
+    one peer and succeeded on another produced a patch whose author is not the
+    machine the plan first chose.
+
+    `integrated_subtasks` is what actually LANDED in the worktree —
+    `{ subtask_id, files }`, the files read off each applied patch by the gate's
+    own parser. **Only this may back a claim about the delivered commit.** A
+    placement is recorded when a worker RETURNS, which is before the per-patch
+    gate rules on what it produced, so a fully populated ledger is compatible
+    with zero fleet-authored hunks: `NothingAccepted` and `IntegrationRejected`
+    both fall all the way back to a locally-authored diff. Crediting a peer there
+    would be a false attribution — worse than the missing one this closes.
+    `repaired_locally` covers the milder version, where foreman's union was
+    integrated and the native loop then repaired on top of it.
+
+    All three are on `coder.get`, and a `foreman: "placements"` event carries the
+    ledger plus the integrated count live.
+
+    A `foreman: "gate"` event narrates each per-patch merge verdict live —
+    `decision: "accepted" | "rejected"` plus the gate's own evidence (`subtask`,
+    `build_test`, containment and semantic-conflict counts, and `reasons` on a
+    rejection).
+
+    The same verdicts are written to the session's `<id>.events.jsonl` under
+    `gate_accepted` / `gate_rejected`, the event kinds the gate itself records
+    (car#1321). The report-only `foreman.run` path already audited these because
+    it shares a session runtime's log; the delivery path built a fresh one that
+    was dropped when the run ended, so the gate seeing peer-authored patches was
+    the one leaving no record.
+
+    **The journal record is not derived from the event.** Do not read the two as
+    one thing with two spellings. Events on this stream include everything a
+    supervised coding CLI writes to stdout, so a `foreman: "gate"` event is
+    narration and a client should treat it as such; the journal record is
+    written directly by the foreman loop, which is what makes it an audit record
+    for patches authored on machines this host does not control (car#1243).
+
+    The journaled kind is binary while the gate's verdict is not: an
+    inconclusive gate (verify timed out, or not configured) is not an
+    acceptance, so it journals as `gate_rejected` carrying
+    `outcome: "inconclusive"`. Read `outcome`, not just the kind, to tell "we
+    checked and it failed" from "we could not check". The `foreman: "placements"`
+    event also carries
+    `quarantined: [string]` — peers dropped for the rest of the run, the same
+    set `foreman.run` reports under `pool.quarantined` (car#1323). It is NOT
+    persisted on the session: it describes this run's pool rather than the work,
+    and each placement's `failed_attempts` already carries the per-subtask
+    evidence.
+
+    **`coder.cancel` keeps the ledger** (car#1346). Cancel aborts the loop task
+    at its next await, so the fold at the end of the run never happens — the
+    pool dropped and the record of where the work went was gone for exactly the
+    run an operator wants a receipt for, the one they stopped because it looked
+    wrong. The pool is now reachable from the session entry and cancel drains it
+    before the state transition (the transition is what writes the snapshot, so
+    a drain after it would never reach disk). Cancel writes ONLY `placements` —
+    it cannot reach the integrated set, and guessing one would be the false
+    attribution above.
+
+    **The cancel-time ledger is a floor, not a census.** A placement is recorded
+    when a worker RETURNS, and foreman runs a level under `join_all` rather than
+    spawning, so aborting drops every in-flight future before it records: the
+    subtasks running at the moment an operator gives up are precisely the ones
+    missing. `pool_workers` is what answers "which machines was this farmed
+    to?" completely, which is why it is persisted up front rather than folded at
+    the end. Each serving peer also appends its own audit row keyed by the same
+    `run_id`, so the peer side can name what the orchestrator never saw finish.
+
+    The ledger itself is in memory until a drain, so a killed daemon still loses
+    it — this closes the cancel path, not the crash path.
+
+    The integrated set also goes into the **delivered commit**, as
+    `CAR-Placement: subtask=… worker=… remote=… files=…` trailers. The commit is
+    the artifact a reviewer of a distributed run reads — `coder.approve_merge`
+    publishes a `car/coder/<id>` branch, not a pull request — and its body opens
+    "Authored by CAR Coder.", which is wrong on its own for work authored on
+    several machines. Same argument as car#1263 one level up: a caveat has to
+    reach the thing it is read on, not only a status call. Trailers rather than
+    prose so `git interpret-trailers` and `%(trailers:key=CAR-Placement)` can
+    read them; not `Co-authored-by:`, which GitHub resolves to user accounts.
+    Values are control-character-stripped and length-capped, and the ledger's
+    failure strings are deliberately **not** in the commit at all — they carry a
+    peer's verbatim response body and git stderr, which in the last paragraph of
+    a `git commit -m` is a trailer-forgery seam and, at NUL or at length, makes a
+    green run undeliverable.
+
+    A local run's commit body is byte-identical to before, and a distributed run
+    whose every peer was excluded — the pool always seeds the local worker — adds
+    no trailers rather than announcing a fleet that did not participate.
+
+    Recorded when the loop completes. `coder.cancel` aborts the task, so a
+    cancelled run records nothing; car#1346 tracks making the ledger survive
+    that.
+
 - **Red-green baseline** (car#707): before returning, the contract is evaluated once against the **unmodified** worktree. `baseline` is a `CheckResult[]` in check order, and `baseline_gates_nothing` is true when *every* check already passed — meaning the contract verifies nothing for this task and there is nothing to turn red-to-green. Only an all-green baseline sets the flag: individual passing checks are ordinary (a refactor's checks are green before and after by design), so flagging one would abort sessions over a non-fault. `validate()` already rejects contracts that gate nothing *structurally* (assertion-less checks, toolchain-only no-ops); this catches the semantic case that clears validation. Skipped for `agent`-kind projects, whose synthesized check is an in-daemon scenario run rather than a shell command. Costs one contract evaluation, bounded by the checks' own `timeout_secs`. The same results are pushed as a `coder.contract_baseline` event. The baseline is a vacuity check, not a captured measurement a later evaluation compares against — every evaluation point sits before delivery, and none of them receives the baseline results, so a before/after claim about a live system is not expressible in a contract even though an individual check may reach one. See "What a contract cannot assert" in [`docs/car-code-task.md`](car-code-task.md).
 - **Visible while drafting.** The session is registered at `created` **before**
   contract derivation begins, so it appears in `coder.list` / `coder.watch` (and
@@ -4217,7 +5033,11 @@ type; the rest is additive.
   "worktree": "/abs/path" | null,     // only when the directory still exists on disk
   "project": "slug" | null,
   "result_branch": "car/coder/ab12cd34" | null,
-  "model": "…" | null,
+  "model": "…" | null,                // the pin the CALLER asked for
+  "authored_by": ["…"],               // every model that actually completed a turn,
+                                      // distinct, first-seen order; `[]` for a
+                                      // foreman/external session (no native turns)
+  "distributed": false,               // the session farmed subtasks across the fleet
   "discussion_id": "disc-…" | null,
   "next_seq": 42 | null               // live sessions only; the coder.subscribe cursor
 }
@@ -4417,6 +5237,22 @@ shapes**; the already-happened information arrives in additive keys there.
   is the whole stream. Only an id with neither a live entry nor a snapshot is an
   error. `coder.unsubscribe` on a non-live session is a no-op returning
   `{ ok: true }`.
+- A **finished** session leaves the in-memory registry once it has been terminal
+  for 30 minutes, so a long-lived daemon does not hold every event of every
+  session it has ever run (car#1262). It keeps appearing in `coder.list` — that
+  merges persisted snapshots from disk — and subscribing to it still succeeds;
+  what expires is `replay_available`, which becomes `false` with
+  `events_replayed: 0`, the same shape as a session that outlived a daemon
+  restart. This bounds MEMORY only: nothing prunes the snapshots themselves, so
+  `coder.list` still reads every session ever run.
+- The sweep runs when a session is **started**, not on a timer, so a daemon that
+  has stopped starting sessions keeps its last generation of finished ones. Two
+  cases are never collected however old: a session that is not terminal
+  (`NeedsApproval` is deliberately not terminal — it is waiting on a human), and
+  a terminal session with no snapshot on disk, since that entry is the only copy
+  left. `coder.cancel` and friends answer a collected session from its snapshot,
+  so an id that merged an hour ago still reports as merged rather than as
+  unknown.
 **`coder.diff_ready` payload** (car#706): `{ stat, patch, patch_truncated: boolean, patch_full_bytes: number, changed_paths: number, overlap_disclosure: string | null, contract_overlap: [{ check, paths }] }`. `stat` is the full `git diff --cached --stat`, never truncated. `patch` is tail-capped to `~/.car/coder.toml`'s `approval_patch_bytes` (default 512 KB, previously a hardcoded 32 KB), and `patch_truncated` says so as a field rather than only via the `…[truncated]…` marker inside the string — a reviewer must be able to tell they are approving against a partial diff without string-matching. `changed_paths` counts every path the diff touches, including BOTH endpoints of a rename — one moved file is two paths, because a file moved out of a directory is a change to that directory, and reporting only the destination made a rename look like a creation. `overlap_disclosure` is the rendered sentence, or `null` when nothing overlaps; it is on the wire so every surface prints the same words rather than hand-rolling copies that drift. `contract_overlap` lists contract checks whose commands execute a path this diff modified: **disclosure, never denial**, since editing tests is frequently the task and `coder::policy` deliberately does not block test-adjacent edits. Path extraction from a shell command is heuristic and biased toward flagging — a false positive costs one line a human dismisses, a false negative silently restores the gap.
 
 - Subscribes this connection to the session's `coder.event` stream. Buffered events with `seq >= from_seq` are replayed before live delivery (no gap, no dup), so a reconnecting client resumes from its cursor. Subscriptions are per-connection and dropped on disconnect; the session keeps running.
@@ -4585,6 +5421,7 @@ A **project** is a named, CAR-managed git repository under `~/.car/projects/<slu
 - `declagents.get` — **Params** `{ id: string }`. **Returns** the full `DeclarativeAgentSpec`.
 - `declagents.remove` — **Params** `{ id: string }`. **Returns** `{ removed: bool }`.
 - `declagents.set_enabled` — **Params** `{ id: string, enabled: bool }`. **Returns** `{ ok: true }`. A disabled agent stays registered but refuses to run.
+- **Admission on `declagents.invoke` / `.route` / `.route_split`.** All three reach the same in-daemon declarative executor, so all three pass the admission `agents.chat` and `agents.message` apply when the caller is an *agent* rather than the host: the per-recipient channel guard (dedupe inside 10s, 20 per sender per minute) and the `AgentPermissionPolicy` decision at the `read_only` tier. Gating chat while leaving these open would just make them the way around it. For `route` and `route_split` the check is applied to the **chosen** agent, not the requested need, so a routed run is graded against the agent that actually ran. The host is exempt.
 - `declagents.invoke` — **Params** `{ id: string, input: string }`. **Returns** `{ output, turns, tool_calls, error?, goal? }`. Runs the agent on `input` entirely in-daemon (no process), bounded by a turn cap, with file tools rooted in an ephemeral scratch workspace. When the spec has a `goal`, CAR runs `goal.check` in that same scratch workspace after each pass, re-drives the agent with the verifier reason until the check exits 0, and returns `goal: { check, max_iterations, iterations, met, grounded, last_exit_code, last_reason }`; if the check never passes, `error` is `goal_not_met ...`.
 - `declagents.route` — **Params** `{ need: string, invoke?: bool, from?: string, visited?: string[] }`. **Returns** `{ chosen, candidates: [{ id, name, score, similarity, success_rate, edge_weight }], next_visited, invoked, result? }`. Capability-similarity routing: embeds `need` (query-side) and each eligible agent's capability surface (name + identity + standing goal + tools), then ranks by `score = 0.7·similarity + 0.3·success_rate + 0.2·edge_weight` (the AgentNet milestone, see `docs/proposals/agentnet-self-organization.md`). `success_rate` is the agent's learned success prior: the Beta(success+1, fail+1) posterior UCB (the `car-memgine::utility` substrate) over the raw success/failure counts persisted in `~/.car/routing.json` — folded across BOTH the agent-id key (outcomes recorded by `declagents.route`/`invoke`) and the agent's `agentdns://local/agent/<id>` identifier key (outcomes recorded by `discovery.report`), so `declagents.route` and `discovery.resolve` score the same agent identically (one agent, one score — H2 Part 2, `docs/proposals/h2-builder-discovery-acceptance.md`). The cold-start posterior mean is exactly the neutral `0.5`; the persisted EMA field remains in `declagents.routing_stats` for display but no longer drives ranking. Similarity dominates so cold-start ranking is correct, the prior nudges toward agents that actually finish work. `similarity` itself blends cold-start similarity (need vs the agent's static capability text) with learned similarity (need vs the agent's reinforced capability centroid, `0.6·cold + 0.4·learned`) once the agent has succeeded at least once — so an agent's effective profile drifts toward the needs it actually handles well. **Forward op:** when `from` (the delegating agent) is set, it is excluded from candidates and a learned directed edge `from → candidate` adds `edge_weight` to the score — so a proven delegation path re-ranks peers. `visited` is the set of agents already on the routing path (DAG/cycle guard): all are excluded, and routing refuses the next hop once 4 agents are already on the path (a chain runs at most 4 agents before terminating). To walk a Forward chain, the next hop passes `from = chosen` and `visited = next_visited` (the response echoes `next_visited = visited + [chosen]`, so each hop strictly grows the path and the hop cap always terminates it). `score` is an unbounded ranking score (a fully-forwarded agent can exceed 1.0), not a probability — only the order across candidates is meaningful. `candidates` are the top 3 ranked descending. With `invoke: true`, the top-ranked agent is run on `need` via the same governed path as `declagents.invoke`; its outcome is recorded, the `from → chosen` edge is reinforced/weakened by that outcome, and its `{ output, turns, tool_calls, error?, goal? }` lands in `result`. Errors if no eligible declarative agents exist.
 - `declagents.route_split` — **Params** `{ need: string, invoke?: bool, max_subtasks?: number, decomposition_mode?: "vanilla"|"sad", sad_hints?: number, sad_iterations?: number, sad_convergence_jaccard?: number }`. **Returns** `{ subtasks: [{ subtask, chosen, score, result? }], count, invoked, decomposition_mode, rounds, initial_subtasks, final_subtasks, hints, hint_jaccard? }`. AgentNet's **Split** op as a fan-out: a planner model decomposes `need` into independent subtasks (`max_subtasks` clamped to [1, 10], default 5), then each subtask is routed to its best-matching agent by the same capability-similarity ranking as `declagents.route`. `decomposition_mode` defaults to `"vanilla"` for compatibility. `"sad"` enables Skill-Aware Decomposition: CAR decomposes once, retrieves candidate agent hints, re-decomposes with those hints, and stops early when hint-set Jaccard reaches `sad_convergence_jaccard` (default 0.6; hints clamp [1, 50], iterations [1, 3]). Any decomposition failure falls back to the last valid subtasks or the whole `need`. A per-subtask infra failure is captured into that subtask's `result.error` and the fan-out continues. **Cost:** `invoke: true` runs up to `max_subtasks` full agent loops sequentially; SAD adds extra decomposition/embedding work.
@@ -4936,6 +5773,16 @@ Clients that require this exact override surface must include `permissions.agent
   not choose one for you behind a refusal.
 - **Local models report `usage` too.** The in-process MLX and Candle paths report the post-truncation prompt length and the number of tokens they sampled; the mlx-vlm CLI path reports the counts the CLI prints (image patches included). Both cache fields are always `0` — on-device inference has no remote prompt cache. `usage` is `null` only when nobody could produce a count: Apple FoundationModels (the framework exposes none), a delegated runner that emits no `usage` stream event, and an mlx-vlm build whose performance summary doesn't parse. `null` is deliberate rather than a zeroed struct — a consumer summing `total_tokens` can't distinguish a fabricated `0` from a real "this used no tokens", so treat `null` as "estimate it yourself" (car#795).
 
+#### `infer.cancel`
+- **Params**: `{ inference_id: string }`, where `inference_id` is the opaque server-assigned id emitted when the inference starts.
+- **Returns**: `{ inference_id, status }`, where `status` is `already_terminal`, `cancelled_confirmed`, `termination_unconfirmed`, `deadline_exceeded_confirmed`, `deadline_exceeded_unconfirmed`, or `unknown`.
+- Requires the optional `infer.cancel.v1` capability to have been negotiated by `server.handshake`. The control is scoped to this WebSocket session. A confirmed status is returned only after an exact backend acknowledgement; otherwise the status remains evidence-honest rather than claiming termination.
+
+#### `infer.deadline`
+- **Params**: `{ inference_id: string, timeout_ms: integer }`; `timeout_ms` must be 1–600000.
+- **Returns**: the same `{ inference_id, status }` envelope and status vocabulary as `infer.cancel`.
+- Requires the optional `infer.deadline.v1` capability to have been negotiated by `server.handshake`. The relative deadline is scoped to this WebSocket session; reaching it requests termination and reports whether the backend acknowledged it.
+
 #### `infer_stream`
 - **Params**: same `GenerateRequest` shape as `infer` (including the `context_query` and `memory_intervention` conveniences).
 - Explicit-model pinning is identical to `infer`: a non-null `model` forces `params.strict_model: true`, overriding `false`, and the selected provider's error is surfaced without adding CAR's on-device last-resort fallback. Omit `model` for adaptive fallback.
@@ -5005,7 +5852,17 @@ Broadcast to subscribers after `host.subscribe`.
   }
 }
 ```
-`kind` values: `agent.registered`, `agent.unregistered`, `agent.status_changed`, `approval.requested`, `approval.resolved`, `host.notification`, `device.registered`, `device.updated`, `browser.signin_needed`, `browser.signin_resolved`.
+`kind` values: `agent.registered`, `agent.unregistered`, `agent.status_changed`, `approval.requested`, `approval.resolved`, `approval.resolve_requested`, `approval.self_resolved`, `host.notification`, `device.registered`, `device.updated`, `browser.signin_needed`, `browser.signin_resolved`.
+
+`approval.self_resolved` fires when the agent an approval was raised for is the
+one that resolved it — the requester approving its own request. Payload:
+`{ approval_id, agent_id, action, resolution }`. It is emitted alongside
+`approval.resolved`, not instead of it: the resolution **is** applied. The
+separation of requester from overseer is documented on
+`CreateHostApprovalRequest.system_level` but has never been enforced, so this is
+the observability half of a warn-then-enforce rollout — a later release refuses
+the resolve instead. If you see this event, something is approving its own
+work.
 
 #### `browser.signin_needed` / `browser.signin_resolved`
 
@@ -5139,10 +5996,41 @@ not the model behind it. Emitted at most once per **phase** — contract
 derivation, each contract revision, and the run loop announce independently, and
 a session that degrades in more than one of them emits more than one; the guard
 is against narrating every routing decision inside a phase, not against a second
-phase reporting a degrade the operator has not seen resolved. Currently emitted
-only when the skipped lane's credential was **rejected**: the run keeps working
-on a fallback backbone, so without this event an operator whose sign-in lapsed
-sees a healthy run on a model they never chose. `reason` names the remedy),
+phase reporting a degrade the operator has not seen resolved. Emitted only when
+the skipped lane's credential was **rejected**: the run keeps working on a
+fallback backbone, so without this event an operator whose sign-in lapsed sees a
+healthy run on a model they never chose, and `reason` names that remedy. A
+degrade with another cause — a rate limit, a timeout — is deliberately NOT
+announced here, because this event's wording tells the operator to sign in and
+sending someone to fix a credential that is not broken is worse than saying
+nothing.
+
+Those degrades are not lost: a backbone change, whatever the cause, is written
+to the session journal as `model_fallback` with `from`, `to` and a `reason` of
+`credential_rejected` / `credential_absent` / `rate_limited` / `quota_exhausted`
+/ `timed_out` / `failed`. One row per HOP of a fallback chain — `from` is the
+candidate skipped and `to` is the next one tried, so a 1→2→3 chain is two rows,
+not one summary.
+
+Repeats are collapsed **consecutively**, not globally: a condition that persists
+across fifty turns writes one row, but a lane that rate-limits, recovers, and
+rate-limits again later writes a second — otherwise the journal could not tell
+"changed once, early" from "flapped all run", which is the question it exists to
+answer. The event stays latched per phase; the journal is
+the surface to read for why a run's results changed mid-session (car#1351).
+
+Two limits worth knowing before counting rows. A `reason` is classified from the
+runtime's own typed error, so `credential_rejected` covers both a lapsed Parslee
+session and a provider refusing an API key — broader than the sign-in
+announcement above, deliberately, because those need different remedies.
+(`quota_exhausted` is likewise kept apart from `rate_limited`: an empty balance
+does not clear by waiting.) A statusless transport failure — connection refused,
+DNS, TLS — is `failed` rather than `timed_out`, since the runtime cannot tell
+those apart from a real deadline. And a
+candidate the **router never offered** produces no row at all: rate-limit
+exclusion and the circuit breaker filter the candidate list before dispatch, so
+a lane dropped that way is invisible here. Read an absence of rows as "nothing
+was attempted and passed over", not as "the backbone did not change"),
 `iteration_started {n, max}`,
 `budget_exhausted {reason, elapsed_secs, iterations}` (the session hit its
 wall-clock ceiling and the next iteration was not admitted; the session ends in

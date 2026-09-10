@@ -168,7 +168,7 @@ On every state transition or artifact append, the bridge POSTs the current `Task
 
 ## Authentication
 
-The default listener has **no auth.** This is correct for local development and for deployments behind an authenticating reverse proxy. Direct internet exposure is a Bad Idea.
+The listener `car-server` starts by default is **peer-authenticated** — ed25519 signatures from CAR daemons this host already trusts — and messaging-only; see *Two listeners* above. The `a2a.start` listener and the `build_router` embedder path have **no auth**, which is correct for local development and for deployments behind an authenticating reverse proxy. Direct internet exposure is a Bad Idea.
 
 A2A's spec defines API-key, HTTP-basic, OAuth2, OIDC, and mTLS schemes; declaring them in the Agent Card and enforcing them is the embedder's responsibility for now.
 
@@ -262,8 +262,10 @@ the same `taskId`.
 
 ## Discovery and multi-agent layout
 
-The default listener binds at `127.0.0.1:9101` and serves the Agent Card at
-the spec's canonical well-known path:
+The default listener binds this host's primary LAN address at port `8731`
+(`DEFAULT_A2A_PORT`), not loopback — being reachable by peers is the whole
+point of it — and serves the Agent Card at the spec's canonical well-known
+path:
 
 ```
 GET http://127.0.0.1:9101/.well-known/agent-card.json
@@ -294,6 +296,66 @@ against `car-a2a` because the wire shape is spec-compliant.
 The card-serving path checks the `Authorization` header against the
 configured auth scheme **before** dispatching to the handler (see
 `Authentication` below). A 401 / 403 fires before any CAR tool runs.
+
+## Two listeners, and only one of them dispatches tools
+
+CAR runs the A2A surface in two configurations, and they differ in what an
+authenticated caller is allowed to *ask for*:
+
+| Listener | How it starts | Auth | Tool `data` parts |
+|----------|---------------|------|-------------------|
+| Peer-authenticated | `car-server` starts it by default, bound to this host's LAN address | ed25519 peer signature; only keys this host already trusts | **Refused** (`-32600`) |
+| `a2a.start` | An operator explicitly calls the `a2a.start` JSON-RPC method | `NoAuth` — **not configurable**; `StartParams` has no auth field and `build_router` hardcodes it | Dispatched, as documented above |
+
+The peer-authenticated listener is **messaging-only**: a message carrying a
+`data` part with a `tool` key is refused before a task is created, and its agent
+card advertises no skills because its runtime holds no tool registry.
+
+Be precise about what that leaves. This listener is a discovery beacon plus an
+acknowledgement stub. `car-server` wires no `ChatResponder` on it, so a text
+message is accepted and answered with the `"Acknowledged."` stub rather than
+routed to the flagship agent's loop — inbound peer text has no consumer yet.
+Routing it is the receiving-side broker's job, and that does not exist today.
+
+The reason is worth stating plainly, because the two questions are easy to
+conflate. A peer signature answers *who is calling* — it does not answer *what
+they may do*, and every gate that answers the second question (`CapabilitySet`,
+the authz pipeline, the daemon's admission path) sits on the WebSocket surface,
+not on this one. Since the listener binds a LAN interface with no flag, treating
+"a peer trusted enough to message this host" as "a peer that may run tools on
+this host" would collapse two very different grants into one. Adding a peer with
+`a2a.peers.add` grants the first and not the second.
+
+If you want a peer to drive tools on this host, `a2a.start` is the surface that
+does it — but read what you are getting first. It binds whatever address you
+pass with no loopback check, serves `NoAuth` with no way to change that, and
+registers the agent-basics filesystem tools. It is opt-in and operator-initiated,
+which is the only reason it is not the same defect described above; do not put it
+on an untrusted network.
+
+## What a verified peer identity puts on the record
+
+A request that passes peer authentication carries an `Identity` whose subject is
+`car-peer:<fingerprint>` and whose claims include `car_peer_key` — the caller's
+**full** base64 public key. The fingerprint is four bytes, right for a human
+comparing two values on screen and far too short to key a durable per-peer
+record on, so both travel.
+
+Note where the full key ends up, because it is a deliberate trade and not an
+obvious one. `Identity.claims` is copied into `proposal.context`'s
+`a2a_caller_verified` and into `RuntimeScope.claims`, which the executor writes
+onto every `ActionInvoked` event — so the key appears in the eventlog, and in
+`~/.car/peer-messages.jsonl` as an inbound row's `attested_by`. A public key is
+not a secret. It *is* a stable, un-rotating device identifier now written to two
+on-disk records that previously carried four bytes of hash. Peer *messages*
+never build a proposal, so the eventlog path is reached only by other traffic on
+that listener.
+
+The encoding is standard base64 (`+` and `/`, no padding), fixed by the string
+comparison `PeerTrust` performs against its trusted set. Anything that persists
+a record keyed on a peer principal depends on that staying put: switching to the
+URL-safe alphabet later would invalidate every such record silently, because a
+lookup miss reads as "new peer, no history" rather than as an error.
 
 ## Caller identity and state scoping
 

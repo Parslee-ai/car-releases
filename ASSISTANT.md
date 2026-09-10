@@ -1,7 +1,7 @@
 {% raw %}
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.52.1**. Check yours with `car --version`; if it
+> Describes CAR **0.53.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -423,6 +423,7 @@ emitter that builds it:
     "network": "none",
     "tier": "sandbox_edit",
     "root": "/work",
+    "mount": null,
     "fallback_notice": null
   },
   "elapsed_seconds": 12.4

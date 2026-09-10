@@ -32,6 +32,61 @@
  * `ws://127.0.0.1:9100`).
  */
 
+/** Agent-loop tool declaration. `timeoutMs` becomes the action budget. */
+export interface AgentToolSchema {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  timeoutMs?: number;
+}
+
+export interface AgentToolContext {
+  signal: AbortSignal;
+  timeoutMs?: number;
+}
+
+export type AgentTool = (
+  params: Record<string, unknown>,
+  context: AgentToolContext,
+) => unknown | Promise<unknown>;
+
+export type AgentOutcomeStatus =
+  | 'success' | 'partial_success' | 'done' | 'give_up' | 'timeout' | 'failure';
+
+export interface AgentOutcome {
+  status: AgentOutcomeStatus;
+  summary: string;
+  evidence: Array<{ kind: string; description: string; data: unknown }>;
+  metrics: {
+    turns: number;
+    tool_calls: number;
+    actions_succeeded: number;
+    actions_failed: number;
+  };
+  tools_called: string[];
+  timestamp: string;
+}
+
+/** Declarative input consumed by `car-runtime/agent-loop`. */
+export interface AgentLoopConfig {
+  agentId?: string;
+  agentName: string;
+  identity: string;
+  toolSchemas?: AgentToolSchema[];
+  tools?: Record<string, AgentTool>;
+  policies?: Array<[string, string, string?, string?, string?, string?]>;
+  defaultModel?: string | null;
+  maxTokens?: number;
+  maxTurns?: number;
+  targetOutcome?: string;
+  standingGoal?: string | null;
+  intervalSecs?: number;
+}
+
+export interface AgentLoopOptions {
+  maxTurns?: number;
+}
+
 /** Persistent runtime instance with state, memory, tools, and policies. */
 /**
  * Optional settings for `coderStart`. Every field is independently omittable;
@@ -59,6 +114,24 @@ export interface CoderStartOptions {
    */
   transientRetries?: number | undefined | null;
   /**
+   * Farm a **foreman** session's subtasks across every reachable CAR instance
+   * that can serve this repository, instead of this machine alone. The
+   * merge-verify gate and delivery stay on the orchestrating host — a peer
+   * returns a patch and this host gates it — so a distributed run still
+   * produces a gated pull request.
+   *
+   * Only the foreman engine decomposes a goal into subtasks, so any other
+   * engine runs locally and says so. Off by default: it spends agent quota on
+   * other people's machines.
+   */
+  distributed?: boolean | undefined | null;
+  /**
+   * Restrict placement to these instances by name. Empty or omitted means
+   * every instance that reports it can serve the repository. Ignored unless
+   * `distributed` is set.
+   */
+  workers?: Array<string> | undefined | null;
+  /**
    * A `coder.discuss` conversation this run was distilled from. Its agreed
    * constraints ride into contract derivation, so a rule stated once in the
    * discussion does not have to be restated in the intent, and the session
@@ -68,8 +141,40 @@ export interface CoderStartOptions {
   discussionId?: string | undefined | null;
 }
 
+export interface DaemonRpcError extends Error {
+  /** Numeric JSON-RPC error code returned by the daemon. */
+  code: number;
+  /** Daemon-provided diagnostic text. */
+  message: string;
+  /** Optional JSON-RPC error data returned by the daemon. */
+  data?: unknown;
+}
+
 export class CarRuntime {
   constructor();
+
+  /**
+   * Invoke any daemon JSON-RPC method with a JSON-encoded params value.
+   * `daemonCall` is the call-by-name escape hatch; use the typed wrappers as the primary API.
+   * The result is returned as JSON. Daemon rejections are `DaemonRpcError`;
+   * transport failures reject without a synthetic numeric code.
+   */
+  daemonCall(method: string, paramsJson: string): Promise<string>;
+
+  /** Host-management-token twin of `daemonCall`; the method allowlist remains enforced. */
+  daemonCallHostManagement(method: string, paramsJson: string): Promise<string>;
+
+  /** Register a server-initiated JSON-RPC request handler. */
+  registerDaemonHandler(
+    method: string,
+    handler: (paramsJson: string) => Promise<string>,
+  ): void;
+
+  /** Register a server-initiated JSON-RPC notification handler. */
+  registerDaemonNotificationHandler(
+    method: string,
+    handler: (paramsJson: string) => void,
+  ): void;
 
   // --- Memory persistence ---
 
@@ -142,7 +247,54 @@ export class CarRuntime {
     adapter?: string,
     verifyCommand?: Array<string>,
     unionVerifyCommand?: Array<string>,
-    maxAttempts?: number
+    maxAttempts?: number,
+    distributed?: boolean,
+    workers?: Array<string>
+  ): Promise<string>;
+
+  // --- Fleet ---
+
+  /**
+   * This instance's agents, capabilities, and models — one `InstanceInventory`
+   * JSON object. The same report peers receive over A2A, plus this session's
+   * own registered tools and learned skills.
+   */
+  fleetInventory(): Promise<string>;
+
+  /**
+   * Every agent, capability, and model across this daemon and every reachable
+   * CAR instance, folded so one row names every instance that offers it.
+   * `includeRemote` defaults to true. `timeoutMs` bounds each peer
+   * individually: a sleeping machine appears as an unreachable row carrying the
+   * reason, never a missing one. Returns `FleetComposite` JSON.
+   */
+  fleetComposite(includeRemote?: boolean, timeoutMs?: number): Promise<string>;
+
+  /** Whether this instance takes farmed-out coding work. `{ config, profile }` JSON. */
+  fleetWorkerGet(): Promise<string>;
+
+  /**
+   * Enroll (or withdraw) this instance as a fleet worker. **Operator-only, and
+   * a real grant**: enrolling lets a trusted peer run a coding CLI against the
+   * checkouts named in `repos`. Only the fields supplied change.
+   *
+   * The limits belong to this machine, not the caller: `dispatchesPerHour`
+   * budgets one peer's spend (concurrency is not a spend bound),
+   * `maxSubtaskSecs` caps the timeout a sender asks for, and `allowedTools` is
+   * intersected with whatever the dispatch requests. `fetchMissingBase` makes
+   * this machine a **runner**: rather than decline a base commit it lacks, it
+   * fetches from `fetchRemote` (its own, default `origin`).
+   */
+  fleetWorkerSet(
+    acceptsWork?: boolean,
+    repos?: Array<string>,
+    maxParallel?: number,
+    localParallel?: number,
+    dispatchesPerHour?: number,
+    maxSubtaskSecs?: number,
+    allowedTools?: Array<string>,
+    fetchMissingBase?: boolean,
+    fetchRemote?: string
   ): Promise<string>;
 
   // --- Tools & policies ---
@@ -152,7 +304,8 @@ export class CarRuntime {
 
   /**
    * The tools currently registered on this runtime, as a JSON array of full
-   * `ToolSchema` objects sorted by name.
+   * `ToolSchema` objects sorted by name. Every schema includes its runtime-
+   * assigned `source` (`builtin|user_defined|subprocess|mcp`).
    *
    * Counterpart to `registerTool` / `registerToolSchema`, which had none: a
    * caller could add tools but never ask what was actually in effect, so a
@@ -296,7 +449,8 @@ export class CarRuntime {
   // --- Memory / Facts (graph-backed) ---
 
   /**
-   * Add a fact. `kind` is typically "pattern" or "constraint".
+   * Add a fact. `kind` is typically "pattern" or "constraint". Optional
+   * `factId`, ordered `tags`, and `source` are preserved by the daemon.
    *
    * In Daemon mode, rejects with the daemon-unreachable error
    * instead of silently returning 0 (#146).
@@ -306,9 +460,16 @@ export class CarRuntime {
     body: string,
     kind: string,
     confidence?: number | null,
+    factId?: string | null,
+    tags?: string[] | null,
+    source?: string | null,
   ): Promise<number>;
 
-  /** Query facts via graph spreading activation. Returns a JSON array. */
+  /**
+   * Query facts via graph spreading activation. Returns a JSON array whose
+   * rows include `fact_id` (null for graph nodes without one), `subject`,
+   * `body`, `kind`, `confidence`, `tags`, and `source`.
+   */
   queryFacts(query: string, k?: number | null): string;
 
   /**
@@ -462,7 +623,37 @@ export class CarRuntime {
   syncStatus(requestJson: string): Promise<string>;
   /** `sync.append` — record an op on any surface: `{ surface, payload, scope? }` (B6). */
   syncAppend(requestJson: string): Promise<string>;
-  /** `agents.peers` — the agents this runtime can message, from the daemon's live connection table. */
+  /** `host.agents` — current host agent registry snapshot. */
+  hostAgents(): Promise<string>;
+  /** `host.events` — recent host events, newest last; omit `limit` for the daemon default. */
+  hostEvents(limit?: number): Promise<string>;
+  /** `host.approvals` — pending host approvals. */
+  hostApprovals(): Promise<string>;
+  /** `host.register_agent` — register an agent on this connection. */
+  hostRegisterAgent(requestJson: string): Promise<string>;
+  /** `host.unregister_agent` — unregister an agent owned by this connection. */
+  hostUnregisterAgent(requestJson: string): Promise<string>;
+  /** `host.set_status` — publish status for an agent owned by this connection. */
+  hostSetStatus(requestJson: string): Promise<string>;
+  /** `host.register_device` — register a device on this connection. */
+  hostRegisterDevice(requestJson: string): Promise<string>;
+  /** `host.update_device` — update a device owned by this connection. */
+  hostUpdateDevice(requestJson: string): Promise<string>;
+  /** `host.devices` — current host device registry snapshot. */
+  hostDevices(): Promise<string>;
+  /** `host.notify` — emit a user-facing host notification. */
+  hostNotify(requestJson: string): Promise<string>;
+  /** `host.request_approval` — request approval for a gated action. */
+  hostRequestApproval(requestJson: string): Promise<string>;
+  /** `host.resolve_approval` — resolve one pending host approval. */
+  hostResolveApproval(requestJson: string): Promise<string>;
+  // `host.subscribe` event delivery is deferred to the callback-aware
+  // daemon-session API; subscribing without a consumer would drop the stream.
+  /**
+   * `agents.peers` — visible peers as JSON. Each row distinguishes the
+   * kind-level `can_receive` capability from the current `reachable` delivery
+   * preflight; the send remains authoritative.
+   */
   agentsPeers(requestJson: string): Promise<string>;
   /** `agents.message` — send text to one peer: `{ to, body, summary? }`. The sender is derived server-side. */
   agentsMessage(requestJson: string): Promise<string>;
@@ -794,6 +985,21 @@ export class CarRuntime {
    * dead lane, so a caller can tell the user their sign-in lapsed instead
    * of silently serving a different model (Parslee-ai/car#888). Absent on
    * the common path.
+   *
+   * `fallback_from` is an ARRAY of every candidate the chain moved past,
+   * in the order it tried them: `[{ candidate, reason }, ...]`, where
+   * `reason` is one of `"credential_rejected"`, `"credential_absent"`,
+   * `"rate_limited"`, `"quota_exhausted"`, `"timed_out"` or `"failed"`.
+   * Absent when the first candidate served. Before this, a run whose
+   * backbone changed because of a rate limit or a timeout recorded no
+   * cause anywhere, so a surprising result got attributed to the code
+   * rather than to the model swap (Parslee-ai/car#1351).
+   *
+   * `reason` is classified from the runtime's typed error, not from error
+   * prose. `"credential_rejected"` is deliberately BROADER than
+   * `auth_fallback_from`: it covers a provider refusing an API key, whose
+   * remedy is to fix the key, not to sign in. Do not derive one field
+   * from the other.
    *
    * **Note:** intent is not exposed on the tracked path until the
    * positional argument list is converted to an options object —
@@ -1462,7 +1668,10 @@ export class CarRuntime {
 
   /** Structured audit query over the event log (G2). `queryJson` is an
    * EventQuery object (kinds/actionId/proposalId/since/until/dataMatches/limit);
-   * returns `{count, events}` as a JSON string, most-recent-first. */
+   * returns `{count, events}` as a JSON string, most-recent-first.
+   * `ActionFailed.data` includes `params_digest`, `expected_effects`, and
+   * `error_class` (`timeout|rejected_by_policy|tool_error|validation|unknown`),
+   * never raw parameters. `ActionSucceeded.data` includes the first two. */
   eventQuery(queryJson: string): Promise<string>;
 
   /** Get/set the event-log retention policy (G2). Pass a
@@ -1498,21 +1707,39 @@ export class CarRuntime {
    * `cost_overage` alert. */
   metricsAlerts(thresholdsJson?: string): Promise<string>;
 
-  /** Watch-only self-heal detector status as JSON: cadence, last tick, source
-   * `route`, validated `source_checkout` or `refusal_reason`, detector IDs,
-   * active/dismissed counts, and `filing_mode: "watch-only"`. */
+/** Self-healing repair loop status: enabled/why-not, cadence, targets,
+   * rejected targets, review panel, engine. */
+  healStatus(): Promise<string>;
+  /** Run one self-healing repair sweep now. May open a pull request; never merges. */
+  healRun(): Promise<string>;
+/** Self-heal status as JSON: cadence, `auto_fix_enabled`, `max_concurrent`,
+   * `max_per_day`, `max_rounds_per_key`, optional `auto_fix_refusal_reason`,
+   * last tick, source route/refusal,
+   * detector counts, and `filing_mode` (`watch-only` or `pr-only`). */
+
   selfhealStatus(): Promise<string>;
 
   /** List active (not dismissed) self-heal detections as JSON. Each includes
-   * `route` and an optional `local_issue_path`. `queryJson` optionally carries
-   * `kind`, `severity`, `since`, `offset`, and `limit` (bounded to 500). */
+   * `route` and an optional `local_issue_path`. Recurring tool failures add
+   * `eligible`, a secret-safe `reconstructed_call` (`tool` plus exact `params`),
+   * optional owner-private `reconstructed_call_path`, `auto_fix_attempts`,
+   * `auto_fix_exhausted`, `auto_fix_in_progress`, and
+   * `last_auto_fix_attempt` (including `exit_code` and `failure_class`). Remote
+   * deduplication adds `auto_fix_awaiting_review`, `auto_fix_parked`,
+   * `remote_pr_number`, and `remote_pr_url`.
+   * `queryJson` carries optional `kind`, `severity`,
+   * `since`, `offset`, and `limit` (max 500). */
   selfhealDetections(queryJson?: string): Promise<string>;
 
-  /** Append a dismissal marker for a stable detection dedup key. This does not
-   * delete history, file an issue, use network, or remediate anything. */
+  /** Append a dismissal marker for a stable detection dedup key without
+   * deleting history. */
   selfhealDismiss(dedupKey: string): Promise<string>;
 
-  /** Run one non-overlapping watch-only detection tick immediately. */
+  /** Start one bounded template-owned coder round for an eligible recurring
+   * tool failure. Returns the durable attempt result as JSON. */
+  selfhealFix(dedupKey: string): Promise<string>;
+
+  /** Run one non-overlapping detection tick and default-on auto-fix hook. */
   selfhealRun(): Promise<string>;
 
   /** Execution log counts and approximate retained native bytes. Returns JSON. */
@@ -1611,9 +1838,10 @@ export class CarRuntime {
    * automatically.
    *
    * Tools registered via the schemaless `registerTool(name)` bypass type
-   * validation; this is the opt-in upgrade path.
+   * validation; this is the opt-in upgrade path. The daemon assigns
+   * `source = "user_defined"`; callers cannot claim another origin.
    *
-   * `schemaJson` matches:
+   * `schemaJson` carries the caller-settable fields:
    * ```json
    * {
    *   "name": "read_file",
@@ -2596,10 +2824,21 @@ export function reapStaleAgents(
  * register an `agent.chat` handler to serve conversational turns, and/or
  * a `registerToolHandler` for explicit tool `data` parts.
  *
+ * `allow_non_loopback_bind` (boolean, default `false`) is required to bind
+ * anything but loopback. This listener serves NO authentication — there
+ * is no auth parameter, and its router is `NoAuth` — and without
+ * `share_session_runtime` its runtime registers the agent-basics
+ * filesystem tools, so a reachable bind publishes `write_file` /
+ * `edit_file` to anyone who can route to the port. A wildcard bind
+ * (`0.0.0.0:...`) is refused too. To be reachable by other CAR daemons
+ * you want the peer-authenticated, messaging-only listener `car-server`
+ * already runs by default, not this.
+ *
  * Returns `'{"bound":"127.0.0.1:8731"}'` on success. Errors if a
- * server is already running, the bind fails, `share_session_runtime`
- * is set but no session runtime is available (e.g. invoked from a
- * non-WS path), or `paramsJson` is malformed.
+ * server is already running, the bind fails, the bind is non-loopback
+ * without `allow_non_loopback_bind`, `share_session_runtime` is set but no
+ * session runtime is available (e.g. invoked from a non-WS path), or
+ * `paramsJson` is malformed.
  */
 export function startA2AServer(rt: CarRuntime, paramsJson: string): Promise<string>;
 
