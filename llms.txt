@@ -4,20 +4,18 @@
 
 CAR's source repository is private. This file, and everything it links to, is
 the complete public surface — there is nothing else to discover by browsing
-the source. **Not every link below is reachable today.** A GitHub Pages site
-backed by a private repo returns HTTP 200 for an anonymous request and then
-silently redirects it to a GitHub sign-in page — `curl -s -o /dev/null -w
-"%{http_code}" -L <url>` reports 200 the whole way through, so status-code
-alone is not evidence a page is public. Checking properly needs
-`--no-netrc` (refuse any locally cached GitHub auth) plus
-`-w "%{url_effective}"` (see where the redirect actually lands) or a look at
-the returned `<title>`. Every link below has been repointed away from that
-trap onto the public release mirror; the ones newly published there by this
-revision (everything that used to live only on the private mdBook, plus this
-file's own onboarding pages) go live on the *next* release cut by
-`scripts/release.sh` and 404 until then — see the per-section notes below for
-exactly which. Everything else was independently confirmed reachable by an
-anonymous, unauthenticated request as of this writing.
+the source. Every link below is published on the public release mirror and
+reachable today. A GitHub Pages site backed by a private repo returns HTTP 200
+for an anonymous request and then silently redirects it to a GitHub
+sign-in page — `curl -s -o /dev/null -w "%{http_code}" -L <url>` reports 200
+the whole way through, so status-code alone is not evidence a page is
+public. Checking properly needs `--no-netrc` (refuse any locally cached
+GitHub auth) plus `-w "%{url_effective}"` (see where the redirect actually
+lands) or a look at the returned `<title>`. Every link below has been
+repointed away from that trap onto the public release mirror and published
+there; `scripts/check-public-docs-parity.sh` fails the build if this index
+tags a published page as still pending, so a claim like that cannot go stale
+silently again.
 
 Two audiences, two kinds of page. **Using the `car` CLI, `car do`, or
 `car-mcp` as a product?** Start at "Product usage" below. **Embedding the
@@ -49,12 +47,6 @@ ASSISTANT.md enumerates its tools rather than freezing another count here;
 `car-mcp` (built from the `car-mcp-server` crate) exposes CAR's stateless
 capabilities over MCP stdio.
 
-**Pending the next release** — these five exist in the source tree today
-(`release-mirror/{CLI,ASSISTANT,MCP}.md`, `docs/{car-do-json,
-governed-production-assistant}.md`) but have not yet been synced to
-car.parslee.ai, so they currently 404. Retry after the next release; this is
-not a broken link.
-
 - [CLI reference](https://car.parslee.ai/CLI.md): the `car` command surface — `do`, `code`, `board`, `image`, `video`, `speech`, `voice`, `auth`, `project`, `agent`, `install`, `browse`, `schedule`, `health`, `doctor`, `update`, `purge`, and the rest.
 - [Flagship assistant](https://car.parslee.ai/ASSISTANT.md): what `car do` is and the tool surface it runs with (browser control, image/video/speech generation, file I/O, shell, memory, web search, and more).
 - [MCP server](https://car.parslee.ai/MCP.md): installing and wiring `car-mcp` into an MCP-aware client (Claude Desktop, Cursor, etc.) — stateless tools only (memory, skills, static verification); no execution or the assistant's tools.
@@ -63,22 +55,22 @@ not a broken link.
 
 ## Build with CAR
 
-- [Introduction](https://car.parslee.ai/intro.md): the shortest accurate description of what CAR is and the problem it solves — read first if you have no context at all. **Pending the next release.**
+- [Introduction](https://car.parslee.ai/intro.md): the shortest accurate description of what CAR is and the problem it solves — read first if you have no context at all.
 - [README](https://car.parslee.ai/README.md): what CAR is, install methods per platform, Node/Python/WebSocket quickstarts, license.
 - [SPEC](https://car.parslee.ai/SPEC.md): the data shapes and semantics CAR guarantees across every binding — proposal/action shape, the contracts you code against.
 - [GUIDE](https://car.parslee.ai/GUIDE.md): copy-paste prompts for having an LLM scaffold a working single- or multi-agent CAR integration.
 - [Agent IR Specification](https://car.parslee.ai/agent-ir-spec.md): the full wire format — Action, ActionProposal, Precondition operators, FailureBehavior, ToolSchema, CostSummary, verification results, every policy rule type.
-- [Capability Manifest](https://car.parslee.ai/CAPABILITIES.md): generated capability groups, exhaustive workspace-crate and program ownership, non-hidden CLI command tree, and model-facing assistant/coder/MCP tool catalogs. The same data is available as [JSON](https://car.parslee.ai/capabilities.json) and from `car capabilities`. **Pending the next release.**
-- [WebSocket Protocol Index](https://car.parslee.ai/websocket-protocol-index.md): **start here for the JSON-RPC surface.** A compact map — every namespace, every method, a one-line summary, and a deep link into the full reference. Generated from that reference, so it cannot drift. Load this first and follow only the links you need, instead of pulling 513 KB into context to answer one question. **Pending the next release.**
+- [Capability Manifest](https://car.parslee.ai/CAPABILITIES.md): generated capability groups, exhaustive workspace-crate and program ownership, non-hidden CLI command tree, and model-facing assistant/coder/MCP tool catalogs. The same data is available as [JSON](https://car.parslee.ai/capabilities.json) and from `car capabilities`.
+- [WebSocket Protocol Index](https://car.parslee.ai/websocket-protocol-index.md): **start here for the JSON-RPC surface.** A compact map — every namespace, every method, a one-line summary, and a deep link into the full reference. Generated from that reference, so it cannot drift. Load this first and follow only the links you need, instead of pulling 513 KB into context to answer one question.
 - [WebSocket Protocol Reference](https://car.parslee.ai/websocket-protocol.md): the complete JSON-RPC surface — the language-agnostic entry point for anything outside Node/Python. Reach for it once the generated index has told you which method you need; re-run `scripts/gen-ws-namespace-index.sh` for current counts rather than freezing them here.
-- [Advisor Pattern](https://car.parslee.ai/advisor-pattern.md): bounded stronger-model guidance where the original executor stays in control — verdicts, trigger policy, budgets. **Pending the next release** (new to the mirror as of this revision).
-- [Host Protocol](https://car.parslee.ai/host-protocol.md): the host-facing JSON-RPC surface over the same WebSocket, for building a shared control UI across agents instead of one per agent. **Pending the next release.**
-- [Self-healing](https://car.parslee.ai/self-healing.md): deterministic daemon evidence, operator inspection/dismissal/tick controls, and the guarded Tank cutover. **Pending the next release.**
-- [CAR Agent Authoring Guide](https://car.parslee.ai/CAR_AGENT_AUTHORING_GUIDE.md): the end-to-end map for choosing an agent type and navigating CAR's CLI, capability catalog, execution, memory, policy, and deployment surfaces. **Pending the next release.**
-- [`car code` task contract](https://car.parslee.ai/car-code-task.md): the bounded coding-task runtime contract, including repository confinement, completion criteria, recovery, and escalation. **Pending the next release.**
-- [A2A (Agent2Agent) Bridge](https://car.parslee.ai/a2a.md): exposing a CAR runtime as an Agent2Agent v1.0 agent, discoverable and drivable by any A2A-compliant SDK. **Pending the next release.**
-- [Contributed agents](https://car.parslee.ai/contributed-agents.md): packaging a third-party agent as a manifest + binary that CAR's supervisor adopts without recompiling `car-server`. **Pending the next release.**
-- [Agent Bundle Specification](https://car.parslee.ai/agent-bundle-spec.md): **draft, not yet implemented** — the target host-agnostic distribution/capability-negotiation format for CAR agents. **Pending the next release** (new to the mirror as of this revision).
+- [Advisor Pattern](https://car.parslee.ai/advisor-pattern.md): bounded stronger-model guidance where the original executor stays in control — verdicts, trigger policy, budgets.
+- [Host Protocol](https://car.parslee.ai/host-protocol.md): the host-facing JSON-RPC surface over the same WebSocket, for building a shared control UI across agents instead of one per agent.
+- [Self-healing](https://car.parslee.ai/self-healing.md): deterministic daemon evidence, operator inspection/dismissal/tick controls, and the guarded Tank cutover.
+- [CAR Agent Authoring Guide](https://car.parslee.ai/CAR_AGENT_AUTHORING_GUIDE.md): the end-to-end map for choosing an agent type and navigating CAR's CLI, capability catalog, execution, memory, policy, and deployment surfaces.
+- [`car code` task contract](https://car.parslee.ai/car-code-task.md): the bounded coding-task runtime contract, including repository confinement, completion criteria, recovery, and escalation.
+- [A2A (Agent2Agent) Bridge](https://car.parslee.ai/a2a.md): exposing a CAR runtime as an Agent2Agent v1.0 agent, discoverable and drivable by any A2A-compliant SDK.
+- [Contributed agents](https://car.parslee.ai/contributed-agents.md): packaging a third-party agent as a manifest + binary that CAR's supervisor adopts without recompiling `car-server`.
+- [Agent Bundle Specification](https://car.parslee.ai/agent-bundle-spec.md): **draft, not yet implemented** — the target host-agnostic distribution/capability-negotiation format for CAR agents.
 
 ## The whole thing in one file
 
@@ -87,7 +79,7 @@ not a broken link.
   exceeds a 200K-token context on its own, so check your budget before fetching
   it. Prefer this index and pull only the documents you need; each one is
   published individually. Regenerated every release from the same sources, so
-  it cannot drift from the pages it bundles. **Pending the next release.**
+  it cannot drift from the pages it bundles.
 
 ## API reference (typed, complete)
 
@@ -98,8 +90,8 @@ CAR, read them rather than inferring a method name from an example — a name
 that looks plausible and does not exist is the most common way CAR integrations
 break.
 
-- [Python API (`car_runtime.pyi`)](https://car.parslee.ai/api/car_runtime.pyi): PEP-561 stubs for the `car_runtime` package (`pip install car-runtime`). Every `CarRuntime` method and standalone function, typed, with docstrings giving the JSON result shape where a method returns a JSON string. **Pending the next release.**
-- [Node/TypeScript API (`index.d.ts`)](https://car.parslee.ai/api/index.d.ts): hand-maintained declarations for `car-runtime` on npm, with JSDoc. Rust `snake_case` is exposed as `camelCase` in JS/TS — the declarations show the JS spelling, which is the one to call. **Pending the next release.**
+- [Python API (`car_runtime.pyi`)](https://car.parslee.ai/api/car_runtime.pyi): PEP-561 stubs for the `car_runtime` package (`pip install car-runtime`). Every `CarRuntime` method and standalone function, typed, with docstrings giving the JSON result shape where a method returns a JSON string.
+- [Node/TypeScript API (`index.d.ts`)](https://car.parslee.ai/api/index.d.ts): hand-maintained declarations for `car-runtime` on npm, with JSDoc. Rust `snake_case` is exposed as `camelCase` in JS/TS — the declarations show the JS spelling, which is the one to call.
 
 Both are hand-maintained and kept in lockstep with the Rust core and the
 JSON-RPC surface by `scripts/check-ffi-parity.sh`, so a capability missing
@@ -108,9 +100,8 @@ from one of them is a build failure rather than silent drift.
 ## Cookbook
 
 Short, self-contained, runnable recipes. New to CAR? Start with the first one.
-**All 14 pages below are pending the next release** — new to the mirror as of
-this revision, mirrored verbatim from `docs/cookbook/` with the subdirectory
-preserved so the relative links between them resolve. They 404 until then.
+Mirrored verbatim from `docs/cookbook/` with the subdirectory preserved so
+the relative links between them resolve.
 
 - [01 — Tool call: register, verify, execute](https://car.parslee.ai/cookbook/01-tool-call-and-verify.md): the canonical lifecycle — register a tool, build a proposal, verify it statically, execute with a callback.
 - [02 — Memory and 4-layer context](https://car.parslee.ai/cookbook/02-memory-and-context.md): facts as graph nodes, spreading-activation retrieval, the four-layer context assembly.
@@ -156,6 +147,6 @@ equivalent to link.
 
 ## Roadmap (not yet shipped — do not build against these)
 
-- [Mobile Platform Plan](https://car.parslee.ai/mobile-platform.md): iOS/Android host status, milestone-by-milestone; several milestones are in progress or not started. **Pending the next release.**
-- [Agent Portability Roadmap](https://car.parslee.ai/agent-portability-roadmap.md): **draft, not yet implemented** — the phased plan connecting the agent bundle spec to desktop/mobile/cloud portability. **Pending the next release.**
-- [FlyX design note](https://car.parslee.ai/case-study-flyx.md): a design note with *projected*, not measured, numbers, written on this repo's second day. Do not cite its cost/token-saving figures as a result. **Pending the next release.**
+- [Mobile Platform Plan](https://car.parslee.ai/mobile-platform.md): iOS/Android host status, milestone-by-milestone; several milestones are in progress or not started.
+- [Agent Portability Roadmap](https://car.parslee.ai/agent-portability-roadmap.md): **draft, not yet implemented** — the phased plan connecting the agent bundle spec to desktop/mobile/cloud portability.
+- [FlyX design note](https://car.parslee.ai/case-study-flyx.md): a design note with *projected*, not measured, numbers, written on this repo's second day. Do not cite its cost/token-saving figures as a result.

@@ -95,6 +95,11 @@ restart = "on_failure"           # never | on_failure | always
 max_restarts = 10
 backoff_secs = 5
 auto_start = false               # spawn immediately on install and on car-server boot?
+# Optional least-privilege scope for the per-agent daemon token. Names must be
+# agent/operator/owner-role methods from `car capabilities --json`; host-role
+# methods are rejected. Omit for legacy unrestricted behavior; [] denies every
+# application method (session.auth + server.handshake remain implicit).
+method_allowlist = ["mail.accounts", "mail.mailboxes", "mail.messages", "mail.message_body"]
 
 [capabilities.required]
 # Capabilities your agent CANNOT run without. Install fails if
@@ -137,7 +142,10 @@ daemon:
 - `CAR_DAEMON_URL` — the daemon's WS URL.
 - `CAR_AGENT_TOKEN` — per-agent token minted at install; the
   child calls `session.auth { agent_id, token }` to bind the
-  WS connection (#169).
+  WS connection (#169). If `[transport].method_allowlist` is present, that
+  authenticated connection can dispatch only those daemon methods (in addition
+  to the implicit auth/protocol handshake). The scope never grants authority a
+  listed method's normal gate would refuse.
 
 For CAR's current manifest parser, set `kind = "external_process"`
 and place external process fields directly in `[transport]`.
@@ -208,7 +216,10 @@ later phase alongside full pure-data bundle support.
 5. Daemon adopts the agent: writes
    `~/.car/agents/<id>/manifest.toml`, mirrors the entry into
    the legacy `agents.json` (dual-write during the phase 1
-   migration window), mints a per-agent token if absent.
+   migration window), mints a per-agent token if absent. Both persisted formats
+   contain minted tokens. On Unix, CAR writes each file atomically as `0600`,
+   keeps the CAR home and each per-agent directory at `0700`, and repairs
+   permissions left by older releases before reading either format.
 6. Returns `{report, agent}` to the CLI.
 
 The agent is now installed. With `auto_start = true`, spawnable

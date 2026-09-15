@@ -13,6 +13,10 @@ rt.registerPolicy('no_shell', 'deny_tool', 'shell');
 
 Any action with `"tool": "shell"` is denied. Useful for sandboxing — register the agent without dangerous tools rather than relying on prompt-level pleading.
 
+`deny_tool` is also the one rule kind the flagship assistant acts on when it builds the tool list it shows the model: a tool denied this way is **not advertised at all**, so `car do` does not spend a schema on it every request or a whole turn discovering it is forbidden. The tool stays registered with the validator, so a model that names it anyway is refused with "denied by project policy" rather than the misleading "unregistered tool". This applies to both registration routes above — the `registerPolicy` call here and the `deny_tool` list in a `.car/policies/*.toml` file.
+
+Only `deny_tool` is withheld this way. The other rule kinds forbid particular *calls* rather than the tool, so their tool stays advertised and the offending call is refused at dispatch.
+
 ## `deny_tool_param` — block a tool when a parameter matches
 
 The most common policy. Substring-match on a stringified parameter value:
@@ -64,6 +68,8 @@ The callback receives the tool name and params and must return truthy to deny. S
 
 Everything above is registered by the host. This part is registered by a `.car` directory: every `*.toml` file in `.car/policies/` is read in sorted filename order, merged into one rule set, and lowered onto the same policy engine.
 
+Field names must be exact. An unknown field is a load error that names the field, not a discarded value — a misspelling would otherwise leave the real field at its default and quietly change what the rule means. These files are security controls, so they fail loudly rather than plausibly.
+
 ```
 .car/
   policies/
@@ -89,7 +95,7 @@ Six rule kinds. Three of them (`deny_tool`, `deny_keyword`, `deny_tool_param`) a
 ```toml
 # .car/policies/security.toml
 
-# Never, under any parameters.
+# Never, under any parameters — and not advertised to the model at all.
 deny_tool = ["deploy"]
 
 # Never, in any parameter of any tool.

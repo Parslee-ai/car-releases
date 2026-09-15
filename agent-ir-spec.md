@@ -169,6 +169,24 @@ Snake-case enum. What happens when this action's tool returns an error or a prec
 | `"retry"` | retry up to `max_retries` times before aborting |
 | `"skip"` | mark this action skipped and continue with the rest |
 
+### Tool failure classification
+
+A tool executor may return a typed `ToolFailure` with classification
+`"ordinary"` or `"terminal"`. This is evidence produced by the tool during
+execution, not a fourth `FailureBehavior`:
+
+- `"ordinary"` follows the action's declared failure behavior. Existing string
+  errors convert to this classification, so legacy errors keep their current
+  retry, skip, or abort behavior.
+- `"terminal"` stops retrying immediately and aborts and rolls back the
+  proposal regardless of its declared failure behavior. The failed
+  `ActionResult` carries `"terminal": true`; the field is absent for all other
+  results and defaults to false when deserializing older results.
+
+Terminality is strictly opt-in. CAR never infers it from words such as
+"terminal" or "fatal" in an error message. This engine-level contract does not
+halt a daemon session; session halting is a separate daemon-owned layer.
+
 ### Action lifecycle (informational)
 
 The runtime tags each action with an `ActionStatus` as it moves through validation and execution:
@@ -334,12 +352,10 @@ Returned by `proposal.submit` (WebSocket), `executeProposal` (NAPI), `execute_pr
     {
       "action_id": "a1",
       "status": "succeeded",
+      "rolled_back": true,
       "output": { "deployed": true },
-      "error": null,
-      "state_changes": {
-        "deployed": { "op": "set", "value": true },
-        "obsolete_key": { "op": "delete" }
-      },
+      "error": "proposal aborted; state effects were rolled back; external effects may remain and were not undone",
+      "state_changes": {},
       "duration_ms": 1230.0,
       "timestamp": "2026-05-02T12:00:01Z"
     }
@@ -349,6 +365,19 @@ Returned by `proposal.submit` (WebSocket), `executeProposal` (NAPI), `execute_pr
 ```
 
 `status` is one of: `"proposed"`, `"validated"`, `"rejected"`, `"executing"`, `"succeeded"`, `"failed"`, `"skipped"`.
+
+A failed action includes `"terminal": true` only when its tool returned
+`ToolFailureClassification::Terminal`. The field is omitted otherwise. A
+terminal result means the engine stopped retries and aborted this proposal; it
+does not by itself describe daemon session state.
+
+`rolled_back` is an independent commit marker. A successful action in an
+aborted proposal remains `status: "succeeded"` because it executed, while
+`rolled_back: true` reports that the enclosing state transaction was restored.
+Its `state_changes` are empty and `error` may carry the warning that external
+effects can remain. Consumers must use `rolled_back`, never compare that warning
+text. The field defaults to `false` when absent and false values are omitted from
+the serialized response for compatibility with older readers.
 
 Each `state_changes` value is a tagged `StateMutation`: `{"op":"set","value":…}`
 sets the key (including explicitly setting it to JSON `null`), while

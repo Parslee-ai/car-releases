@@ -19,6 +19,14 @@ page listed dot-separated names, and two of them — `memory.build_context` and
 There is also one prompt, `car_context`, which assembles CAR's layered context
 for a query.
 
+The server negotiates the protocol revision on `initialize`: it prefers
+`2025-06-18` and still serves `2024-11-05` (`car_mcp::SUPPORTED_VERSIONS`), so
+older hosts keep the revision they ask for. Tools whose result is a JSON
+object — the verification four, `policy_check`, and the proactive-memory tools
+— declare an `outputSchema` and return `structuredContent` alongside the text
+block (the same serialization twice, so a `2024-11-05` host reads identical
+data from `content[0].text`).
+
 Both the prompt and the resources autocomplete. `completion/complete` fills the
 `car_context` prompt's `mode` argument from `["full","fast"]` (prefix-matched on
 what has been typed) and completes resource URIs by prefix against the same
@@ -95,6 +103,34 @@ host **read-only**, because a tool call has no way to ask a human to approve a
 write. If your host is itself an agent CLI, send
 `invoked_by: "claude-code" | "codex" | "gemini"` so CAR's recursion guard can
 see the call — the daemon is not launched by you, so it cannot infer it.
+
+### Daemon-only tool groups: eventlog, workflow, scheduler
+
+The same registration seam carries three more groups (car#972 Track C), each
+a thin adapter over a daemon JSON-RPC method the WS surface already serves —
+no second implementation, and the daemon's own dispatch stays the authority
+check for whatever session the connection holds.
+
+- **Reads, registered whenever the embedder supplies a daemon client:**
+  `events_query` / `events_stats` / `events_cost_by_agent` (the audit trail
+  and per-agent cost receipts), `workflow_verify` / `workflow_list_paused`,
+  and `scheduler_list`.
+- **Mutations, opt-in via `DaemonToolOptions { enable_mutations: true }`:**
+  `workflow_run`, `workflow_resume`, `scheduler_schedule`,
+  `scheduler_unschedule`. Opt-in because a host may auto-approve unattended
+  and a workflow stage or scheduled program can do anything the runtime can
+  — `scheduler_schedule` with `durable: true` plants an OS-level schedule
+  that fires with the daemon down. When not enabled they are absent from
+  `tools/list`, and calling one is `-32601`.
+
+None of these exist on stdio, same reasoning as the assistant trio. And one
+group is deliberately missing: **external-agent invocation** stays off MCP
+until the car#972 §7 ancestry gap closes — the recursion guard reads process
+environment, the daemon path records only a per-call caller, and exposing
+invocation before those meet would let a nested agent bypass the guard.
+
+Method-level shapes: `events.query`, `workflow.*`, and `tasks.*` in
+[`docs/websocket-protocol.md`](../websocket-protocol.md).
 
 ### `policy_check` — governing the agent that calls you
 

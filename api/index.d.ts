@@ -114,6 +114,12 @@ export interface CoderStartOptions {
    */
   transientRetries?: number | undefined | null;
   /**
+   * Expose the assistant's browser tools for this coder session. Off unless
+   * explicitly true; each browser call still crosses coder policy and is
+   * recorded in the session event stream.
+   */
+  browser?: boolean | undefined | null;
+  /**
    * Farm a **foreman** session's subtasks across every reachable CAR instance
    * that can serve this repository, instead of this machine alone. The
    * merge-verify gate and delivery stay on the orchestrating host — a peer
@@ -175,6 +181,854 @@ export class CarRuntime {
     method: string,
     handler: (paramsJson: string) => void,
   ): void;
+
+  // BEGIN GENERATED daemon wrappers: CarRuntime
+  /** Generated daemon wrapper for `CancelTask` (operator). */
+  cancelTask(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `CreateTaskPushNotificationConfig` (operator). */
+  createTaskPushNotificationConfig(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `DeleteTaskPushNotificationConfig` (operator). */
+  deleteTaskPushNotificationConfig(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `GetExtendedAgentCard` (operator). */
+  getExtendedAgentCard(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `GetTask` (operator). */
+  getTask(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `GetTaskPushNotificationConfig` (operator). */
+  getTaskPushNotificationConfig(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `ListTaskPushNotificationConfigs` (operator). */
+  listTaskPushNotificationConfigs(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `ListTasks` (operator). */
+  listTasks(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `SendMessage` (operator). */
+  sendMessage(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `SendStreamingMessage` (operator). */
+  sendStreamingMessage(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `SubscribeToTask` (operator). */
+  subscribeToTask(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2a.peers.add` (operator). */
+  a2aPeersAdd(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2a.peers.list` (operator). */
+  a2aPeersList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2a.peers.remove` (operator). */
+  a2aPeersRemove(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2a.send` (operator). */
+  a2aSend(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2a.start` (operator). */
+  a2aStart(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2a.status` (operator). */
+  a2aStatus(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2a.stop` (operator). */
+  a2aStop(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui.action` (operator). */
+  a2uiAction(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui.apply` (operator). */
+  a2uiApply(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui.capabilities` (operator). */
+  a2uiCapabilities(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui.get` (operator). */
+  a2uiGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui.ingest` (operator). */
+  a2uiIngest(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui.reap` (operator). */
+  a2uiReap(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui.render_report` (operator). */
+  a2uiRenderReport(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui.surfaces` (operator). */
+  a2uiSurfaces(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui/replay` (operator). */
+  a2uiReplay(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui/subscribe` (operator). */
+  a2uiSubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `a2ui/unsubscribe` (operator). */
+  a2uiUnsubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `admission.status` (operator). */
+  admissionStatus(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agent/getAuthenticatedExtendedCard` (operator). */
+  agentGetAuthenticatedExtendedCard(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agent_permissions.evaluate` (operator). */
+  agentPermissionsEvaluate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agent_permissions.get` (operator). */
+  agentPermissionsGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.chat` (agent). */
+  agentsChat(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.chat.approve` (operator). */
+  agentsChatApprove(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.chat.cancel` (operator). */
+  agentsChatCancel(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.detect_external` (operator). */
+  agentsDetectExternal(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.health` (operator). */
+  agentsHealth(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.health_external` (operator). */
+  agentsHealthExternal(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.invoke_external` (operator). */
+  agentsInvokeExternal(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.list` (operator). */
+  agentsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.list_external` (operator). */
+  agentsListExternal(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.restart` (agent). */
+  agentsRestart(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.start` (agent). */
+  agentsStart(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.stop` (agent). */
+  agentsStop(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.tail_log` (operator). */
+  agentsTailLog(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.wait` (operator). */
+  agentsWait(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `assistants.invoke` (operator). */
+  assistantsInvoke(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `automation.run_applescript` (operator). */
+  automationRunApplescript(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `automation.run_powershell` (operator). */
+  automationRunPowershell(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `automation.shortcuts.list` (operator). */
+  automationShortcutsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `automation.shortcuts.run` (operator). */
+  automationShortcutsRun(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.producer.register` (operator). */
+  browserProducerRegister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.back` (operator). */
+  browserViewBack(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.click` (operator). */
+  browserViewClick(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.forward` (operator). */
+  browserViewForward(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.hand_back` (operator). */
+  browserViewHandBack(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.keypress` (operator). */
+  browserViewKeypress(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.navigate` (operator). */
+  browserViewNavigate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.paste` (operator). */
+  browserViewPaste(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.reload` (operator). */
+  browserViewReload(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.scroll` (operator). */
+  browserViewScroll(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.subscribe` (operator). */
+  browserViewSubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.tab_close` (operator). */
+  browserViewTabClose(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.tab_open` (operator). */
+  browserViewTabOpen(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.tab_switch` (operator). */
+  browserViewTabSwitch(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.take_control` (operator). */
+  browserViewTakeControl(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.type` (operator). */
+  browserViewType(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `browser.view.unsubscribe` (operator). */
+  browserViewUnsubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `builder.build` (operator). */
+  builderBuild(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `capabilities.list` (operator). */
+  capabilitiesList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `coder.discuss.subscribe` (operator). */
+  coderDiscussSubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `coder.discuss.unsubscribe` (operator). */
+  coderDiscussUnsubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `coder.projects.create` (operator). */
+  coderProjectsCreate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `coder.projects.get` (operator). */
+  coderProjectsGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `coder.projects.list` (operator). */
+  coderProjectsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `coder.subscribe` (operator). */
+  coderSubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `coder.unsubscribe` (operator). */
+  coderUnsubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.actions` (operator). */
+  conciergeActions(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.apply` (operator). */
+  conciergeApply(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.ask` (operator). */
+  conciergeAsk(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.clear_default` (operator). */
+  conciergeClearDefault(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.defaults` (operator). */
+  conciergeDefaults(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.dismiss` (operator). */
+  conciergeDismiss(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.refresh_catalog` (operator). */
+  conciergeRefreshCatalog(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.rollback` (operator). */
+  conciergeRollback(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.set_default` (operator). */
+  conciergeSetDefault(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `concierge.status` (operator). */
+  conciergeStatus(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.add` (operator). */
+  connectorsAdd(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.add_stdio` (operator). */
+  connectorsAddStdio(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.authenticate` (operator). */
+  connectorsAuthenticate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.complete_authentication` (operator). */
+  connectorsCompleteAuthentication(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.disable_tools` (operator). */
+  connectorsDisableTools(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.enable_tools` (operator). */
+  connectorsEnableTools(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.list` (operator). */
+  connectorsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.refresh` (operator). */
+  connectorsRefresh(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.remove` (operator). */
+  connectorsRemove(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `connectors.tools` (operator). */
+  connectorsTools(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `declagents.get` (operator). */
+  declagentsGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `declagents.invoke` (operator). */
+  declagentsInvoke(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `declagents.list` (operator). */
+  declagentsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `declagents.route` (operator). */
+  declagentsRoute(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `declagents.route_split` (operator). */
+  declagentsRouteSplit(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `declagents.routing_stats` (operator). */
+  declagentsRoutingStats(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.chain.enable` (operator). */
+  eventsChainEnable(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.chain.verify` (operator). */
+  eventsChainVerify(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.clear` (operator). */
+  eventsClear(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.cost_by_agent` (operator). */
+  eventsCostByAgent(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.count` (operator). */
+  eventsCount(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.query` (operator). */
+  eventsQuery(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.retention` (operator). */
+  eventsRetention(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.stats` (operator). */
+  eventsStats(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `events.truncate` (operator). */
+  eventsTruncate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `evolution.plan` (operator). */
+  evolutionPlan(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `evolution.run` (agent). */
+  evolutionRun(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `feedback.compose_preview` (operator). */
+  feedbackComposePreview(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `feedback.list` (operator). */
+  feedbackList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `feedback.status` (operator). */
+  feedbackStatus(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `feedback.submit` (operator). */
+  feedbackSubmit(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `goal.clear` (operator). */
+  goalClear(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `goal.set` (operator). */
+  goalSet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `goal.status` (operator). */
+  goalStatus(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `goal.suggest` (operator). */
+  goalSuggest(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `host.subscribe` (operator). */
+  hostSubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `image.generate` (operator). */
+  imageGenerate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `infer.cancel` (operator). */
+  inferCancel(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `infer.deadline` (operator). */
+  inferDeadline(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `infer_stream` (agent). */
+  inferStream(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `inference.register_runner` (operator). */
+  inferenceRegisterRunner(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `inference.runner.complete` (operator). */
+  inferenceRunnerComplete(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `inference.runner.event` (operator). */
+  inferenceRunnerEvent(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `inference.runner.fail` (operator). */
+  inferenceRunnerFail(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `meeting.get` (operator). */
+  meetingGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `meeting.list` (operator). */
+  meetingList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `meeting.start` (operator). */
+  meetingStart(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `meeting.stop` (operator). */
+  meetingStop(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.add_fact` (agent). */
+  memoryAddFact(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.build_context` (operator). */
+  memoryBuildContext(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.build_context_fast` (operator). */
+  memoryBuildContextFast(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.consolidate` (agent). */
+  memoryConsolidate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.fact_count` (operator). */
+  memoryFactCount(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.load` (operator). */
+  memoryLoad(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.persist` (operator). */
+  memoryPersist(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.query` (operator). */
+  memoryQuery(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.utility_get` (operator). */
+  memoryUtilityGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `memory.utility_set` (operator). */
+  memoryUtilitySet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `message/send` (operator). */
+  messageSend(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `message/stream` (operator). */
+  messageStream(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `mobile.runtime` (operator). */
+  mobileRuntime(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.catalog_snapshot` (operator). */
+  modelsCatalogSnapshot(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.check_concierge` (operator). */
+  modelsCheckConcierge(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.check_upgrade_nudge` (operator). */
+  modelsCheckUpgradeNudge(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.detect_upgrades` (operator). */
+  modelsDetectUpgrades(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.dismiss_suggestion` (operator). */
+  modelsDismissSuggestion(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.dismiss_upgrade` (operator). */
+  modelsDismissUpgrade(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.list` (operator). */
+  modelsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.list_unified` (operator). */
+  modelsListUnified(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.preflight` (operator). */
+  modelsPreflight(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.recommend` (operator). */
+  modelsRecommend(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.register` (operator). */
+  modelsRegister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.resource_policy.get` (operator). */
+  modelsResourcePolicyGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.route` (operator). */
+  modelsRoute(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.route_provenance` (operator). */
+  modelsRouteProvenance(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.search` (operator). */
+  modelsSearch(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.setup_plan` (operator). */
+  modelsSetupPlan(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.stats` (operator). */
+  modelsStats(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.unregister` (operator). */
+  modelsUnregister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.update_prefs_get` (operator). */
+  modelsUpdatePrefsGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.update_prefs_set` (operator). */
+  modelsUpdatePrefsSet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `models.upgrades` (operator). */
+  modelsUpgrades(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multi.map_reduce` (operator). */
+  multiMapReduce(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multi.pipeline` (operator). */
+  multiPipeline(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multi.subtask` (operator). */
+  multiSubtask(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multi.supervisor` (operator). */
+  multiSupervisor(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multi.swarm` (operator). */
+  multiSwarm(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multi.tournament` (operator). */
+  multiTournament(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multi.vote` (operator). */
+  multiVote(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `nlp.extract_entities` (operator). */
+  nlpExtractEntities(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `nlp.identify_language` (operator). */
+  nlpIdentifyLanguage(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `nlp.tokenize` (operator). */
+  nlpTokenize(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `notifications.local` (operator). */
+  notificationsLocal(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `outcomes.resolve_pending` (operator). */
+  outcomesResolvePending(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `outcomes.scoreboard` (operator). */
+  outcomesScoreboard(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `parslee.auth` (operator). */
+  parsleeAuth(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `permission.classify` (operator). */
+  permissionClassify(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `permission.evaluate` (agent). */
+  permissionEvaluate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `permission.pending` (agent). */
+  permissionPending(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `permissions.domains` (operator). */
+  permissionsDomains(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `permissions.explain` (operator). */
+  permissionsExplain(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `permissions.request` (operator). */
+  permissionsRequest(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `permissions.status` (operator). */
+  permissionsStatus(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `policy.list` (operator). */
+  policyList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `policy.register` (operator). */
+  policyRegister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `policy.unregister` (operator). */
+  policyUnregister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `proposal.submit` (owner). */
+  proposalSubmit(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `registry.heartbeat` (operator). */
+  registryHeartbeat(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `registry.list` (operator). */
+  registryList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `registry.reap` (operator). */
+  registryReap(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `registry.register` (operator). */
+  registryRegister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `registry.unregister` (operator). */
+  registryUnregister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `replan.set_config` (operator). */
+  replanSetConfig(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `runs.cancel` (owner). */
+  runsCancel(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `runs.get_trace` (owner). */
+  runsGetTrace(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `runs.list` (owner). */
+  runsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `runs.record_turns` (agent). */
+  runsRecordTurns(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `runs.resume` (agent). */
+  runsResume(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `runs.subscribe` (owner). */
+  runsSubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `runs.unsubscribe` (operator). */
+  runsUnsubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `scheduler.create` (operator). */
+  schedulerCreate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `scheduler.os_install` (operator). */
+  schedulerOsInstall(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `scheduler.os_list` (operator). */
+  schedulerOsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `scheduler.os_reconcile` (operator). */
+  schedulerOsReconcile(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `scheduler.os_render` (operator). */
+  schedulerOsRender(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `scheduler.os_uninstall` (operator). */
+  schedulerOsUninstall(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `scheduler.run` (operator). */
+  schedulerRun(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `scheduler.run_loop` (operator). */
+  schedulerRunLoop(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `session.auth` (agent). */
+  sessionAuth(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `session.bindSandbox` (agent). */
+  sessionBindSandbox(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `session.bindSubstrate` (operator). */
+  sessionBindSubstrate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `session.init` (operator). */
+  sessionInit(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `session.policy.close` (operator). */
+  sessionPolicyClose(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `session.policy.open` (operator). */
+  sessionPolicyOpen(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.adopt_pack` (operator). */
+  skillAdoptPack(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.enforce_deployment` (operator). */
+  skillEnforceDeployment(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.export` (operator). */
+  skillExport(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.find` (operator). */
+  skillFind(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.gate_deployment` (operator). */
+  skillGateDeployment(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.import` (operator). */
+  skillImport(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.ingest` (operator). */
+  skillIngest(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.ingest_governed` (operator). */
+  skillIngestGoverned(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.repair` (operator). */
+  skillRepair(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skill.report` (operator). */
+  skillReport(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skills.distill` (operator). */
+  skillsDistill(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skills.domains_needing_evolution` (operator). */
+  skillsDomainsNeedingEvolution(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skills.evolve` (operator). */
+  skillsEvolve(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skills.gate` (operator). */
+  skillsGate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skills.ingest_distilled` (operator). */
+  skillsIngestDistilled(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skills.ingest_provisional` (operator). */
+  skillsIngestProvisional(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `skills.list` (operator). */
+  skillsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `speech.prepare` (operator). */
+  speechPrepare(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `sync.knowledge` (operator). */
+  syncKnowledge(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks.list` (operator). */
+  tasksList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks/cancel` (operator). */
+  tasksCancel(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks/get` (operator). */
+  tasksGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks/list` (operator). */
+  tasksSlashList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks/pushNotificationConfig/delete` (operator). */
+  tasksPushNotificationConfigDelete(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks/pushNotificationConfig/get` (operator). */
+  tasksPushNotificationConfigGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks/pushNotificationConfig/list` (operator). */
+  tasksPushNotificationConfigList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks/pushNotificationConfig/set` (operator). */
+  tasksPushNotificationConfigSet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tasks/resubscribe` (operator). */
+  tasksResubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tools.cancel` (operator). */
+  toolsCancel(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tools.list` (operator). */
+  toolsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tools.poll` (operator). */
+  toolsPoll(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tools.register` (operator). */
+  toolsRegister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tools.stream.subscribe` (operator). */
+  toolsStreamSubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `tools.unregister` (operator). */
+  toolsUnregister(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `verify` (operator). */
+  verify(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `verify.monte_carlo` (operator). */
+  verifyMonteCarlo(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `video.generate` (operator). */
+  videoGenerate(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `vision.ocr` (operator). */
+  visionOcr(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.cancel_turn` (operator). */
+  voiceCancelTurn(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.dispatch_turn` (operator). */
+  voiceDispatchTurn(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.enroll_speaker` (operator). */
+  voiceEnrollSpeaker(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.list_enrollments` (operator). */
+  voiceListEnrollments(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.prepare_diarizer` (operator). */
+  voicePrepareDiarizer(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.prepare_parakeet` (operator). */
+  voicePrepareParakeet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.prewarm_turn` (operator). */
+  voicePrewarmTurn(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.providers.list` (operator). */
+  voiceProvidersList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.remove_enrollment` (operator). */
+  voiceRemoveEnrollment(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.sessions.list` (operator). */
+  voiceSessionsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.transcribe_stream.push` (operator). */
+  voiceTranscribeStreamPush(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.transcribe_stream.start` (operator). */
+  voiceTranscribeStreamStart(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.transcribe_stream.stop` (operator). */
+  voiceTranscribeStreamStop(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.tts_stream.cancel` (operator). */
+  voiceTtsStreamCancel(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.tts_stream.list` (operator). */
+  voiceTtsStreamList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `voice.tts_stream.start` (operator). */
+  voiceTtsStreamStart(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `workflow.build_automation` (operator). */
+  workflowBuildAutomation(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `workflow.chain` (operator). */
+  workflowChain(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `workflow.list_paused` (operator). */
+  workflowListPaused(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `workflow.resume` (operator). */
+  workflowResume(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `workflow.run` (operator). */
+  workflowRun(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `workflow.verify` (operator). */
+  workflowVerify(paramsJson: string): Promise<string>;
+  // END GENERATED daemon wrappers: CarRuntime
 
   // --- Memory persistence ---
 
@@ -979,6 +1833,10 @@ export class CarRuntime {
    * with reasoning suppressed to produce a direct answer, or
    * `"thinking_truncated"` when even that retry was empty (car-releases#60).
    *
+   * `local_last_resort` is present and true ONLY when CAR appended an
+   * installed on-device model behind a remote-only chain and that model
+   * actually served the turn. An explicitly selected local model is not marked.
+   *
    * `auth_fallback_from` is present ONLY when a candidate earlier in the
    * fallback chain was skipped because its credential was **rejected**
    * (not merely absent) and a later model then answered. It names that
@@ -1201,7 +2059,8 @@ export class CarRuntime {
    *   context_length, available, is_local, operator_managed_external_runtime,
    *   weights_ready, downloads_weights,
    *   max_output_tokens, public_benchmarks, cost, car_enabled, can_remove,
-   *   in_use, management_evidence }`. `available` means CAR
+   *   in_use, management_evidence, fit, estimated_peak_mb,
+   *   platform_compatible, deprecated, family, version }`. `available` means CAR
    * can use the model
    * here — for a local MLX entry with a declared `hf_repo` it is `true`
    * before a byte is fetched, because it lazy-downloads on first use —
@@ -1237,9 +2096,20 @@ export class CarRuntime {
    * cost. The managed `parslee/…` alias rows carry the same prices as the
    * upstream row they front, and this response carries no upstream
    * identifier for them. That holds for this catalog view; `models.search`
-   * additionally exposes a `family` field which does name the upstream
-   * model family. Older daemons omit
+   * entries carry these same fields, fit annotation included, and
+   * additionally name `family` / `version` for every row (the upstream
+   * model family for a managed alias). Older daemons omit
    * `cost` entirely; it deserializes to all-`null` rather than failing.
+   * `fit` (`"fits" | "too_big" | "unknown"`), `estimated_peak_mb` and
+   * `platform_compatible` say whether the row fits the machine the daemon
+   * runs on, by the same rule `models.recommend` uses against the active
+   * resource policy; remote rows always read `fits` / `null` / `true`
+   * because their memory is the server's. `unknown` never means too big
+   * and is what an older daemon's rows read as. `deprecated` mirrors the
+   * catalog flag; `family` and `version` are published for local rows only
+   * (`null` for remote rows, which is how this view keeps carrying no
+   * upstream identifier for managed aliases). The list is never filtered
+   * by the daemon — hide on `fit` in the client, as `car models list` does.
    */
   listModelsUnified(): string;
 
@@ -1379,7 +2249,9 @@ export class CarRuntime {
    * `"auto" | "native" | "external[:agent_id]"` (default auto). Returns
    * `{session_id, state, engine, worktree, contract, model}` JSON, where
    * `model` is the effective native-loop pin (per-session `model`, else
-   * `~/.car/coder.toml`, else `null` = adaptive routing).
+   * `~/.car/coder.toml`, else `null` = adaptive routing). Set
+   * `options.browser` to opt into the assistant's browser tool surface for this
+   * session; it remains absent by default and policy-gated when enabled.
    */
   coderStart(
     repo: string,
@@ -1410,7 +2282,8 @@ export class CarRuntime {
 
   /**
    * Approve (publish the `car/coder/<id>` branch in the repo) or deny
-   * (abandon) a session awaiting merge approval.
+   * (abandon) a session awaiting merge approval. Agent-project approvals
+   * return additive `agent_id` and daemon-derived `registry_path` fields.
    */
   coderApproveMerge(sessionId: string, approve: boolean): Promise<string>;
 
@@ -1437,8 +2310,8 @@ export class CarRuntime {
    * error}` plus `needs_you` (`"contract" | "question" | "approval" | "auth" |
    * null`), `needs_you_label` (the daemon-owned wording, so every client says
    * the same thing), `question_prompt`, `auth_message`, `auth_wait_secs`,
-   * `failure_kind` (`"budget_exhausted" | "auth_required" | "infrastructure" |
-   * "error"` when failed), `worktree` (only when it still exists on disk),
+   * `failure_kind` (`"budget_exhausted" | "auth_required" | "configuration" |
+   * "infrastructure" | "error"` when failed), `worktree` (only when it still exists on disk),
    * `project`, `result_branch`, `model`, `discussion_id`, and `next_seq` (live
    * only — the `coder.subscribe` cursor).
    *
@@ -1528,7 +2401,7 @@ export class CarRuntime {
 
   /** List registered in-daemon declarative agents. */
   declagentList(): Promise<string>;
-  /** One declarative agent's spec by id. */
+  /** One declarative agent's spec by id, plus daemon-derived `registry_path`. */
   declagentGet(id: string): Promise<string>;
   /** Unregister a declarative agent. */
   declagentRemove(id: string): Promise<string>;
@@ -1629,6 +2502,8 @@ export class CarRuntime {
    * (`{ model_id, reliability, score, selected, in_band }`) so callers can see
    * why a model won and what the alternatives cost in reliability terms. Empty
    * on explicit-model and cold-start paths where no ranking occurred.
+   * `intentJson.strict_exclusions` makes an exhausted `exclude_models` list
+   * return no route instead of selecting an excluded last resort.
    */
   routeModel(prompt: string, intentJson?: string | null): Promise<string>;
 
@@ -2047,6 +2922,14 @@ export class CarRuntime {
   messagesChats(limit?: number | null): string;
 
   /**
+   * Read Messages.app rows newest first. `queryJson` is
+   * `{chat_ids?: string[], since?: string, limit?: number,
+   * include_body?: boolean}`. Returns `{available, backend, reason?, messages}`;
+   * an unreadable database is unavailable, not an empty conversation.
+   */
+  messagesRead(queryJson: string): string;
+
+  /**
    * Send a message through Messages.app. `sendRequestJson` is
    * `{recipient, body, service_id?}`.
    */
@@ -2093,6 +2976,153 @@ export class CarRuntime {
   healthActivity(startYmd: string, endYmd: string): string;
 }
 
+// BEGIN GENERATED daemon wrappers: HostClient
+/** Host-authority daemon client; host-only methods never appear in CarRuntime's generated region. */
+export class HostClient {
+  constructor(runtime: CarRuntime);
+  daemonCallHostManagement(method: string, paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agent_permissions.evaluate_tool`. */
+  agentPermissionsEvaluateTool(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agent_permissions.reset`. */
+  agentPermissionsReset(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agent_permissions.reset_tool`. */
+  agentPermissionsResetTool(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agent_permissions.set`. */
+  agentPermissionsSet(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agent_permissions.set_default`. */
+  agentPermissionsSetDefault(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agent_permissions.set_tool`. */
+  agentPermissionsSetTool(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agents.install`. */
+  agentsInstall(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agents.remove`. */
+  agentsRemove(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `agents.upsert`. */
+  agentsUpsert(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `assistant.identity.set`. */
+  assistantIdentitySet(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.accounts`. */
+  authAccounts(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.authority_hint`. */
+  authAuthorityHint(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.complete`. */
+  authComplete(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.completion_status`. */
+  authCompletionStatus(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.logout`. */
+  authLogout(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.remove_account`. */
+  authRemoveAccount(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.snapshot`. */
+  authSnapshot(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.start`. */
+  authStart(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.status`. */
+  authStatus(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.switch_account`. */
+  authSwitchAccount(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `auth.switch_org`. */
+  authSwitchOrg(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `declagents.remove`. */
+  declagentsRemove(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `declagents.set_enabled`. */
+  declagentsSetEnabled(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `diagnostics.secret_store_activity`. */
+  diagnosticsSecretStoreActivity(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `messaging.config.get`. */
+  messagingConfigGet(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `messaging.config.set`. */
+  messagingConfigSet(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `messaging.pairing.start`. */
+  messagingPairingStart(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `messaging.pairing.status`. */
+  messagingPairingStatus(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `messaging.status`. */
+  messagingStatus(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `messaging.test_send`. */
+  messagingTestSend(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `models.adopt`. */
+  modelsAdopt(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `models.install`. */
+  modelsInstall(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `models.pull`. */
+  modelsPull(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `models.remove`. */
+  modelsRemove(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `models.resource_policy.set`. */
+  modelsResourcePolicySet(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `models.storage_roots`. */
+  modelsStorageRoots(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `openrouter.auth_cancel`. */
+  openrouterAuthCancel(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `openrouter.auth_start`. */
+  openrouterAuthStart(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `openrouter.disconnect`. */
+  openrouterDisconnect(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `openrouter.status`. */
+  openrouterStatus(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `permission.approve`. */
+  permissionApprove(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `permission.reject`. */
+  permissionReject(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `permission.set_tier`. */
+  permissionSetTier(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `session.clear_halt`. */
+  sessionClearHalt(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `tasks.schedule`. */
+  tasksSchedule(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `tasks.unschedule`. */
+  tasksUnschedule(paramsJson: string): Promise<string>;
+
+}
+// END GENERATED daemon wrappers: HostClient
+
 // ---------------------------------------------------------------------------
 // Standalone functions
 // ---------------------------------------------------------------------------
@@ -2118,7 +3148,9 @@ export class CarRuntime {
  * `tools.cancel` notification repeats so the host can abort the right
  * in-flight call. `timeout_ms` is the action's declared budget in
  * milliseconds when the action declared one (`null` otherwise); the
- * host's tool runner may use it to bound its own work.
+ * host's tool runner may use it to bound its own work. Throwing an ordinary
+ * value is an ordinary proposal-scoped failure; throw `TerminalToolError` to
+ * request fail-stop session handling.
  *
  * `sessionId`, when provided, scopes per-action policy validation to
  * the named session opened via `CarRuntime.openSession()`. Global
@@ -2133,6 +3165,11 @@ export class CarRuntime {
  * tenant-scoped view so distinct tenants can't observe each other's
  * keys (Parslee-ai/car#187 phase 3). Single-tenant in-process callers
  * pass `null` / omit and see no behaviour change.
+ *
+ * The returned JSON string is a serialized `ProposalResult`. An
+ * `ActionResult` includes `rolled_back: true` when it succeeded before an
+ * abort restored proposal state; false is omitted. Use this field, not the
+ * human-readable warning in `error`, to detect rollback.
  */
 export function executeProposal(
   rt: CarRuntime,
@@ -2373,8 +3410,11 @@ export function unregisterChatHandler(): void;
  * `action_id`, which is client-authored and not unique across concurrent or
  * retried attempts.
  * as a JSON string and MUST return a Promise resolving to the tool's
- * JSON-encoded result. Throwing rejects the daemon-side action
- * with a -32000 JSON-RPC error.
+ * JSON-encoded result. Throwing an ordinary value rejects only the current
+ * proposal. Throw `TerminalToolError` when retry cannot recover: CAR aborts
+ * and rolls back the proposal, marks its failed action `terminal: true`, and
+ * rejects later proposals on this daemon session until a host clears the halt
+ * or the client reconnects.
  *
  * `request_id` is the daemon's callback-routing id, repeated by the
  * `tools.cancel` notification so the host can abort the right
@@ -2399,6 +3439,11 @@ export function unregisterChatHandler(): void;
 export function registerToolHandler(
   handlerFn: (callJson: string) => Promise<string>,
 ): void;
+
+/** Distinguished fail-stop error for tool callbacks. */
+export class TerminalToolError extends Error {
+  constructor(message: string);
+}
 
 /**
  * Clear the registered `tools.execute` handler. `submitProposal`
@@ -3924,7 +4969,11 @@ export function analyzeSchedule(graphJson: string): string;
 /**
  * Install a durable OS-level schedule (launchd on macOS, crontab on Linux) so
  * the task fires even when the CAR daemon is down. Idempotent. Returns the
- * installed-schedule JSON.
+ * installed-schedule JSON: `{ label, backend, detail, conflict_preserved? }`.
+ * On macOS, `conflict_preserved` (present only when it happened) is the
+ * sibling path where the prior plist's bytes were preserved after a
+ * concurrent writer changed them through a pre-opened file descriptor during
+ * replacement — they are never deleted or overwritten.
  */
 export function installOsSchedule(taskJson: string, program: string, argsJson: string): string;
 
@@ -4101,8 +5150,9 @@ export function a2ADispatch(rt: CarRuntime, method: string, paramsJson: string):
 // --- Lifecycle-managed agents (car_registry::supervisor) ---
 
 /**
- * List every managed agent in `~/.car/agents.json` along with its
- * runtime status. Returns JSON `[ManagedAgent]`.
+ * List every supervised agent along with its runtime status and the
+ * daemon-compatible `manifest_path`, `log_path`, and `stderr_log_path`
+ * location metadata. Returns JSON `[ManagedAgent]`.
  *
  * Wire shape matches the daemon's `agents.list` JSON-RPC method
  * exactly so a host can swap between in-process and WS transports
@@ -4142,7 +5192,9 @@ export function agentsHealth(): Promise<string>;
  *   "restart": "on_failure",         // never | on_failure | always
  *   "max_restarts": 10,
  *   "backoff_secs": 5,
- *   "auto_start": true               // included by start_all on boot
+ *   "auto_start": true,              // included by start_all on boot
+ *   "method_allowlist": ["mail.accounts", "mail.messages"]
+ *                                      // optional; absent = unrestricted
  * }
  * ```
  *
@@ -4251,7 +5303,7 @@ export function agentsTailLog(id: string, n?: number | null, stream?: string | n
 // alongside `agents.invoke_external`. Wire shape:
 //
 //   {
-//     "id": "claude-code" | "codex" | "gemini",
+//     "id": "claude-code" | "codex" | "gemini" | "mini-swe-agent",
 //     "displayName": "Claude Code" | ...,
 //     "binaryPath": "/usr/local/bin/claude",
 //     "version": "1.0.51" | null,
@@ -4322,7 +5374,7 @@ export function agentsDetectExternal(
  * `ExternalAgentHealth` (when `id` supplied), where:
  *
  *   {
- *     "id": "claude-code" | "codex" | "gemini",
+ *     "id": "claude-code" | "codex" | "gemini" | "mini-swe-agent",
  *     "status": "ready" | "not_configured" | "expired" |
  *               "network_error" | "not_executable" | "unknown",
  *     "details": <tool-specific JSON object>,
@@ -4342,8 +5394,13 @@ export function agentsHealthExternal(
 
 /**
  * Per-task invocation of an external CLI agent (Phase 2 stage 3).
- * `id` selects the adapter (`"claude-code"` today; `codex` and
- * `gemini` ship in follow-up PRs). `task` is the prompt. `optionsJson`
+ * `id` selects the adapter (`"claude-code"`, `"codex"`,
+ * `"gemini"`, `"mini-swe-agent"`). `"mini-swe-agent"` is a measurement
+ * baseline for `car coder-ab`, not a production engine: it must be named
+ * explicitly (unnamed coder engine resolution never selects it), it has no
+ * default backbone of its own so an invocation with no `model` is refused,
+ * and its model ids are litellm ids needing the provider prefix
+ * (`openai/gpt-5.5`). `task` is the prompt. `optionsJson`
  * is a JSON-encoded `InvokeOptions` — pass `"{}"` or `null` to accept
  * defaults.
  *

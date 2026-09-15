@@ -21,8 +21,8 @@ executor's built-ins: the worktree file tools (`read_file`, `list_dir`,
 *delegate*, but those reach a model only on the **agent-build** project kind —
 building a declarative agent, which `car code-task` does not run — and only when
 the generated agent's spec allowlists them. So an orchestrator driving a headless
-run gets the identical surface a supervised `car code` run gets, and a task that
-succeeds under one does not fail under the other for want of a tool.
+run gets the same surface as a supervised `car code` run. Both also accept
+`--browser`; without that explicit option, browser names are absent.
 
 On top of the built-ins, the loop names the delegate tools it wants, one by one,
 and nothing else: graph-memory `recall`, and — when you have granted it — the
@@ -47,15 +47,24 @@ discovering it cannot call. To grant them, give the `car-coder` subject
 `agent_permissions.set` with
 `{"agent_id": "car-coder", "tier": "full_access", "mode": "always_allow"}`.
 
-**No browser, and that is a boundary rather than a gap.** The assistant drives a
-real browser; a coder session does not, headless or supervised. `BrowserTools`
-launches Chromium against a persistent profile and hands a human the keyboard
-for a sign-in it cannot perform itself, and `car code-task` has no daemon and no
-host to route that handover through — it runs unattended by design. A coder
-session therefore proves its work with the outcome contract, against repository
-state, and a defect that only manifests in a rendered page can be neither
-reproduced nor verified inside one. Reproduce and verify that class of work in a
-supervised `car do` session, and treat a coder diff for it as unproven.
+**Browser access is explicit.** `car code --browser` and `car code-task
+--browser` attach the same lazy `BrowserTools` integration the assistant uses:
+`browse_navigate`, `browse_click`, `browse_type`, `browse_scroll`,
+`browse_keypress`, `browse_wait`, `browse_observe`, `browser_await_answer`,
+`browser_await_signin`, `browser_record_start`, and `browser_record_stop`.
+Chromium is not launched until the model calls one. `car code --browser` makes
+`--engine auto` select the native loop; pairing it with an explicitly external
+or foreman engine is refused because those processes do not receive CAR's tool
+registry. A headless `code-task` process has no CarHost drawer, so a sign-in uses the visible Chromium window;
+tasks that must remain unattended should avoid authenticated flows.
+
+The flag is a session-scoped approval for those exact full-access tool names.
+It satisfies the normal `RequireApproval` posture, but an Agent Permissions
+`Deny` still wins. Every call then takes the ordinary coder path: parameter
+validation in the browser executor, the frozen built-in and operator policy
+inspector chain, and the session's `tool_call` / `tool_result` event receipts.
+Without the flag, no browser delegate is attached or advertised, so a model
+cannot invoke it by guessing the name.
 
 ```bash
 car code-task \
@@ -65,7 +74,7 @@ car code-task \
   --target-branch goalpool/g_mt81ewky \
   --pr-base main --draft --deliver pr \
   --workspace-dir ~/.cache/goals/g_mt81ewky --keep-workspace \
-  --json
+  --browser --json
 ```
 
 ### What governs the model's calls
@@ -95,7 +104,7 @@ Four properties worth knowing before writing a rule:
   states its prohibition as an allowlist, denying every value of that parameter
   it does not name — so a rule file cannot widen what the built-in chain permits.
 - **Delegate tools are governed too.** Delegate-owned names (the `parslee_*`
-  surface) bypass the worktree path-clamp, because they execute on another
+  surface and opt-in browser tools) bypass the worktree path-clamp, because they execute on another
   substrate, but they still pass the inspector chain. Otherwise a `deny_tool`
   rule would stop a built-in and silently miss the same session's delegate. The
   built-ins are inert for those names — each early-returns Allow for a tool that
@@ -250,36 +259,83 @@ carry the caller's authority is open in
 the practical advice is to write checks that need no credential, and not to
 rely on the matcher to enforce that.
 
-### What a contract cannot assert
+### What a contract can and cannot assert
 
-A check asserts two things about one shell command: that it exited zero, and
-that its combined output contains a substring. The *schema* therefore has no
-comparison operator — but the command runs through a shell (`sh -lc` on Unix,
-`cmd /C` on Windows) and is graded on its exit code, so a threshold is writable
-today, and against a live system: on a POSIX host
+A point-in-time check asserts two things about one shell command: that it
+exited zero, and that its combined output contains a substring. The *schema*
+therefore has no comparison operator — but the command runs through a shell
+(`sh -lc` on Unix, `cmd /C` on Windows) and is graded on its exit code, so a
+threshold is writable today, and against a live system: on a POSIX host
 `[ "$(psql -tAc 'select count(*) from orphans')" -lt 100000 ]` is a legal check.
 Reach is not the limit, and neither is arithmetic.
 
-What is missing is a **before-value** and an **evaluation point past delivery**.
-Every evaluation is on this side of it: once against the unmodified worktree
+**Before/after claims are expressible too** (car#1067). A check marked
+`"baseline": true` is a *capture*: it runs once, at session start, during the
+same baseline pass that detects a contract gating nothing, and its output
+(the 4 KiB tail — keep a capture's output down to the one value that matters:
+a count, a digest, a `curl` body) is kept as the before-value. A check carrying
+a `"differential"` runs at every later evaluation, and the RUNTIME compares its
+output against the named capture — the claim is exactly one of:
+
+- `"changed"` — the output must differ from the capture ("this trace now
+  appears and did not before", "the heartbeat flipped");
+- `"unchanged"` — the output must be identical to the capture: the
+  control-group claim ("the other tenant's rows did not move");
+- `{"delta_within": {"min": …, "max": …}}` — both outputs carry a number and
+  `after - before` must fall inside the stated bounds (either side optional,
+  at least one required). "Orphaned rows fell by at least 100" is
+  `{"max": -100.0}`.
+
+```jsonc
+{
+  "description": "orphan cleanup works and the control tenant is untouched",
+  "checks": [
+    { "name": "orphan_rows", "command": "psql -tAc 'select count(*) from orphans'",
+      "baseline": true },
+    { "name": "control_rows", "command": "psql -tAc 'select count(*) from tenant_b'",
+      "baseline": true },
+    { "name": "orphans_fell", "command": "psql -tAc 'select count(*) from orphans'",
+      "differential": { "baseline": "orphan_rows", "expect": { "delta_within": { "max": -100.0 } } } },
+    { "name": "control_unmoved", "command": "psql -tAc 'select count(*) from tenant_b'",
+      "differential": { "baseline": "control_rows", "expect": "unchanged" } }
+  ]
+}
+```
+
+Declare captures before the differentials that reference them; validation
+rejects a differential naming a capture that does not exist, is not marked
+baseline, or is declared after it, a `delta_within` with no bounds, and a
+contract that is captures only. Both executions are runtime-owned — the capture
+lands in the baseline results, the comparison in the check's own result, and a
+failed differential's message names what was compared and how it missed. Model
+claims count for nothing on either side, and a differential evaluated without
+its capture fails closed rather than passing silently. At the baseline pass
+itself the differentials are evaluated against the values captured moments
+before, which gives the red-green story the honest reading: `changed` and a
+moving `delta_within` are red before any work, while `unchanged` — the control
+group — is green and must stay green. The external subject falls out of the
+command being arbitrary, subject to the same policy chain as every check
+(car#1066 above) — what was missing was the before/after structure, not a
+transport.
+
+What is still missing is an **evaluation point past delivery**. Every
+evaluation is on this side of it: once against the unmodified worktree
 before the loop, once per repair round inside it, and once as the gate that
 admits delivery. Under `car code-task` that gate is a distinct re-run the
 runtime performs after the loop, deliberately treating the loop's own verdict as
 advisory; a daemon session has no separate re-run, and the loop's final
-evaluation is the gate. Either way nothing is evaluated after. The baseline run
-answers one question only — does every check already pass, in which case the
-contract gates nothing — and its results are reported and kept as evidence,
-never handed to a later run as a measurement to compare against.
+evaluation is the gate. Either way nothing is evaluated after.
 
-So a check can say "fewer than 100,000 orphaned rows *right now*", and cannot
-say "fewer than before", or "fewer after the deploy this session does not
-perform". Nor can it express any of these: the orphaned-rows table went from
-435,594 rows to 76,330 after the deploy; this service's heartbeat flipped from
-ERROR to HEALTHY; this App Insights trace now appears and did not before; a
-control group of unrelated services did not change. Each is a claim about a live
-system across a deploy window, and it
-belongs to the orchestrator wrapping `car code-task`, which owns the deploy and
-therefore owns both sides of that window.
+So a contract can now say "fewer than before" — across the session's own work —
+and still cannot say "fewer after the deploy this session does not perform".
+The orphaned-rows table going from 435,594 to 76,330 *after a deploy*, or a
+heartbeat flipping *once the new build is serving*, is a claim about a window
+the session does not own; it belongs to the orchestrator wrapping
+`car code-task`, which owns the deploy and therefore owns both sides of it.
+One practical consequence: under `car code-task` the differential gate
+currently evaluates with the captures of the in-process session that made them
+— a `--contract-file` with baselines captures them at that run's own start,
+never from an earlier invocation.
 
 One caveat on outward-reaching checks: they are still policy-inspected. A check
 runs through the same `.car/policies` inspector chain as the model's own shell,
@@ -299,7 +355,7 @@ rather than answered.
 | `--pr-base <NAME>` | PR base. Defaults to the repo's default branch. |
 | `--body-prefix <TEXT>` | Trusted caller-supplied text placed verbatim at the start of the generated PR body. The model cannot edit it. Intended for stable orchestrator markers such as `<!-- car-selfheal:key=… -->`; do not pass untrusted model output. |
 | `--draft` | Open the pull request as a draft. |
-| `--deliver <MODE>` | `pr` \| `branch` \| `none`. Defaults to `pr` with a target branch, else `branch`. **Pull-request delivery supports GitHub and GitHub Enterprise only** and requires the authenticated `gh` CLI; GitLab, Azure DevOps, Bitbucket, and other forges are not supported. Use `branch` to publish the branch when an external orchestrator will open the review artifact on another forge. `branch` publishes a clean worktree whose HEAD is ahead of the base as a re-delivery, the same as `pr`; it fails only when the base already contains HEAD. |
+| `--deliver <MODE>` | `pr` \| `branch` \| `none`. Defaults to `pr` with a target branch, else `branch`. Pull-request delivery selects GitHub for `github.com` origins and Azure DevOps for `dev.azure.com`, `ssh.dev.azure.com`, and `*.visualstudio.com` origins. GitHub requires an authenticated `gh` CLI; Azure DevOps requires the `azure-devops` extension for `az` plus `az login` or `AZURE_DEVOPS_EXT_PAT`. Set `CAR_CODER_FORGE=github` or `CAR_CODER_FORGE=azure-devops` for a self-hosted or otherwise unrecognized origin; an unknown origin fails before the delivery commit or push and names that override. GitLab, Bitbucket, and other forges are not supported. Use `branch` when an external orchestrator will open the review artifact. `branch` publishes a clean worktree whose HEAD is ahead of the base as a re-delivery, the same as `pr`; it fails only when the base already contains HEAD. |
 | `--model <ID>` | Pin the inference model. |
 | `--max-iterations <N>` | Override the coder config's iteration ceiling. |
 | `--max-session-wall-secs <N>` | Override the session wall clock. `0` = unlimited. Bounds the whole run — the baseline contract evaluation, the loop, and the runtime's own re-run — not just the loop: each check's `timeout_secs` is clamped to what is left. |
@@ -315,7 +371,7 @@ rather than answered.
 |---|---|---|
 | `0` | Contract green and delivery succeeded (or `--deliver none`), **or** the session correctly concluded no code should change. | Progress. Read `status` to tell the two apart: `delivered` shipped a diff, `reported` shipped a conclusion. Do not retry either. |
 | `1` | Ran out of iterations or wall-clock without the contract going green. | Read `failure_class`: `contract_not_green` / `task_max_turns` is a real, scorable no-progress round; `session_wall_exhausted` is a run that ran out of time and was never judged — do not score it. |
-| `2` | Retriable infrastructure — transport, a lost push race, a GitHub blip. | Requeue; **not** a no-progress cycle. |
+| `2` | Retriable infrastructure — transport, a lost push race, or a forge CLI/API blip. | Requeue; **not** a no-progress cycle. |
 | `3` | Non-retryable — bad invocation, unusable contract, missing credential, a vacuous contract, **or** a no-change finding that needs a human this command cannot reach. | Park it and quote the failure class. For `finding_needs_review`, a person reads the finding; re-running changes nothing. |
 
 `run_end.failure_class` ∈ `none` · `contract_not_green` · `delivery_failed` ·
@@ -424,16 +480,17 @@ already verified that tree green; deleting it because the runtime exhausted the
 budget for its own second verdict would destroy finished work. This is the one
 exception to the flag's ordinary failure-retention policy.
 
-A missing GitHub credential is **not** a `delivery_failed`, and neither is
+A missing GitHub or Azure DevOps credential is **not** a `delivery_failed`, and neither is
 either delivery-head refusal — an ambiguous head, or a closed pull request into
 this round's base (see Delivery semantics ▸ 2). All are checked before any work,
 so nothing has been coded and no workspace exists; all report `config_error`
 (still exit 3). The `delivery_failed` playbook — "green work
 exists on disk, retry the delivery only" — has nothing to act on here. The
 `delivery_failed` event that precedes either still carries
-`stage: "preflight"`. A `gh pr list` that *fails* at the preflight is not a
-refusal: only a positive answer parks a run, so the round proceeds and delivery
-reports the listing failure as `stage: "pr", retriable: true` if it persists.
+`stage: "preflight"`. A forge's pull-request listing that *fails* at the
+preflight is not a refusal: only a positive answer parks a run, so the round
+proceeds and delivery reports the listing failure as `stage: "pr", retriable: true`
+if it persists.
 
 ## The event stream
 
@@ -489,8 +546,8 @@ mid-run loop error that did not end the run.
    retriable failure, and the remote is left exactly as it was.
 2. **One pull request per branch and base — and a clear head.**
    Reconciliation looks only at pull requests whose base is this round's
-   `--pr-base`, because GitHub's one-open-pull-request constraint is per (head,
-   base) pair and two open pull requests from the same branch into different
+   `--pr-base`, because the supported forges identify an open pull request by its
+   (head, base) pair and two open pull requests from the same branch into different
    bases are legal. Within that set: an open one receives the push (`updated`);
    otherwise one is created (`opened`) — **including when the only existing pull
    request for that branch and base is merged**, since a merge is that branch's
@@ -501,7 +558,7 @@ mid-run loop error that did not end the run.
    make the bases independent, because **the push is shared**: a pull request
    tracks its head branch, so every commit pushed to `--target-branch` shows up
    in every open pull request whose head that branch is, whatever base each
-   merges into. GitHub offers no way to push to a branch and update only one of
+   merges into. Git offers no way to push to a branch and update only one of
    them. So the round is **refused** when `--target-branch` already has an open
    pull request into any base other than `--pr-base`, naming each number and its
    base. The two remedies are to close the other pull request, or to deliver to
@@ -536,7 +593,7 @@ mid-run loop error that did not end the run.
    pull request from this branch into some *other* base is nothing to do with
    this round and does not park it. It is also **suppressed by an open pull
    request into the same base**, which is why the rule above still holds without
-   exception: GitHub permits at most one open pull request per (head, base)
+   exception: the supported forges permit at most one open pull request per (head, base)
    pair, so when one exists it is unambiguously the one this round reconciles,
    and opening it was a later human decision than the close. A reviewer who
    closes #40 as the wrong approach and opens #55 from the same branch into the

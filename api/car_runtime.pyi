@@ -63,6 +63,15 @@ class DaemonRpcError(Exception):
     data: Any
 
 
+class TerminalToolError(Exception):
+    """A tool callback failure that cannot recover by retrying.
+
+    CAR aborts and rolls back the current proposal, marks its failed action
+    terminal, and rejects later proposals on the same daemon session until a
+    host clears the halt or the client reconnects.
+    """
+
+
 # ---------------------------------------------------------------------------
 # CarRuntime — persistent runtime instance with state, memory, tools, and
 # policies. Each instance carries its own memgine + inference engine.
@@ -100,6 +109,851 @@ class CarRuntime:
         self, method: str, handler: Callable[[str], None]
     ) -> None:
         """Register a server-initiated notification handler."""
+
+    # BEGIN GENERATED daemon wrappers: CarRuntime
+    def cancel_task(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `CancelTask` (operator).
+
+    def create_task_push_notification_config(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `CreateTaskPushNotificationConfig` (operator).
+
+    def delete_task_push_notification_config(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `DeleteTaskPushNotificationConfig` (operator).
+
+    def get_extended_agent_card(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `GetExtendedAgentCard` (operator).
+
+    def get_task(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `GetTask` (operator).
+
+    def get_task_push_notification_config(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `GetTaskPushNotificationConfig` (operator).
+
+    def list_task_push_notification_configs(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `ListTaskPushNotificationConfigs` (operator).
+
+    def list_tasks(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `ListTasks` (operator).
+
+    def send_message(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `SendMessage` (operator).
+
+    def send_streaming_message(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `SendStreamingMessage` (operator).
+
+    def subscribe_to_task(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `SubscribeToTask` (operator).
+
+    def a2a_peers_add(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2a.peers.add` (operator).
+
+    def a2a_peers_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2a.peers.list` (operator).
+
+    def a2a_peers_remove(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2a.peers.remove` (operator).
+
+    def a2a_send(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2a.send` (operator).
+
+    def a2a_start(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2a.start` (operator).
+
+    def a2a_status(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2a.status` (operator).
+
+    def a2a_stop(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2a.stop` (operator).
+
+    def a2ui_action(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui.action` (operator).
+
+    def a2ui_apply(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui.apply` (operator).
+
+    def a2ui_capabilities(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui.capabilities` (operator).
+
+    def a2ui_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui.get` (operator).
+
+    def a2ui_ingest(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui.ingest` (operator).
+
+    def a2ui_reap(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui.reap` (operator).
+
+    def a2ui_render_report(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui.render_report` (operator).
+
+    def a2ui_surfaces(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui.surfaces` (operator).
+
+    def a2ui_replay(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui/replay` (operator).
+
+    def a2ui_subscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui/subscribe` (operator).
+
+    def a2ui_unsubscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `a2ui/unsubscribe` (operator).
+
+    def admission_status(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `admission.status` (operator).
+
+    def agent_get_authenticated_extended_card(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agent/getAuthenticatedExtendedCard` (operator).
+
+    def agent_permissions_evaluate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agent_permissions.evaluate` (operator).
+
+    def agent_permissions_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agent_permissions.get` (operator).
+
+    def agents_chat(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.chat` (agent).
+
+    def agents_chat_approve(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.chat.approve` (operator).
+
+    def agents_chat_cancel(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.chat.cancel` (operator).
+
+    def agents_detect_external(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.detect_external` (operator).
+
+    def agents_health(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.health` (operator).
+
+    def agents_health_external(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.health_external` (operator).
+
+    def agents_invoke_external(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.invoke_external` (operator).
+
+    def agents_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.list` (operator).
+
+    def agents_list_external(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.list_external` (operator).
+
+    def agents_restart(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.restart` (agent).
+
+    def agents_start(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.start` (agent).
+
+    def agents_stop(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.stop` (agent).
+
+    def agents_tail_log(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.tail_log` (operator).
+
+    def agents_wait(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.wait` (operator).
+
+    def assistants_invoke(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `assistants.invoke` (operator).
+
+    def automation_run_applescript(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `automation.run_applescript` (operator).
+
+    def automation_run_powershell(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `automation.run_powershell` (operator).
+
+    def automation_shortcuts_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `automation.shortcuts.list` (operator).
+
+    def automation_shortcuts_run(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `automation.shortcuts.run` (operator).
+
+    def browser_producer_register(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.producer.register` (operator).
+
+    def browser_view_back(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.back` (operator).
+
+    def browser_view_click(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.click` (operator).
+
+    def browser_view_forward(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.forward` (operator).
+
+    def browser_view_hand_back(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.hand_back` (operator).
+
+    def browser_view_keypress(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.keypress` (operator).
+
+    def browser_view_navigate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.navigate` (operator).
+
+    def browser_view_paste(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.paste` (operator).
+
+    def browser_view_reload(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.reload` (operator).
+
+    def browser_view_scroll(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.scroll` (operator).
+
+    def browser_view_subscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.subscribe` (operator).
+
+    def browser_view_tab_close(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.tab_close` (operator).
+
+    def browser_view_tab_open(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.tab_open` (operator).
+
+    def browser_view_tab_switch(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.tab_switch` (operator).
+
+    def browser_view_take_control(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.take_control` (operator).
+
+    def browser_view_type(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.type` (operator).
+
+    def browser_view_unsubscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `browser.view.unsubscribe` (operator).
+
+    def builder_build(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `builder.build` (operator).
+
+    def capabilities_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `capabilities.list` (operator).
+
+    def coder_discuss_subscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `coder.discuss.subscribe` (operator).
+
+    def coder_discuss_unsubscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `coder.discuss.unsubscribe` (operator).
+
+    def coder_projects_create(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `coder.projects.create` (operator).
+
+    def coder_projects_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `coder.projects.get` (operator).
+
+    def coder_projects_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `coder.projects.list` (operator).
+
+    def coder_subscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `coder.subscribe` (operator).
+
+    def coder_unsubscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `coder.unsubscribe` (operator).
+
+    def concierge_actions(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.actions` (operator).
+
+    def concierge_apply(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.apply` (operator).
+
+    def concierge_ask(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.ask` (operator).
+
+    def concierge_clear_default(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.clear_default` (operator).
+
+    def concierge_defaults(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.defaults` (operator).
+
+    def concierge_dismiss(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.dismiss` (operator).
+
+    def concierge_refresh_catalog(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.refresh_catalog` (operator).
+
+    def concierge_rollback(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.rollback` (operator).
+
+    def concierge_set_default(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.set_default` (operator).
+
+    def concierge_status(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.status` (operator).
+
+    def connectors_add(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.add` (operator).
+
+    def connectors_add_stdio(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.add_stdio` (operator).
+
+    def connectors_authenticate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.authenticate` (operator).
+
+    def connectors_complete_authentication(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.complete_authentication` (operator).
+
+    def connectors_disable_tools(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.disable_tools` (operator).
+
+    def connectors_enable_tools(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.enable_tools` (operator).
+
+    def connectors_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.list` (operator).
+
+    def connectors_refresh(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.refresh` (operator).
+
+    def connectors_remove(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.remove` (operator).
+
+    def connectors_tools(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `connectors.tools` (operator).
+
+    def declagents_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `declagents.get` (operator).
+
+    def declagents_invoke(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `declagents.invoke` (operator).
+
+    def declagents_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `declagents.list` (operator).
+
+    def declagents_route(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `declagents.route` (operator).
+
+    def declagents_route_split(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `declagents.route_split` (operator).
+
+    def declagents_routing_stats(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `declagents.routing_stats` (operator).
+
+    def events_chain_enable(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.chain.enable` (operator).
+
+    def events_chain_verify(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.chain.verify` (operator).
+
+    def events_clear(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.clear` (operator).
+
+    def events_cost_by_agent(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.cost_by_agent` (operator).
+
+    def events_count(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.count` (operator).
+
+    def events_query(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.query` (operator).
+
+    def events_retention(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.retention` (operator).
+
+    def events_stats(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.stats` (operator).
+
+    def events_truncate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `events.truncate` (operator).
+
+    def evolution_plan(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `evolution.plan` (operator).
+
+    def evolution_run(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `evolution.run` (agent).
+
+    def feedback_compose_preview(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `feedback.compose_preview` (operator).
+
+    def feedback_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `feedback.list` (operator).
+
+    def feedback_status(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `feedback.status` (operator).
+
+    def feedback_submit(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `feedback.submit` (operator).
+
+    def goal_clear(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `goal.clear` (operator).
+
+    def goal_set(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `goal.set` (operator).
+
+    def goal_status(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `goal.status` (operator).
+
+    def goal_suggest(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `goal.suggest` (operator).
+
+    def host_subscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `host.subscribe` (operator).
+
+    def image_generate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `image.generate` (operator).
+
+    def infer_cancel(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `infer.cancel` (operator).
+
+    def infer_deadline(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `infer.deadline` (operator).
+
+    def inference_register_runner(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `inference.register_runner` (operator).
+
+    def inference_runner_complete(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `inference.runner.complete` (operator).
+
+    def inference_runner_event(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `inference.runner.event` (operator).
+
+    def inference_runner_fail(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `inference.runner.fail` (operator).
+
+    def meeting_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `meeting.get` (operator).
+
+    def meeting_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `meeting.list` (operator).
+
+    def meeting_start(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `meeting.start` (operator).
+
+    def meeting_stop(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `meeting.stop` (operator).
+
+    def memory_add_fact(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.add_fact` (agent).
+
+    def memory_build_context(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.build_context` (operator).
+
+    def memory_build_context_fast(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.build_context_fast` (operator).
+
+    def memory_consolidate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.consolidate` (agent).
+
+    def memory_fact_count(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.fact_count` (operator).
+
+    def memory_load(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.load` (operator).
+
+    def memory_persist(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.persist` (operator).
+
+    def memory_query(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.query` (operator).
+
+    def memory_utility_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.utility_get` (operator).
+
+    def memory_utility_set(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `memory.utility_set` (operator).
+
+    def message_send(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `message/send` (operator).
+
+    def message_stream(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `message/stream` (operator).
+
+    def mobile_runtime(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `mobile.runtime` (operator).
+
+    def models_catalog_snapshot(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.catalog_snapshot` (operator).
+
+    def models_check_concierge(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.check_concierge` (operator).
+
+    def models_check_upgrade_nudge(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.check_upgrade_nudge` (operator).
+
+    def models_detect_upgrades(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.detect_upgrades` (operator).
+
+    def models_dismiss_suggestion(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.dismiss_suggestion` (operator).
+
+    def models_dismiss_upgrade(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.dismiss_upgrade` (operator).
+
+    def models_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.list` (operator).
+
+    def models_list_unified(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.list_unified` (operator).
+
+    def models_preflight(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.preflight` (operator).
+
+    def models_recommend(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.recommend` (operator).
+
+    def models_register(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.register` (operator).
+
+    def models_resource_policy_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.resource_policy.get` (operator).
+
+    def models_route(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.route` (operator).
+
+    def models_route_provenance(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.route_provenance` (operator).
+
+    def models_search(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.search` (operator).
+
+    def models_setup_plan(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.setup_plan` (operator).
+
+    def models_stats(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.stats` (operator).
+
+    def models_unregister(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.unregister` (operator).
+
+    def models_update_prefs_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.update_prefs_get` (operator).
+
+    def models_update_prefs_set(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.update_prefs_set` (operator).
+
+    def models_upgrades(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `models.upgrades` (operator).
+
+    def multi_map_reduce(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multi.map_reduce` (operator).
+
+    def multi_pipeline(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multi.pipeline` (operator).
+
+    def multi_subtask(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multi.subtask` (operator).
+
+    def multi_supervisor(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multi.supervisor` (operator).
+
+    def multi_swarm(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multi.swarm` (operator).
+
+    def multi_tournament(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multi.tournament` (operator).
+
+    def multi_vote(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multi.vote` (operator).
+
+    def nlp_extract_entities(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `nlp.extract_entities` (operator).
+
+    def nlp_identify_language(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `nlp.identify_language` (operator).
+
+    def nlp_tokenize(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `nlp.tokenize` (operator).
+
+    def notifications_local(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `notifications.local` (operator).
+
+    def outcomes_resolve_pending(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `outcomes.resolve_pending` (operator).
+
+    def outcomes_scoreboard(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `outcomes.scoreboard` (operator).
+
+    def parslee_auth(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `parslee.auth` (operator).
+
+    def permission_classify(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `permission.classify` (operator).
+
+    def permission_evaluate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `permission.evaluate` (agent).
+
+    def permission_pending(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `permission.pending` (agent).
+
+    def permissions_domains(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `permissions.domains` (operator).
+
+    def permissions_explain(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `permissions.explain` (operator).
+
+    def permissions_request(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `permissions.request` (operator).
+
+    def permissions_status(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `permissions.status` (operator).
+
+    def policy_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `policy.list` (operator).
+
+    def policy_register(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `policy.register` (operator).
+
+    def policy_unregister(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `policy.unregister` (operator).
+
+    def proposal_submit(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `proposal.submit` (owner).
+
+    def registry_heartbeat(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `registry.heartbeat` (operator).
+
+    def registry_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `registry.list` (operator).
+
+    def registry_reap(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `registry.reap` (operator).
+
+    def registry_register(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `registry.register` (operator).
+
+    def registry_unregister(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `registry.unregister` (operator).
+
+    def replan_set_config(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `replan.set_config` (operator).
+
+    def runs_cancel(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `runs.cancel` (owner).
+
+    def runs_get_trace(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `runs.get_trace` (owner).
+
+    def runs_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `runs.list` (owner).
+
+    def runs_record_turns(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `runs.record_turns` (agent).
+
+    def runs_resume(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `runs.resume` (agent).
+
+    def runs_subscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `runs.subscribe` (owner).
+
+    def runs_unsubscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `runs.unsubscribe` (operator).
+
+    def scheduler_create(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `scheduler.create` (operator).
+
+    def scheduler_os_install(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `scheduler.os_install` (operator).
+
+    def scheduler_os_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `scheduler.os_list` (operator).
+
+    def scheduler_os_reconcile(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `scheduler.os_reconcile` (operator).
+
+    def scheduler_os_render(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `scheduler.os_render` (operator).
+
+    def scheduler_os_uninstall(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `scheduler.os_uninstall` (operator).
+
+    def scheduler_run(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `scheduler.run` (operator).
+
+    def scheduler_run_loop(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `scheduler.run_loop` (operator).
+
+    def session_auth(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.auth` (agent).
+
+    def session_bind_sandbox(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.bindSandbox` (agent).
+
+    def session_bind_substrate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.bindSubstrate` (operator).
+
+    def session_init(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.init` (operator).
+
+    def session_policy_close(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.policy.close` (operator).
+
+    def session_policy_open(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.policy.open` (operator).
+
+    def skill_adopt_pack(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.adopt_pack` (operator).
+
+    def skill_enforce_deployment(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.enforce_deployment` (operator).
+
+    def skill_export(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.export` (operator).
+
+    def skill_find(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.find` (operator).
+
+    def skill_gate_deployment(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.gate_deployment` (operator).
+
+    def skill_import(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.import` (operator).
+
+    def skill_ingest(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.ingest` (operator).
+
+    def skill_ingest_governed(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.ingest_governed` (operator).
+
+    def skill_repair(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.repair` (operator).
+
+    def skill_report(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skill.report` (operator).
+
+    def skills_distill(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skills.distill` (operator).
+
+    def skills_domains_needing_evolution(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skills.domains_needing_evolution` (operator).
+
+    def skills_evolve(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skills.evolve` (operator).
+
+    def skills_gate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skills.gate` (operator).
+
+    def skills_ingest_distilled(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skills.ingest_distilled` (operator).
+
+    def skills_ingest_provisional(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skills.ingest_provisional` (operator).
+
+    def skills_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `skills.list` (operator).
+
+    def speech_prepare(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `speech.prepare` (operator).
+
+    def sync_knowledge(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `sync.knowledge` (operator).
+
+    def tasks_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks.list` (operator).
+
+    def tasks_cancel(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks/cancel` (operator).
+
+    def tasks_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks/get` (operator).
+
+    def tasks_slash_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks/list` (operator).
+
+    def tasks_push_notification_config_delete(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks/pushNotificationConfig/delete` (operator).
+
+    def tasks_push_notification_config_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks/pushNotificationConfig/get` (operator).
+
+    def tasks_push_notification_config_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks/pushNotificationConfig/list` (operator).
+
+    def tasks_push_notification_config_set(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks/pushNotificationConfig/set` (operator).
+
+    def tasks_resubscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tasks/resubscribe` (operator).
+
+    def tools_cancel(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tools.cancel` (operator).
+
+    def tools_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tools.list` (operator).
+
+    def tools_poll(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tools.poll` (operator).
+
+    def tools_register(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tools.register` (operator).
+
+    def tools_stream_subscribe(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tools.stream.subscribe` (operator).
+
+    def tools_unregister(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `tools.unregister` (operator).
+
+    def verify(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `verify` (operator).
+
+    def verify_monte_carlo(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `verify.monte_carlo` (operator).
+
+    def video_generate(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `video.generate` (operator).
+
+    def vision_ocr(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `vision.ocr` (operator).
+
+    def voice_cancel_turn(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.cancel_turn` (operator).
+
+    def voice_dispatch_turn(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.dispatch_turn` (operator).
+
+    def voice_enroll_speaker(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.enroll_speaker` (operator).
+
+    def voice_list_enrollments(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.list_enrollments` (operator).
+
+    def voice_prepare_diarizer(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.prepare_diarizer` (operator).
+
+    def voice_prepare_parakeet(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.prepare_parakeet` (operator).
+
+    def voice_prewarm_turn(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.prewarm_turn` (operator).
+
+    def voice_providers_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.providers.list` (operator).
+
+    def voice_remove_enrollment(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.remove_enrollment` (operator).
+
+    def voice_sessions_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.sessions.list` (operator).
+
+    def voice_transcribe_stream_push(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.transcribe_stream.push` (operator).
+
+    def voice_transcribe_stream_start(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.transcribe_stream.start` (operator).
+
+    def voice_transcribe_stream_stop(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.transcribe_stream.stop` (operator).
+
+    def voice_tts_stream_cancel(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.tts_stream.cancel` (operator).
+
+    def voice_tts_stream_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.tts_stream.list` (operator).
+
+    def voice_tts_stream_start(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `voice.tts_stream.start` (operator).
+
+    def workflow_build_automation(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workflow.build_automation` (operator).
+
+    def workflow_chain(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workflow.chain` (operator).
+
+    def workflow_list_paused(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workflow.list_paused` (operator).
+
+    def workflow_resume(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workflow.resume` (operator).
+
+    def workflow_run(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workflow.run` (operator).
+
+    def workflow_verify(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workflow.verify` (operator).
+    # END GENERATED daemon wrappers: CarRuntime
 
     # --- Agent basics --------------------------------------------------
 
@@ -1061,6 +1915,10 @@ class CarRuntime:
         ``tool_fn`` as the ``tools.execute`` handler for this runtime and
         submits ``proposal_json`` in a single call. Equivalent to
         :func:`register_tool_handler` followed by :meth:`submit_proposal`.
+        The returned serialized ``ProposalResult`` adds ``rolled_back: true``
+        to an ``ActionResult`` that succeeded before an abort restored proposal
+        state; false is omitted. Detect rollback from this field, never from
+        the human-readable warning in ``error``.
 
         ``tool_fn`` is called as ``tool_fn(call_json)`` for each host-tool
         action — ``call_json`` is
@@ -1212,6 +2070,10 @@ class CarRuntime:
         ``{"text", "tool_calls", "usage": {input_tokens, output_tokens},
         "model_used", "trace_id", "latency_ms",
         "time_to_first_token_ms", "stop_reason"}``.
+
+        ``local_last_resort`` is present and true ONLY when CAR appended an
+        installed on-device model behind a remote-only chain and that model
+        actually served the turn. An explicitly selected local model is not marked.
 
         ``auth_fallback_from`` is present ONLY when a candidate earlier in
         the fallback chain was skipped because its credential was
@@ -1419,7 +2281,8 @@ class CarRuntime:
         ``operator_managed_external_runtime``, ``weights_ready``,
         ``downloads_weights``, ``max_output_tokens``,
         ``public_benchmarks``, ``cost``, ``car_enabled``, ``can_remove``,
-        ``in_use``, and ``management_evidence``.
+        ``in_use``, ``management_evidence``, ``fit``, ``estimated_peak_mb``,
+        ``platform_compatible``, ``deprecated``, ``family``, and ``version``.
         ``available`` means CAR can use the model here — for a local MLX
         entry with a declared ``hf_repo`` that is ``True`` before a byte is
         fetched, because it lazy-downloads on first use — whereas
@@ -1457,10 +2320,24 @@ class CarRuntime:
         a fabricated cost. The managed ``parslee/…`` alias rows carry the
         same prices as the upstream row they front, and this response
         carries no upstream identifier for them. That holds for this
-        catalog view; ``models.search`` additionally exposes a ``family``
-        field which does name the upstream model family. Daemons older
+        catalog view; ``models.search`` entries carry these same fields, fit
+        annotation included, and additionally name ``family`` / ``version``
+        for every row (the upstream model family for a managed alias).
+        Daemons older
         than this field omit ``cost`` entirely; it deserializes to
         all-``null`` rather than failing the response.
+
+        ``fit`` (``"fits" | "too_big" | "unknown"``), ``estimated_peak_mb``
+        and ``platform_compatible`` say whether the row fits the machine the
+        daemon runs on, by the same rule ``models.recommend`` uses against
+        the active resource policy; remote rows always read ``fits`` /
+        ``null`` / ``True`` because their memory is the server's.
+        ``unknown`` never means too big and is what an older daemon's rows
+        read as. ``deprecated`` mirrors the catalog flag; ``family`` and
+        ``version`` are published for local rows only (``null`` for remote
+        rows, which is how this view keeps carrying no upstream identifier
+        for managed aliases). The list is never filtered by the daemon —
+        hide on ``fit`` in the client, as ``car models list`` does.
         """
 
     def register_model(self, schema_json: str) -> str:
@@ -1575,6 +2452,7 @@ class CarRuntime:
         model: str | None = None,
         repair_invokes: int | None = None,
         transient_retries: int | None = None,
+        browser: bool | None = None,
         distributed: bool | None = None,
         workers: list[str] | None = None,
         discussion_id: str | None = None,
@@ -1599,7 +2477,10 @@ class CarRuntime:
         recurrence escalation needs >= 2 to reach the model) and
         ``transient_retries`` its availability budget (re-invocations after the
         CLI process died mid-run) — deliberately separate, since one buys a
-        hypothesis and the other buys a retry. ``discussion_id`` names a
+        hypothesis and the other buys a retry. ``browser=True`` explicitly
+        exposes the assistant's browser tools for this session; they remain
+        absent by default, policy-gated, and recorded in coder events.
+        ``discussion_id`` names a
         ``coder.discuss`` conversation this run was distilled from: its agreed
         constraints ride into contract derivation, so a rule stated once in the
         discussion need not be restated in the intent, and the session records
@@ -1629,7 +2510,8 @@ class CarRuntime:
 
     def coder_approve_merge(self, session_id: str, approve: bool) -> str:
         """Approve (publish the ``car/coder/<id>`` branch in the repo) or
-        deny (abandon) a coder session awaiting merge approval."""
+        deny (abandon) a coder session awaiting merge approval. Agent-project
+        approvals include ``agent_id`` and daemon-derived ``registry_path``."""
 
     def coder_cancel(self, session_id: str) -> str:
         """Cancel a coder session: stop the loop, abandon, remove the
@@ -1653,7 +2535,8 @@ class CarRuntime:
         None``), ``needs_you_label`` (daemon-owned wording so every client says
         the same thing), ``question_prompt``, ``auth_message``,
         ``auth_wait_secs``, ``failure_kind`` (``"budget_exhausted" |
-        "auth_required" | "infrastructure" | "error"`` when failed),
+        "auth_required" | "configuration" | "infrastructure" | "error"``
+        when failed),
         ``worktree`` (only when it still exists on disk), ``project``,
         ``result_branch``, ``model``, ``discussion_id`` and ``next_seq`` (live
         only — the ``coder.subscribe`` cursor).
@@ -1742,7 +2625,7 @@ class CarRuntime:
         """List registered in-daemon declarative agents."""
 
     def declagent_get(self, id: str) -> str:
-        """One declarative agent's spec by id."""
+        """One declarative agent's spec plus daemon-derived ``registry_path``."""
 
     def declagent_remove(self, id: str) -> str:
         """Unregister a declarative agent."""
@@ -1846,7 +2729,8 @@ class CarRuntime:
         adversarial-reviewer separation (car#358). Each entry may be a catalog
         model id **or** a model name — the two differ for most models, and the
         name is what a result reports as the model it used, so the identifier
-        you have in hand always works (car#889)."""
+        you have in hand always works (car#889). Add ``strict_exclusions: true``
+        when generation must fail rather than use an excluded last resort."""
 
     def model_stats(self) -> str:
         """Return per-model performance profiles as JSON."""
@@ -2100,6 +2984,15 @@ class CarRuntime:
 
     def messages_chats(self, limit: Optional[int] = None) -> str: ...
 
+    def messages_read(self, query_json: str) -> str:
+        """Read Messages.app rows newest first.
+
+        ``query_json`` is ``{chat_ids?, since?, limit?, include_body?}``.
+        Returns ``{available, backend, reason?, messages}``; an unreadable
+        database is unavailable, not an empty conversation.
+        """
+        ...
+
     def messages_send(self, send_request_json: str) -> str: ...
 
     def notes_accounts(self) -> str: ...
@@ -2216,6 +3109,152 @@ class CarRuntime:
         Not available in Daemon mode.
         """
 
+
+# BEGIN GENERATED daemon wrappers: HostClient
+class HostClient:
+    """Host-authority daemon client; host methods stay off CarRuntime autocomplete."""
+
+    def __init__(self, runtime: CarRuntime) -> None: ...
+    def daemon_call_host_management(self, method: str, params_json: str) -> str: ...
+
+    def agent_permissions_evaluate_tool(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.evaluate_tool`.
+
+    def agent_permissions_reset(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.reset`.
+
+    def agent_permissions_reset_tool(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.reset_tool`.
+
+    def agent_permissions_set(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.set`.
+
+    def agent_permissions_set_default(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.set_default`.
+
+    def agent_permissions_set_tool(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.set_tool`.
+
+    def agents_install(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agents.install`.
+
+    def agents_remove(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agents.remove`.
+
+    def agents_upsert(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agents.upsert`.
+
+    def assistant_identity_set(self, params_json: str) -> str: ...
+    # Generated host wrapper for `assistant.identity.set`.
+
+    def auth_accounts(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.accounts`.
+
+    def auth_authority_hint(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.authority_hint`.
+
+    def auth_complete(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.complete`.
+
+    def auth_completion_status(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.completion_status`.
+
+    def auth_logout(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.logout`.
+
+    def auth_remove_account(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.remove_account`.
+
+    def auth_snapshot(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.snapshot`.
+
+    def auth_start(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.start`.
+
+    def auth_status(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.status`.
+
+    def auth_switch_account(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.switch_account`.
+
+    def auth_switch_org(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.switch_org`.
+
+    def declagents_remove(self, params_json: str) -> str: ...
+    # Generated host wrapper for `declagents.remove`.
+
+    def declagents_set_enabled(self, params_json: str) -> str: ...
+    # Generated host wrapper for `declagents.set_enabled`.
+
+    def diagnostics_secret_store_activity(self, params_json: str) -> str: ...
+    # Generated host wrapper for `diagnostics.secret_store_activity`.
+
+    def messaging_config_get(self, params_json: str) -> str: ...
+    # Generated host wrapper for `messaging.config.get`.
+
+    def messaging_config_set(self, params_json: str) -> str: ...
+    # Generated host wrapper for `messaging.config.set`.
+
+    def messaging_pairing_start(self, params_json: str) -> str: ...
+    # Generated host wrapper for `messaging.pairing.start`.
+
+    def messaging_pairing_status(self, params_json: str) -> str: ...
+    # Generated host wrapper for `messaging.pairing.status`.
+
+    def messaging_status(self, params_json: str) -> str: ...
+    # Generated host wrapper for `messaging.status`.
+
+    def messaging_test_send(self, params_json: str) -> str: ...
+    # Generated host wrapper for `messaging.test_send`.
+
+    def models_adopt(self, params_json: str) -> str: ...
+    # Generated host wrapper for `models.adopt`.
+
+    def models_install(self, params_json: str) -> str: ...
+    # Generated host wrapper for `models.install`.
+
+    def models_pull(self, params_json: str) -> str: ...
+    # Generated host wrapper for `models.pull`.
+
+    def models_remove(self, params_json: str) -> str: ...
+    # Generated host wrapper for `models.remove`.
+
+    def models_resource_policy_set(self, params_json: str) -> str: ...
+    # Generated host wrapper for `models.resource_policy.set`.
+
+    def models_storage_roots(self, params_json: str) -> str: ...
+    # Generated host wrapper for `models.storage_roots`.
+
+    def openrouter_auth_cancel(self, params_json: str) -> str: ...
+    # Generated host wrapper for `openrouter.auth_cancel`.
+
+    def openrouter_auth_start(self, params_json: str) -> str: ...
+    # Generated host wrapper for `openrouter.auth_start`.
+
+    def openrouter_disconnect(self, params_json: str) -> str: ...
+    # Generated host wrapper for `openrouter.disconnect`.
+
+    def openrouter_status(self, params_json: str) -> str: ...
+    # Generated host wrapper for `openrouter.status`.
+
+    def permission_approve(self, params_json: str) -> str: ...
+    # Generated host wrapper for `permission.approve`.
+
+    def permission_reject(self, params_json: str) -> str: ...
+    # Generated host wrapper for `permission.reject`.
+
+    def permission_set_tier(self, params_json: str) -> str: ...
+    # Generated host wrapper for `permission.set_tier`.
+
+    def session_clear_halt(self, params_json: str) -> str: ...
+    # Generated host wrapper for `session.clear_halt`.
+
+    def tasks_schedule(self, params_json: str) -> str: ...
+    # Generated host wrapper for `tasks.schedule`.
+
+    def tasks_unschedule(self, params_json: str) -> str: ...
+    # Generated host wrapper for `tasks.unschedule`.
+# END GENERATED daemon wrappers: HostClient
 
 # ---------------------------------------------------------------------------
 # Verification (module-level, stateless)
@@ -3068,7 +4107,8 @@ def execute(
     tool_fn: Callable[[str, str], str],
 ) -> str:
     """Execute a proposal against a fresh runtime. For long-lived use,
-    prefer ``CarRuntime.execute_proposal``.
+    prefer ``CarRuntime.execute_proposal``. A ``tool_fn`` may raise
+    :class:`TerminalToolError` to opt into engine-level fail-stop handling.
     """
 
 
@@ -3217,7 +4257,11 @@ def analyze_schedule(graph_json: str) -> str:
 def install_os_schedule(task_json: str, program: str, args_json: str) -> str:
     """Install a durable OS-level schedule (launchd on macOS, crontab on Linux) so
     the task fires even when the CAR daemon is down. Idempotent. Returns the
-    installed-schedule JSON."""
+    installed-schedule JSON: ``{ label, backend, detail, conflict_preserved? }``.
+    On macOS, ``conflict_preserved`` (present only when it happened) is the
+    sibling path where the prior plist's bytes were preserved after a concurrent
+    writer changed them through a pre-opened file descriptor during replacement
+    — they are never deleted or overwritten."""
 
 
 def uninstall_os_schedule(label_or_id: str) -> str:
@@ -3316,8 +4360,9 @@ def register_tool_handler(handler: Callable[[str], str]) -> None:
     {...}, "action_id": "<id>", "request_id": "<id>", "timeout_ms":
     <ms|None>, "session_id": "<id>|None", "attempt": <n>}`` as a JSON
     string and MUST
-    return a JSON-encoded result string. Raising rejects the
-    daemon-side action with a -32000 JSON-RPC error.
+    return a JSON-encoded result string. Raising an ordinary exception rejects
+    only the current proposal. Raising :class:`TerminalToolError` additionally
+    halts the daemon session after abort and rollback.
 
     ``request_id`` is the daemon's callback-routing id, repeated by
     the ``tools.cancel`` notification so the host can abort the right
@@ -3861,8 +4906,9 @@ def a2a_dispatch(method: str, params_json: str) -> str:
 
 
 def agents_list() -> str:
-    """List managed agents from ``~/.car/agents.json`` with their
-    runtime status. Returns JSON ``[ManagedAgent]``."""
+    """List supervised agents with runtime status and daemon-compatible
+    ``manifest_path``, ``log_path``, and ``stderr_log_path`` metadata.
+    Returns JSON ``[ManagedAgent]``."""
 
 
 def agents_health() -> str:
@@ -3893,7 +4939,9 @@ def agents_upsert(spec_json: str) -> str:
             "restart": "on_failure",         # never|on_failure|always
             "max_restarts": 10,
             "backoff_secs": 5,
-            "auto_start": True
+            "auto_start": True,
+            "method_allowlist": ["mail.accounts", "mail.messages"]
+            # optional; absent means unrestricted
         }
 
     Returns JSON ``ManagedAgent``.
@@ -4000,7 +5048,7 @@ def agents_tail_log(
 # alongside ``agents.invoke_external``. Wire shape::
 #
 #   {
-#     "id": "claude-code" | "codex" | "gemini",
+#     "id": "claude-code" | "codex" | "gemini" | "mini-swe-agent",
 #     "display_name": "Claude Code" | ...,
 #     "binary_path": "/usr/local/bin/claude",
 #     "version": "1.0.51" | null,
@@ -4071,8 +5119,13 @@ def agents_invoke_external(
 ) -> str:
     """Per-task invocation of an external CLI agent (Phase 2 stage 3).
 
-    ``id`` selects the adapter (``"claude-code"`` today; ``codex``
-    and ``gemini`` ship in follow-up PRs). ``task`` is the prompt.
+    ``id`` selects the adapter (``"claude-code"``, ``"codex"``,
+    ``"gemini"``, ``"mini-swe-agent"``). ``"mini-swe-agent"`` is a
+    measurement baseline for ``car coder-ab``, not a production engine: it
+    must be named explicitly (unnamed coder engine resolution never selects
+    it), it has no default backbone of its own so an invocation with no
+    ``model`` is refused, and its model ids are litellm ids needing the
+    provider prefix (``openai/gpt-5.5``). ``task`` is the prompt.
     ``options_json`` is a JSON-encoded ``InvokeOptions``; pass ``None``
     or ``"{}"`` to accept defaults.
 
@@ -4135,7 +5188,7 @@ def agents_health_external(id: Optional[str] = None, force: bool = False) -> str
     ``ExternalAgentHealth`` (when ``id`` supplied), with shape::
 
       {
-        "id": "claude-code" | "codex" | "gemini",
+        "id": "claude-code" | "codex" | "gemini" | "mini-swe-agent",
         "status": "ready" | "not_configured" | "expired" |
                   "network_error" | "not_executable" | "unknown",
         "details": <tool-specific JSON object>,

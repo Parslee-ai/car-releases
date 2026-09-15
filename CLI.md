@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.52.1 (2026-09-06). Every subcommand the installed binary reports is
+> 0.54.0 (2026-09-15). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 69 top-level commands, 106 nested subcommands
+> 73 top-level commands, 117 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 69 subcommands spanning several different jobs:
+`car` is one binary with 73 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -163,7 +163,7 @@ commands on a cadence via launchd / cron / schtasks).
 
 | Command | Description |
 |---|---|
-| [`car info`](#car-info) | Show runtime info |
+| [`car info`](#car-info) | Show runtime and live machine state |
 | [`car capabilities`](#car-capabilities) | Print the deterministic CAR capability manifest |
 | [`car ui`](#car-ui) | Open the browser dashboard served by the daemon |
 | [`car verify`](#car-verify) | Statically verify a proposal |
@@ -172,9 +172,11 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car replay`](#car-replay) | Replay an event journal and show reconstructed state |
 | [`car run-cancel`](#car-run-cancel) | Cancel one active CAR run and print its deterministic durable receipt |
 | [`car run-task`](#car-run-task) | Run a goal autonomously against stdio MCP tool servers, emitting a JSONL transcript. Headless entry point for external eval harnesses |
+| [`car tools`](#car-tools) | Invoke CAR's built-in runtime tools directly, in-process and without a daemon |
 | [`car code-task`](#car-code-task) | Run a coder session headlessly and IN THIS PROCESS: derive or accept an outcome contract, work in a git worktree until the runtime's own re-run of that contract is green, then deliver the result as a pull request |
 | [`car coder-ab`](#car-coder-ab) | A/B-test CAR's coder against an external agent (Codex / Claude Code) over a corpus, and grow that corpus from git history — the productionized dogfooding loop (docs/proposals/coder-ab-dogfood.md) |
 | [`car keys`](#car-keys) | Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). The key is read env-first, keychain-fallback by the runtime |
+| [`car heal`](#car-heal) | Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges |
 | [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
 | [`car models`](#car-models) | Manage local inference models |
@@ -190,6 +192,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car identity`](#car-identity) | Show or change the name your assistant answers to — in conversation, in the host apps, and as its voice wake word |
 | [`car init`](#car-init) | Initialize a .car/ project directory for team-shared configuration |
 | [`car doctor`](#car-doctor) | Diagnose (and optionally repair) a CAR install: corrupt model weights, unparseable `~/.car` state files, version skew, and leftover files from a previous install. Runs entirely against the local filesystem — no daemon required, so it works even when `car-server` won't start |
+| [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS-only in this release |
 | [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel) |
 | [`car purge`](#car-purge) | Remove this CAR install's own state under `~/.car` (config, logs, managed models, binaries) and reap any OS-level schedules CAR installed — for a clean slate before a reinstall. On macOS this also clears CarHost.app's user-level state and resets its privacy (TCC) permissions, so a reinstall really does re-run permission onboarding. NEVER touches the shared HuggingFace model cache (other tools use it); managed models are symlinks into it, so only the links are removed, not the multi-GB blobs. (To uninstall a single contributed agent instead, use `car uninstall <id>`.) |
 | [`car code`](#car-code) | Built-in coding agent: state an intent, confirm the verifiable outcome contract, and CAR delivers it in an isolated git worktree — natively or via an installed frontier CLI. Results land on a `car/coder/<id>` branch after your approval; your checkout is never touched |
@@ -230,6 +233,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car uninstall`](#car-uninstall) | Uninstall a contributed agent (Parslee-ai/car#182 phase 4). Stops the running child if any, removes the manifest from `~/.car/agents/<id>/`, and reaps the legacy `agents.json` entry. Idempotent |
 | [`car schedule`](#car-schedule) | Schedule commands to run on a cadence (launchd / cron / schtasks) |
 | [`car registry`](#car-registry) | Registry tooling for the contributed-agents registry (Parslee-ai/car#182 phase 5): `digest` a manifest, or `validate` a registry directory (the CI gate run by Parslee-ai/car-agent-registry) |
+| [`car fleet`](#car-fleet) | What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon |
 | [`car publish`](#car-publish) | Publish a contributed agent to the registry (Parslee-ai/car#182 phase 5). Reads a local agent's `manifest.toml`, signs it for `--audience public` (ed25519 key at `$CAR_PUBLISH_KEY_PATH`), stages it at the versioned `agents/<namespace>/<name>/<version>/` path, updates `index.json` + the README catalog, re-runs the EXACT `car registry validate` CI gate locally, and opens a PR against the registry repo. Aborts (no PR) on a missing signing key or a validation failure |
 | [`car help`](#car-help) | Print this message or the help of the given subcommand(s) |
 
@@ -242,11 +246,12 @@ Full `--help` output for every command, generated directly from the binary.
 ### car info
 
 ```text
-Show runtime info
+Show runtime and live machine state
 
-Usage: car info
+Usage: car info [OPTIONS]
 
 Options:
+      --json  Emit machine-readable JSON
   -h, --help  Print help
 ```
 
@@ -258,9 +263,11 @@ Print the deterministic CAR capability manifest
 Usage: car capabilities [OPTIONS]
 
 Options:
-      --json  Emit machine-readable JSON
-      --md    Emit generated Markdown (the default)
-  -h, --help  Print help
+      --json         Emit machine-readable JSON
+      --md           Emit generated Markdown (the default)
+      --role <ROLE>  Print exactly the daemon method names assigned to this caller role [possible
+      values: agent, owner, operator, host]
+  -h, --help         Print help
 ```
 
 ### car ui
@@ -374,6 +381,37 @@ Options:
   -h, --help                     Print help
 ```
 
+### car tools
+
+```text
+Invoke CAR's built-in runtime tools directly, in-process and without a daemon
+
+Usage: car tools <COMMAND>
+
+Commands:
+  call  Invoke one CAR built-in tool in this process; no daemon is contacted
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car tools call
+
+```text
+Invoke one CAR built-in tool in this process; no daemon is contacted
+
+Usage: car tools call [OPTIONS] <TOOL>
+
+Arguments:
+  <TOOL>  Built-in tool name (for example: calculate, read_file, or grep_files)
+
+Options:
+      --params-file <PATH>  Read the tool's JSON parameter object from this file
+      --params <JSON>       Supply the tool's JSON parameter object inline
+  -h, --help                Print help
+```
+
 ### car code-task
 
 ```text
@@ -405,6 +443,9 @@ Options:
       --pr-base <PR_BASE>
           PR base branch. Defaults to the repo's default branch
 
+      --body-prefix <BODY_PREFIX>
+          Trusted caller-supplied text placed at the start of the pull-request body
+
       --draft
           Open the pull request as a draft
 
@@ -421,6 +462,10 @@ Options:
 
       --max-iterations <MAX_ITERATIONS>
           Override the coder config's iteration ceiling (default 8)
+
+      --browser
+          Expose the assistant's browser tools for this run. Off by default; calls remain
+          policy-gated and appear in the JSONL event stream
 
       --max-session-wall-secs <MAX_SESSION_WALL_SECS>
           Override the coder config's session wall clock (default 3600). 0 = unlimited
@@ -649,6 +694,54 @@ Options:
   -h, --help  Print help
 ```
 
+### car heal
+
+```text
+Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs
+a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges.
+
+Configured in `<CAR_HOME>/heal.toml`; off by default, and an issue must carry an explicit opt-in
+label. See `car selfheal` for the separate watch-only detector, which never writes.
+
+Usage: car heal <COMMAND>
+
+Commands:
+  status  Show whether the loop is enabled — and if not, why — plus its targets, review panel, and
+  engine
+  run     Run one sweep now instead of waiting for the cadence
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### car heal status
+
+```text
+Show whether the loop is enabled — and if not, why — plus its targets, review panel, and engine
+
+Usage: car heal status
+
+Options:
+  -h, --help  Print help
+```
+
+#### car heal run
+
+```text
+Run one sweep now instead of waiting for the cadence.
+
+At most one item per configured target. This can run a real coder session and open a real pull
+request. It never merges.
+
+Usage: car heal run
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
 ### car selfheal
 
 ```text
@@ -661,7 +754,8 @@ Commands:
   list     List active detections, optionally filtered by kind, severity, or time
   show     Print the trusted local issue document for one detection
   dismiss  Dismiss one active detection by dedup key
-  run      Run one deterministic detection tick now
+  fix      Start one bounded coder round for an eligible recurring-tool key
+  run      Run one deterministic detection tick and its auto-fix cadence hook now
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -722,10 +816,24 @@ Options:
   -h, --help  Print help
 ```
 
+#### car selfheal fix
+
+```text
+Start one bounded coder round for an eligible recurring-tool key
+
+Usage: car selfheal fix <DEDUP_KEY>
+
+Arguments:
+  <DEDUP_KEY>  Detection SHA-256 dedup key
+
+Options:
+  -h, --help  Print help
+```
+
 #### car selfheal run
 
 ```text
-Run one deterministic detection tick now
+Run one deterministic detection tick and its auto-fix cadence hook now
 
 Usage: car selfheal run
 
@@ -789,6 +897,8 @@ Options:
   -c, --capability <CAPABILITY>  Filter by capability (generate, embed, code, reasoning, etc.)
       --provider <PROVIDER>      Filter by provider (e.g., openai, qwen, google, vllm-mlx)
       --local-only               Only show local models
+      --all                      Show every row, including models that do not fit this machine and
+      deprecated ones (hidden by default), with a FIT column explaining why
   -h, --help                     Print help
 ```
 
@@ -1393,6 +1503,25 @@ Options:
   -h, --help    Print help
 ```
 
+### car feedback
+
+```text
+Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car
+doctor` report, bounded log tails, and a version stamp) into the local outbox at
+`~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can
+reach Parslee. Works with the daemon down, like `car doctor`. macOS-only in this release
+
+Usage: car feedback [OPTIONS]
+
+Options:
+      --description <DESCRIPTION>  What went wrong (10–5000 characters). Prompts when omitted
+      --list                       List your saved reports and their status in plain language
+      --show <ID>                  Print exactly what a saved report will send (its redacted bundle)
+      --export <ID|latest> <PATH>  Save a report's redacted bundle to a file: `--export <ID|latest>
+      <PATH>`
+  -h, --help                       Print help
+```
+
 ### car update
 
 ```text
@@ -1450,26 +1579,49 @@ in an isolated git worktree — natively or via an installed frontier CLI. Resul
 Usage: car code [OPTIONS] [INTENT]...
 
 Arguments:
-  [INTENT]...  What to build or fix, in plain English
+  [INTENT]...
+          What to build or fix, in plain English
 
 Options:
       --repo <REPO>
           Repository to work on. Relative paths (`.`, `../sibling`) resolve against your current
           directory (default: `.`)
+
       --engine <ENGINE>
-          Engine: auto | native | external[:agent_id] | foreman[:agent_id]. Foreman farms subtasks
-          to the external CLI in parallel worktrees behind a merge-verify gate; auto prefers it for
-          broad tasks
+          Engine: `auto` | `native` | `external[:agent_id]` | `foreman[:agent_id]`. Foreman farms
+          subtasks to the external CLI in parallel worktrees behind a merge-verify gate; auto
+          prefers it for broad tasks
+
+      --distributed
+          Spread a foreman run's subtasks across reachable CAR instances instead of this machine
+          alone.
+
+          **Spends agent quota — on other machines too.** The merge-verify gate and delivery stay
+          here: a peer returns a patch, this host gates it, so the run still ends in a pull request
+          you approve. Requires `--engine foreman[:agent_id]`; any other engine runs locally and
+          says so. See `car fleet peers` for who is reachable.
+
+      --worker <WORKERS>
+          Restrict a distributed run to these instances. Repeatable; default is every instance that
+          can serve this repository
+
   -y, --yes
           Skip the interactive contract and merge prompts
+
       --max-iterations <MAX_ITERATIONS>
           Max plan→edit→verify iterations before giving up
+
       --model <MODEL>
           Pin the native loop's inference model for this session (e.g. `parslee/reasoning` for
           gpt-5.5), overriding `~/.car/coder.toml`. Blank/omitted keeps the config default, then
           adaptive routing
+
+      --browser
+          Expose the assistant's browser tools to this coder session. Off by default; calls remain
+          policy-gated and recorded in coder events
+
   -h, --help
-          Print help
+          Print help (see a summary with '-h')
 ```
 
 ### car board
@@ -1727,6 +1879,7 @@ Commands:
   in-daemon
   run       Run a registered agent on an input
   list      List registered in-daemon agents
+  where     Show where a declarative or supervised agent's files live
   external  Show installed external agentic CLIs (Claude Code, Codex, Gemini): which binary each
   resolved to, and whether it can actually run
   help      Print this message or the help of the given subcommand(s)
@@ -1738,16 +1891,29 @@ Options:
 #### car agent new
 
 ```text
-Describe an agent in plain language; CAR builds, verifies, and registers it to run in-daemon
+Describe an agent in plain language; CAR builds, verifies, and registers it to run in-daemon.
+
+CAR uses the complete description to generate the agent's identity, standing goal, and scenarios.
+Long descriptions get a bounded project directory name without truncating that build input.
+
+The project's agent.json is committed build output. After approval, the daemon runs the separately
+registered copy in declagents.json; editing agent.json alone does not update the active agent.
 
 Usage: car agent new [OPTIONS] [DESCRIPTION]...
 
 Arguments:
-  [DESCRIPTION]...  What the agent should do
+  [DESCRIPTION]...
+          What the agent should do
 
 Options:
-  -y, --yes   Skip the interactive confirm/approve prompts
-  -h, --help  Print help
+  -y, --yes
+          Skip the interactive confirm/approve prompts
+
+      --json
+          Emit one JSON object; requires --yes so prompts do not share stdout
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 #### car agent run
@@ -1773,6 +1939,21 @@ List registered in-daemon agents
 Usage: car agent list
 
 Options:
+  -h, --help  Print help
+```
+
+#### car agent where
+
+```text
+Show where a declarative or supervised agent's files live
+
+Usage: car agent where [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The declarative or supervised agent id
+
+Options:
+      --json  Emit a JSON object instead of labeled lines
   -h, --help  Print help
 ```
 
@@ -1811,7 +1992,7 @@ Arguments:
 
 Options:
   -o, --output <OUTPUT>
-          Where to write the workflow JSON (default: ~/.car/workflows/<id>.json)
+          Where to write the workflow JSON (default: `~/.car/workflows/<id>.json`)
 
   -u, --update <UPDATE>
           Update this existing workflow file instead of creating a new one
@@ -2608,6 +2789,7 @@ Usage: car messages <COMMAND>
 Commands:
   services  List Messages.app services/accounts
   chats     List recent Messages.app chats
+  read      Read Messages.app conversation rows, newest first
   send      Send a message. JSON payload on stdin matching Messages SendRequest
   help      Print this message or the help of the given subcommand(s)
 
@@ -2635,6 +2817,21 @@ Usage: car messages chats [OPTIONS]
 
 Options:
       --limit <LIMIT>  [default: 50]
+  -h, --help           Print help
+```
+
+#### car messages read
+
+```text
+Read Messages.app conversation rows, newest first
+
+Usage: car messages read [OPTIONS]
+
+Options:
+      --chats <CHATS>  Optional comma-separated chat GUIDs from `car messages chats`
+      --since <SINCE>  Only messages at or after this RFC3339 instant
+      --limit <LIMIT>  [default: 50]
+      --include-body   Include decoded message bodies inline (bounded per message)
   -h, --help           Print help
 ```
 
@@ -3213,6 +3410,154 @@ Usage: car registry schema
 
 Options:
   -h, --help  Print help
+```
+
+### car fleet
+
+```text
+What every CAR instance you can reach can do — agents, capabilities and models across the fleet —
+and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a
+running daemon
+
+Usage: car fleet <COMMAND>
+
+Commands:
+  show      Every agent, capability, and model across this daemon and every CAR instance it can
+  reach
+  worker    Show whether this machine takes coding subtasks farmed out by peers
+  enroll    Enroll this machine as a fleet worker for the named repositories
+  withdraw  Stop taking work from peers. Keeps the repository list for next time
+  run       Run one coding goal across the fleet: decompose it, place the independent subtasks on
+  the instances that have this repository, and gate the reassembly **here**
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car fleet show
+
+```text
+Every agent, capability, and model across this daemon and every CAR instance it can reach
+
+Usage: car fleet show [OPTIONS]
+
+Options:
+      --json                     Print the raw `FleetComposite` JSON instead of the summary
+      --local                    Only this instance — skip the network entirely
+      --timeout-ms <TIMEOUT_MS>  Per-peer deadline in milliseconds (default 10000)
+  -h, --help                     Print help
+```
+
+#### car fleet worker
+
+```text
+Show whether this machine takes coding subtasks farmed out by peers
+
+Usage: car fleet worker
+
+Options:
+  -h, --help  Print help
+```
+
+#### car fleet enroll
+
+```text
+Enroll this machine as a fleet worker for the named repositories.
+
+A real grant: a trusted peer may then run a coding CLI against those checkouts. Peers are already
+limited to CAR daemons whose key this host trusts, every dispatch is audited in
+`~/.car/fleet-work.jsonl`, and a dispatch for any other repository is declined.
+
+Usage: car fleet enroll [OPTIONS] --repo <REPOS>
+
+Options:
+      --repo <REPOS>
+          Repository checkout to serve. Repeatable; replaces the current list
+
+      --max-parallel <MAX_PARALLEL>
+          Subtasks peers may run here at once (default 2). Concurrency, not spend — see
+          `--dispatches-per-hour` for the budget
+
+      --dispatches-per-hour <DISPATCHES_PER_HOUR>
+          Subtasks ONE peer may start here per hour (default 60). A peer that dispatches serially
+          never hits `--max-parallel` and can still drain this machine's coding-CLI quota; this is
+          what stops that
+
+      --max-subtask-secs <MAX_SUBTASK_SECS>
+          Longest a peer's subtask may occupy this machine (default 1800s). The sender proposes a
+          timeout; this is the ceiling it is clamped to
+
+      --allow-tool <ALLOWED_TOOLS>
+          Tools a peer's coding CLI may use here, intersected with whatever the dispatch asks for.
+          Repeatable. Unset adds no restriction
+
+      --runner
+          Enroll as a **runner**: a machine that is not a person's desk.
+
+          Instead of declining a base commit it does not hold, it fetches from its own remote and
+          serves the subtask. That is what makes a pool useful — a runner tracking `origin` always
+          has the commit, where a laptop on an unpushed branch declines every dispatch. Off for a
+          laptop, where a peer should not cause a fetch in a repository someone is working in.
+
+      --fetch-remote <FETCH_REMOTE>
+          Remote a runner fetches from. Defaults to `origin`
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### car fleet withdraw
+
+```text
+Stop taking work from peers. Keeps the repository list for next time
+
+Usage: car fleet withdraw
+
+Options:
+  -h, --help  Print help
+```
+
+#### car fleet run
+
+```text
+Run one coding goal across the fleet: decompose it, place the independent subtasks on the instances
+that have this repository, and gate the reassembly **here**.
+
+Peers edit their own worktrees and return patches; this machine applies them and runs the
+merge-verify gate, so a peer can never widen what gets accepted. This machine is always in the pool,
+so a run whose peers all decline still completes. **Spends agent quota — on other machines too.**
+
+Usage: car fleet run [OPTIONS] <GOAL>
+
+Arguments:
+  <GOAL>
+          What to build
+
+Options:
+      --repo <REPO>
+          Repository to work in. Defaults to the daemon's working directory
+
+      --adapter <ADAPTER>
+          Coding CLI to ask for (`claude-code`, `codex`, `gemini`)
+
+      --verify <VERIFY>
+          Per-subtask regression check — "does this one change still build?". A goal-level test
+          belongs on `--union-verify`, not here: a subtask implements only part of the goal, so a
+          goal test would reject every one of them
+
+      --union-verify <UNION_VERIFY>
+          Check the *integrated* result must pass. Falls back to `--verify`
+
+      --worker <WORKERS>
+          Restrict placement to these instances. Repeatable; default is every instance that reports
+          it can serve this repository
+
+      --json
+          Print the raw run report JSON
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 ### car publish

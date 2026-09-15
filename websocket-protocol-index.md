@@ -7,7 +7,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 **Not indexed, on purpose:** the separate "## Notification methods (server → client)" section (`host.event`, `voice.event`, `coder.event`, `coder.discuss.event`, `browser.signin_needed`/`resolved`) documents push-notification *payload shapes*, not additional namespaced RPC methods — read it directly in the full doc. Six headings documented **inside** "## Method reference" itself are excluded for the same reason — they are server-initiated pushes, not client-callable requests: `browser.view.event`, `models.pull_progress`, `models.upgrade_available`, `models.suggestion_available`, `runs.trace.event`, and `coder.session_changed` (documented a second time, briefly, in the separate Notification methods section above). The "a2a (in-core dispatcher)" subsection's 9-11 A2A v1.0 methods are also excluded: they're documented as a table of `PascalCase` / `slash/form` name pairs with no per-method heading to anchor to, and the source doc doesn't say which form is the literal wire `method` string.
 
-**75 namespaces, 430 methods.**
+**76 namespaces, 436 methods.**
 
 ## a2a (7)
 
@@ -236,6 +236,13 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`evolution.plan`](websocket-protocol.md#evolutionplan) — Self-evolution governor live host surface (arXiv...
 - [`evolution.run`](websocket-protocol.md#evolutionrun) — The governor's real executor (arXiv 2507.21046 —...
 
+## feedback (4)
+
+- [`feedback.compose_preview`](websocket-protocol.md#feedbackcompose_preview) — The consent preview: assembles the exact...
+- [`feedback.list`](websocket-protocol.md#feedbacklist) — the newest limit merged local/server rows, kept in...
+- [`feedback.status`](websocket-protocol.md#feedbackstatus) — filtered to the one entry when submission_id is...
+- [`feedback.submit`](websocket-protocol.md#feedbacksubmit) — Composes the same bundle and durably enqueues it in...
+
 ## files (1)
 
 - [`files.locations`](websocket-protocol.md#fileslocations)
@@ -352,9 +359,10 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`memory.utility_get`](websocket-protocol.md#memoryutility_get) — the live engine's
 - [`memory.utility_set`](websocket-protocol.md#memoryutility_set) — Runtime override of utility-aware fact retrieval on...
 
-## messages (3)
+## messages (4)
 
 - [`messages.chats`](websocket-protocol.md#messageschats)
+- [`messages.read`](websocket-protocol.md#messagesread) — Notes:
 - [`messages.send`](websocket-protocol.md#messagessend)
 - [`messages.services`](websocket-protocol.md#messagesservices)
 
@@ -512,7 +520,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 - [`secret.available`](websocket-protocol.md#secretavailable) — whether the OS keychain is reachable
 - [`secret.delete`](websocket-protocol.md#secretdelete)
-- [`secret.get`](websocket-protocol.md#secretget)
+- [`secret.get`](websocket-protocol.md#secretget) — A connection authenticated as a supervised agent is...
 - [`secret.list`](websocket-protocol.md#secretlist) — Lists the names of secrets stored through the...
 - [`secret.put`](websocket-protocol.md#secretput) — Uses the OS keychain (Keychain on macOS, Credential...
 - [`secret.status`](websocket-protocol.md#secretstatus)
@@ -525,10 +533,11 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`selfheal.run`](websocket-protocol.md#selfhealrun) — Runs the same path as the cadence.
 - [`selfheal.status`](websocket-protocol.md#selfhealstatus) — route is "local" only when the tick validates a...
 
-## session (5)
+## session (6)
 
 - [`session.bindSandbox`](websocket-protocol.md#sessionbindsandbox) — Binds this session's runtime to a Docker-sandboxed...
 - [`session.bindSubstrate`](websocket-protocol.md#sessionbindsubstrate) — Binds this session's runtime to the *execution...
+- [`session.clear_halt`](websocket-protocol.md#sessionclear_halt) — Packaged clients: HostClient.sessionClearHalt /...
 - [`session.init`](websocket-protocol.md#sessioninit) — client_id is required and was missing from this...
 - [`session.policy.close`](websocket-protocol.md#sessionpolicyclose) — Close a previously-opened policy session and drop...
 - [`session.policy.open`](websocket-protocol.md#sessionpolicyopen) — Open a new in-runtime policy-scoping session and...

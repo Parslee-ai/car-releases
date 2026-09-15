@@ -167,7 +167,7 @@ The Agent IR is the wire-format contract between models and the runtime, defined
 }
 ```
 
-**`ProposalResult`** `{ proposal_id, results: Vec<ActionResult> (default []), cost: CostSummary }` with helpers `all_succeeded() -> bool` and `summary() -> HashMap<ActionStatus, usize>`. `cost` has `serde(default)` for backward compat. Each **`ActionResult`** is `{ action_id, status: ActionStatus, output, error, state_changes, duration_ms, timestamp }`. **`ActionStatus`** lifecycle (snake_case, observable via event log, not part of the input contract): `proposed → validated → executing → succeeded`, with branches to `rejected`, `failed`, `skipped`. **`CostSummary`** `{ tool_calls, actions_executed, actions_skipped, total_duration_ms, retries }` (all default 0).
+**`ProposalResult`** `{ proposal_id, results: Vec<ActionResult> (default []), cost: CostSummary }` with helpers `all_succeeded() -> bool` and `summary() -> HashMap<ActionStatus, usize>`. `cost` has `serde(default)` for backward compat. Each **`ActionResult`** is `{ action_id, status: ActionStatus, output, error, rolled_back, state_changes, duration_ms, timestamp }`. `rolled_back` is independent of `status`: an action that executed before its proposal's state transaction was restored remains `succeeded` with `rolled_back: true`; false is the backward-compatible default and is omitted on the wire. **`ActionStatus`** lifecycle (snake_case, observable via event log, not part of the input contract): `proposed → validated → executing → succeeded`, with branches to `rejected`, `failed`, `skipped`. **`CostSummary`** `{ tool_calls, actions_executed, actions_skipped, total_duration_ms, retries }` (all default 0).
 
 **Cost: soft vs hard.** `CostTarget` (in `car-ir`: `target_tool_calls: 5`, `target_duration_ms: 5000.0`, `target_actions: 10`, `cost_weight: 0.2`) is the **soft** scoring target used by the planner. `CostBudget` (in `car-engine`, *not* `car-ir`: `max_tool_calls`/`max_duration_ms`/`max_actions`) is the **hard** counterpart — proposals exceeding it are rejected.
 
@@ -337,6 +337,124 @@ let runner: Arc<dyn AgentRunner> =
 ```
 
 `agents.invoke_external` takes `InvokeOptions { cwd, allowed_tools, max_turns, timeout_secs, mcp_endpoint }`; `agents.list_external` takes `include_health`. Multi-agent coordination patterns (`car-multi`): `run_swarm`, `run_pipeline`, `run_supervisor`, `run_map_reduce`, `run_vote` — each takes `Arc<dyn AgentRunner>`.
+
+### Create and locate a declarative agent
+
+`car agent new` builds an in-daemon declarative agent, verifies its scenarios,
+and registers it. The final output names both the id and the exact registry file:
+
+```text
+car agent new --yes "Summarize support tickets"
+registered summarize-support-tickets in /Users/me/.car/declagents.json
+done — run it with:
+  car agent run summarize-support-tickets "<input>"
+```
+
+Use `car agent new --yes --json ...` for a machine-readable result containing
+`agent_id` and `registry_path`. If a newly updated CLI is still connected to an
+older daemon that does not return `registry_path`, a completed registration
+remains successful and the CLI reports its shell-resolved default declarative
+registry path. Use `car agent where <id>` (or `--json`) to locate either a
+declarative agent or a lifecycle-supervised agent without changing it. `car
+info` summarizes both registries and their counts from paths resolved in the
+caller's shell environment; its JSON `agents` block identifies that provenance
+as `source: "cli-environment"`. If either registry is unreadable or malformed,
+the `agents` section is unavailable instead of reporting a misleading zero.
+
+The complete description remains the build
+request used to generate the agent's identity, standing goal, and scenarios;
+long descriptions only shorten the filesystem-safe project id.
+
+The managed project's `agent.json` and `scenarios.json` are versioned build
+output committed to that project's `main` branch. Approval separately registers
+the built spec in the daemon's active declarative-agent registry,
+`$CAR_DECLAGENTS_PATH`, `$CAR_HOME/declagents.json`, or `~/.car/declagents.json`.
+The daemon runs the registry copy: editing the project `agent.json` alone does
+not change the active agent. Rebuild and approve the project again to register
+those edits.
+
+
+| Agent kind | Durable definition | Runtime output | Locate it |
+|------------|--------------------|----------------|-----------|
+| Declarative / in-daemon | `$CAR_DECLAGENTS_PATH`, else `$CAR_HOME/declagents.json`, else `~/.car/declagents.json` | Runs in daemon; no child-process log | `car agent where <id>` reports the registry file and enabled state |
+| Lifecycle / supervised | `$CAR_HOME/agents/<id>/manifest.toml` (legacy mirror: `$CAR_HOME/agents.json`) | `$CAR_HOME/logs/<id>.stdout.log` and `.stderr.log` | `car agent where <id>` reports manifest, logs, and process status; `car inspect <id>` also reports `Manifest:` |
+
+The paths printed by `car agent new`, `car agent where`, and `car inspect`
+normally come from daemon responses. They do not reconstruct paths from `$HOME`
+because `CAR_HOME`, `CAR_DECLAGENTS_PATH`, an observer manifest, and test
+embedders can all relocate daemon state. The one compatibility exception is
+`car agent new` talking to an older daemon that returned an `agent_id` but no
+`registry_path`: after the daemon has already registered the agent, the CLI
+reports its own default rather than turning that successful operation into an
+error. Daemon-optional `car info` similarly resolves its registry paths and
+counts from `CAR_HOME` / `CAR_DECLAGENTS_PATH` in the caller's shell; its paths
+match the daemon's only when both share that environment.
+
+#### Who manages the conversation: the `context` field
+
+A declarative agent's spec carries `context`, which decides who bounds the
+conversation an invocation accumulates across its turns:
+
+| `context` | What happens |
+|-----------|--------------|
+| `car` (default, and what a spec without the field gets) | CAR manages it. Before each model call the running history is compacted to fit the model's context window — the same mechanism the `car do` assistant and the coder loop use: the agent identity and the original input stay pinned, the oldest middle turns are dropped on a turn boundary (never orphaning a tool result), and a `[history compacted: N earlier turns removed ...]` system notice records what went. |
+| `self` | You manage it. CAR never compacts this agent's history; whatever summarizing, truncation or externalizing the agent does is the whole bound, alongside the turn cap. Choose it deliberately. |
+
+```jsonc
+{
+  "id": "summarize-support-tickets",
+  "name": "Summarize support tickets",
+  "identity": "You summarize support tickets.",
+  "tools": ["read_file"],
+  "scenarios": [{"input": "ticket 12", "expect": "summary"}],
+  "context": "car"          // omit the field for exactly this
+}
+```
+
+The budget is three quarters of the window, measured against the provider's own
+reported prompt size once there is one; the remaining quarter is headroom for
+the model's reply and the next turn's tool results. If the history still does
+not fit after the oldest turns are dropped — one huge tool result can be bigger
+than the whole budget on a small window — CAR truncates the largest tool results
+to head-and-tail excerpts and marks each one, rather than sending a request it
+knows is over. `car agent new` and the Agent Builder leave the field at its
+default, and every agent registered before the field existed keeps loading and
+behaves as `car`.
+
+**An unrecognized value is not an error.** `"context": "mine"` loads as `car`
+and logs a warning naming the bad value. That leniency is deliberate and
+temporary: an unparseable `declagents.json` currently reads as an *empty*
+registry and the next agent registration writes that emptiness back, so a strict
+parser would let one typo in a hand-edited file unregister every agent on the
+machine. Strict validation returns once the registry loader surfaces read errors
+instead of swallowing them (tracked separately).
+
+**Local models:** the window is read from the catalog — for a pinned model up
+front, and after every call from the model that actually served it, so a run
+that falls back to a smaller model is compacted against the smaller window from
+the next turn on. An agent that pins no model is addressed to whichever model
+served its first turn, so the budget and the serving model stay together; that
+preference is deliberately not a hard pin, so a remote outage still degrades to
+the on-device model rather than ending the run. A model the CALLER pinned keeps
+strict semantics: that model or a loud error, never a silent swap.
+A model the catalog does not know has no window — and neither does a catalog row
+whose `context_length` is `0`, which is read as "unknown", not as "no tokens
+allowed". CAR does not invent one, and what happens next depends on whether the
+run ever knew a window:
+
+- **Never knew one** (the very first turn was served by an unknown model):
+  compaction is off for that run, and the daemon says so once per invocation —
+  `compaction disabled: unknown context window for model <id>`.
+- **Knew one and then lost it** (a later turn was served by a model the catalog
+  cannot resolve): the last known budget is KEPT — losing it would leave the run
+  unbounded over a routing detail — and a different warning fires once,
+  `model <id> has no known context window; keeping the last known budget of N
+  tokens`. That budget describes a model that is no longer serving and may be
+  the larger of the two, which is why it is never silent.
+
+On a 5-10k local window either message is the difference between a diagnosable
+overflow and answers that quietly get worse, so treat it as a prompt to add the
+model to the catalog or to take the history over yourself with `context: self`.
 
 ### Daemon API surface map (where to find each capability)
 
@@ -1848,7 +1966,7 @@ snake_case):
 ```jsonc
 { "role": "system", "content": "..." }
 { "role": "user", "content": "..." }
-{ "role": "assistant", "content": "", "tool_calls": [ { "id", "name", "arguments" } ] }
+{ "role": "assistant", "content": "", "tool_calls": [ { "id", "name", "arguments" } ], "model_id": "openai/gpt-5", "local_last_resort": false }
 { "role": "tool_result", "tool_use_id": "call_abc", "content": "<result json>" }
 ```
 
@@ -2027,7 +2145,13 @@ async function runAgent(goal, { maxTurns = 8 } = {}) {
     }
 
     // Record the assistant turn verbatim so the next call has full history.
-    messages.push({ role: 'assistant', content: tracked.text || '', tool_calls: tracked.tool_calls });
+    messages.push({
+      role: 'assistant',
+      content: tracked.text || '',
+      tool_calls: tracked.tool_calls,
+      model_id: tracked.resolved_model_id || tracked.model_used,
+      local_last_resort: tracked.local_last_resort === true,
+    });
 
     // Glue (no FFI helper): model tool_calls -> ActionProposal actions.
     const proposal = JSON.stringify({
@@ -2491,7 +2615,7 @@ runtime.register_tool_schema(builtins::read_file()).await;
 ```
 
 - `ProposalResult { proposal_id, results: Vec<ActionResult>, cost: CostSummary }` with helpers `all_succeeded() -> bool` and `summary() -> HashMap<ActionStatus, usize>`.
-- `ActionResult { action_id, status: ActionStatus, output, error, state_changes, duration_ms, timestamp }`.
+- `ActionResult { action_id, status: ActionStatus, output, error, rolled_back, state_changes, duration_ms, timestamp }`. `rolled_back: true` means the action executed but its proposal's state transaction was restored; use this marker rather than matching the human-readable warning in `error`.
 - `CostSummary { tool_calls, actions_executed, actions_skipped, total_duration_ms, retries }` — all `Default` to zero. `ProposalResult.cost` is `#[serde(default)]`, so old JSON without a `cost` field still deserializes (backward compat).
 
 **`ActionStatus`** (`actions.rs:30-40`, snake_case) is observable via the event log and `ActionResult.status`, but is **not** part of the input contract. Lifecycle: `proposed → validated → executing → succeeded`, with branches to `rejected`, `failed`, `skipped`.
@@ -3532,7 +3656,7 @@ let resp = handler.parse_response(&body_str)?; // ApiResponse { text, tool_calls
 
 **`GenerateParams`** (`tasks/generate.rs:137`): `temperature=0.7`, `top_p=0.9`, `top_k=0`, `max_tokens=4096`, `stop`, `budget_tokens` (extended thinking), `workload`, `tool_choice` (`auto`/`required`/`none`), `parallel_tool_calls`, `thinking` (Qwen3 `/think` | `/no_think` `ThinkingMode`), `cache_ttl`, and the routing-only `estimated_cache_read_input_tokens=0` / `estimated_cache_write_input_tokens=0`. The cache estimates let adaptive routing price a caller's expected cache read/write against each model's rates; they are clamped to the estimated input footprint, do not modify the provider request, and never become nonzero merely because `cache_control` is enabled.
 
-**`Message`** enum (`tasks/generate.rs:345`, serde `tag="role"`): `System{content}`, `User{content}`, `UserMultimodal{content: Vec<ContentBlock>}`, `Assistant{content, tool_calls}`, `ToolResult{tool_use_id, content}`, `ProviderOutputItems{protocol, items}` (OpenAI Responses state round-trip). Use `InferenceResult::append_assistant_history` when maintaining your own multi-turn history: it keeps opaque Responses items in provider order before the assistant message, while leaving personal Chat Completions history unchanged. CAR's built-in agent, coder, bench, and CLI loops use the same helper automatically. `ContentBlock` supports `Text`, `ImageBase64`/`ImageUrl` (wired on native Qwen2.5-VL + remote), and `Video*`/`Audio*` (remote-only).
+**`Message`** enum (`tasks/generate.rs:345`, serde `tag="role"`): `System{content}`, `User{content}`, `UserMultimodal{content: Vec<ContentBlock>}`, `Assistant{content, tool_calls, model_id?, local_last_resort}`, `ToolResult{tool_use_id, content}`, `ProviderOutputItems{protocol, items}` (OpenAI Responses state round-trip). Assistant attribution is replay metadata: protocol builders do not send it to providers, old transcripts may omit `model_id`, and `local_last_resort` defaults false. Use `InferenceResult::append_assistant_history` when maintaining your own multi-turn history: it keeps opaque Responses items in provider order before the assistant message and records the canonical serving id and last-resort marker. CAR's built-in agent, coder, bench, and CLI loops use the same helper automatically. `ContentBlock` supports `Text`, `ImageBase64`/`ImageUrl` (wired on native Qwen2.5-VL + remote), and `Video*`/`Audio*` (remote-only).
 
 ### The model registry and schemas
 
@@ -3551,7 +3675,9 @@ trust_tier (Curated | Community), deprecated
 
 Registry helpers: `list()`, `get(id)`, `find_by_name(name)`, `ensure_local(id)` (auto-pull on first use), `ensure_local_with_progress`, `resolve_mlx_equivalent`, `available_upgrades`, `models_dir`.
 
-**`ModelSource`**: `Local` (GGUF via Candle), `RemoteApi`, `Ollama`, `Mlx`, external/operator-owned `VllmMlx`, CAR-owned `ManagedVllmMlx`, and `AppleFoundationModels` (plus the speech/proprietary/delegated variants). Schema helpers: `is_mlx`, `is_vllm_mlx`, `is_car_managed_vllm_mlx`, `is_foundation_models`, `requires_apple_silicon`, `size_mb`, `ram_mb`. A loopback endpoint does not turn `VllmMlx` into the managed variant.
+**`ModelSource`**: `Local` (GGUF via Candle), `RemoteApi`, `CodexCli`, `Ollama`, `Mlx`, external/operator-owned `VllmMlx`, CAR-owned `ManagedVllmMlx`, and `AppleFoundationModels` (plus the speech/proprietary/delegated variants). Schema helpers: `is_codex_cli`, `is_mlx`, `is_vllm_mlx`, `is_car_managed_vllm_mlx`, `is_foundation_models`, `requires_apple_silicon`, `size_mb`, `ram_mb`. A loopback endpoint does not turn `VllmMlx` into the managed variant.
+
+The curated `openai/gpt-5.6-sol:high` row is a `CodexCli { model: "gpt-5.6-sol:high" }` source. It is an identity-pinnable, text-only, single-shot generation route through `codex exec`; `:high` maps to `model_reasoning_effort="high"`. Codex owns its ChatGPT-subscription token and CAR removes `OPENAI_API_KEY` from the child, so this source needs no API key. It rejects tools, multi-turn messages, multimodal blocks, response schemas, and streaming. Unlike `external:codex`, it runs in an empty read-only scratch directory with Codex's shell, multi-agent, app, plugin, code-mode, and web-search features disabled. Codex exposes no exact per-call output-token cap, so `max_tokens` is sent as an approximate response-limit instruction and the CLI's reported usage is authoritative.
 
 **`ModelCapability`** (the capability vocabulary the router and intent layer filter on):
 
@@ -3640,7 +3766,7 @@ recommend_with_policy(
 Pipeline: **hard filter** (role lane + required caps + privacy + apple-silicon eligibility + deprecated) → **soft score** (tier-weighted quality / latency / memory) → **policy-aware deterministic order**. Each `Recommendation` carries `{ model_id, display_name, role, rationale, download_mb, already_installed, fit: FitStatus, acceleration, is_local, requires_cloud_consent, trust_tier, score, within_recommendation_target }`. `already_installed` means CAR-downloadable weights are physically ready, not merely routable. The memory estimate = weights + context overhead (8192-token working window) + backend runtime overhead + a distinct transient margin. Everyday automatic choices must also fit the policy's smaller recommendation target; heavier and unknown-memory entries remain visible only as explicit alternatives.
 
 > **Recommender gotchas:**
-> - External `VllmMlx`/`RemoteApi` models are **never** given the local-memory fit budget — they get `FitStatus::ServerProvided`. `ManagedVllmMlx` is local and charged. Endpoint spelling, including loopback, never changes ownership. A model with unknown `ram_mb` is `FitStatus::Unknown`, never silently treated as "fits".
+> - External `VllmMlx`/`RemoteApi` models are **never** given the local-memory fit budget — they get `FitStatus::ServerProvided`. `ManagedVllmMlx` is local and charged. Endpoint spelling, including loopback, never changes ownership. A model with unknown `ram_mb` is `FitStatus::Unknown`, never silently treated as "fits", unless its source is explicitly OS-provided (`WindowsSpeech` or Apple FoundationModels), whose memory is owned outside CAR's model budget. Platform eligibility remains separate: Windows/Apple-only rows are offered only on their matching hosts.
 > - CUDA weights are checked against measured VRAM while context/runtime/transient memory is checked against the host policy; Apple Silicon and CPU use the host/unified-memory policy for the full estimate.
 > - Choosing cloud is **never silent**: `CloudOk` only makes remote models eligible; a remote pick carries `requires_cloud_consent: true` and the caller must obtain one-time consent before the first cloud inference. `OnDevice` never triggers this.
 > - **Community** `trust_tier` upgrades **never** auto-apply (even with `policy=auto`) — they always notify only. **Deprecated** models are excluded from fresh recommendations but still listed if installed.
@@ -3723,6 +3849,8 @@ SupportedAcceleration::{
     Cpu,
 }
 ```
+
+`gpu_backend` is a fact about the build, not the machine: every x86_64 Linux and Windows binary compiles candle's CUDA backend and so reports `Cuda`. `supported_acceleration()` is the machine's answer — it returns `Cuda` only when an NVIDIA card is actually present (`nvidia-smi` reports memory, or the OS enumerates an NVIDIA device), and otherwise falls to `UnsupportedDiscreteGpu` or `Cpu`. Size local models against this, never against `gpu_backend`.
 
 ### Streaming inference
 
@@ -3811,6 +3939,7 @@ car embed "<text>" -m Qwen3-0.6B
 
 ```bash
 car models list --capability generate --provider openai --local-only
+car models list --all                 # include models that do not fit this machine, and deprecated ones
 car models discover --json            # refresh e.g. a vLLM-MLX server catalog
 car models pull Qwen3-1.7B
 car models remove Qwen3-1.7B
@@ -4559,7 +4688,7 @@ The dispatcher exposes 73+ documented methods. The author-relevant core:
 
 **Skills** — `skill.ingest {name, code, platform?, persona?, url_pattern?, description?, task_keywords?, supersedes?}` → node id; `skill.find {persona?, url?, task?, max_results?=1}`; `skill.report {skill_name, outcome}` (auto-degrades when `fail > success + 2`); `skill.repair {skill_name}`; `skills.distill {events}`, `skills.evolve {events, domain}`, `skills.ingest_distilled`, `skills.list {domain?}`, `skills.domains_needing_evolution {threshold?=0.6}`.
 
-**Inference & models** — `infer GenerateRequest{model, messages, system?, max_tokens?, temperature?, tools?, context_query?, response_format?, intent?}` → `{text, tool_calls, usage:{input_tokens,output_tokens}, model_used, trace_id, latency_ms, time_to_first_token_ms}`. Set `context_query` to auto-inject memory context. `infer_stream` (same request) pushes `inference.stream.event {request_id, event:{type:text|tool_start|tool_delta|usage|stop_reason|provider_output_item|error}}`; `error` is terminal. It returns the accumulated result in the **final JSON-RPC response**; there is no `done` notification. Also `embed`, `classify`, `rerank`, `tokenize`/`detokenize` (**local Qwen3 GGUF/MLX only** — remote returns `UnsupportedMode`), `transcribe`, `synthesize`, `image.generate`, `video.generate`, `speech.prepare`. Model management: `models.list`, `models.list_unified`, `models.search`, `models.recommend`, `models.setup_plan`, `models.resource_policy.get`/`set`, `models.preflight`, `models.storage_roots`, `models.adopt`, `models.remove`, `models.upgrades`/`detect_upgrades`/`check_upgrade_nudge`/`dismiss_upgrade`, `models.update_prefs_get`/`set`, `models.register`/`unregister`, `models.pull`/`install`, `models.route`, `models.stats`, `admission.status`.
+**Inference & models** — `infer GenerateRequest{model, messages, system?, max_tokens?, temperature?, tools?, context_query?, response_format?, intent?}` → `{text, tool_calls, usage:{input_tokens,output_tokens}, model_used, trace_id, latency_ms, time_to_first_token_ms, local_last_resort?}`. The fallback marker is present and true only when an on-device model appended behind a remote-only chain actually served. Set `context_query` to auto-inject memory context. `infer_stream` (same request) pushes `inference.stream.event {request_id, event:{type:text|tool_start|tool_delta|usage|stop_reason|provider_output_item|error}}`; `error` is terminal. It returns the accumulated result in the **final JSON-RPC response**; there is no `done` notification. Also `embed`, `classify`, `rerank`, `tokenize`/`detokenize` (**local Qwen3 GGUF/MLX only** — remote returns `UnsupportedMode`), `transcribe`, `synthesize`, `image.generate`, `video.generate`, `speech.prepare`. Model management: `models.list`, `models.list_unified`, `models.search`, `models.recommend`, `models.setup_plan`, `models.resource_policy.get`/`set`, `models.preflight`, `models.storage_roots`, `models.adopt`, `models.remove`, `models.upgrades`/`detect_upgrades`/`check_upgrade_nudge`/`dismiss_upgrade`, `models.update_prefs_get`/`set`, `models.register`/`unregister`, `models.pull`/`install`, `models.route`, `models.stats`, `admission.status`.
 
 > **Gotchas:** `infer_stream` honors `response_format` on remote providers; an unsupported combination — including either response-format variant on Anthropic — returns an explicit `UnsupportedMode` error instead of being silently weakened. For structured output on Claude, use tools + `tool_choice=required`. `models.register`/`unregister` are phase-1: the daemon's live `UnifiedRegistry` is **not** updated in-process — changes are visible to `models.list*`/`infer` only on the **next daemon boot**, so register models before issuing `infer` or restart.
 
@@ -4571,7 +4700,7 @@ The dispatcher exposes 73+ documented methods. The author-relevant core:
 {"jsonrpc":"2.0","method":"inference.runner.invoke","params":{"call_id":"uuid-string","request":{ /* GenerateRequest */ }}}
 ```
 
-**Lifecycle agents** (manifest `~/.car/agents.json`) — `agents.upsert AgentSpec{id, name, command, args?, cwd?, env?, restart:never|on_failure|always, max_restarts?, backoff_secs?, auto_start?, interpreter?}` (persists but **does NOT auto-start**), `agents.install AgentManifest`, `agents.start`/`stop {id, signal?:term|kill}`/`restart`/`remove`/`tail_log {id, n?=100}`/`list`/`health`/`register_basics`. The child binds identity by calling `session.auth {token:<per-agent token>, agent_id}`.
+**Lifecycle agents** (manifest `~/.car/agents.json`) — `agents.upsert AgentSpec{id, name, command, args?, cwd?, env?, restart:never|on_failure|always, max_restarts?, backoff_secs?, auto_start?, interpreter?, method_allowlist?:string[]}` (persists but **does NOT auto-start**), `agents.install AgentManifest`, `agents.start`/`stop {id, signal?:term|kill}`/`restart`/`remove`/`tail_log {id, n?=100}`/`list`/`health`/`register_basics`. The child binds identity by calling `session.auth {token:<per-agent token>, agent_id}`. A present `method_allowlist` limits that bound session to the named `agent`/`operator`/`owner`-role daemon methods; it cannot grant authority, absent preserves unrestricted compatibility, and `[]` denies every application method.
 
 **External agentic CLIs** (Claude Code / Codex / Gemini) — `agents.list_external {include_health?}`, `agents.detect_external` (force-refresh), `agents.health_external {id?, force?}`, `agents.invoke_external {id, task, stream?, session_id?, cwd?, allowed_tools?, max_turns?, timeout_secs?=300, mcp_endpoint?}` → `InvokeResult {answer, session_id?, turns, tool_calls, duration_ms, total_cost_usd?, is_error, error?}`. `mcp_endpoint` auto-fills from the daemon's `/mcp` URL (pass `''` to opt out); streaming fans `agents.chat.event` notifications.
 
@@ -4698,7 +4827,9 @@ CAR speaks the **Model Context Protocol (MCP)** in *both* directions, and a sing
 | **CAR as MCP server** | An MCP-aware model (Claude Desktop, Cursor, Claude Code, a custom GPT) calls CAR's stateless capabilities — graph-memory facts, skills, proposal verification, four-layer context — as MCP tools/resources/prompts. | `car-mcp` (dispatcher) + `car-mcp-server` (stdio binary) + `car-server-core/src/mcp.rs` (HTTP-streamable on the daemon) |
 | **CAR as MCP client** | Your CAR agent consumes an *external* MCP server's tools, registered as native `mcp_{server}_{tool}` tools that route through CAR's capability/policy flow. | `car-engine/src/mcp.rs` (`McpServer` + `McpToolExecutor`) |
 
-The protocol version CAR speaks is **`2024-11-05`** in both directions (`car-mcp` `PROTOCOL_VERSION`). As a server, CAR *negotiates* rather than announcing: `initialize` answers with the `protocolVersion` the client requested when it appears in `car-mcp` `SUPPORTED_VERSIONS`, and with `PROTOCOL_VERSION` otherwise — including when the client sends no version at all. `SUPPORTED_VERSIONS` holds exactly `["2024-11-05"]` today, so every client sees the same answer it always did; the list is what makes a later revision safe to append.
+As a server, CAR prefers **`2025-06-18`** (`car-mcp` `PROTOCOL_VERSION`) and still serves **`2024-11-05`**: `initialize` *negotiates* rather than announcing, answering with the `protocolVersion` the client requested when it appears in `car-mcp` `SUPPORTED_VERSIONS` (`["2024-11-05","2025-06-18"]`), and with `PROTOCOL_VERSION` otherwise — including when the client sends no version at all. The list is what made the bump safe to make: an old client keeps getting the revision it asked for. `2025-03-26` was skipped deliberately — it makes receiving JSON-RPC batches a MUST, which CAR does not implement, while `2025-06-18` removed batching again. Of the `2025-06-18` delta CAR implements `outputSchema`/`structuredContent` (below); elicitation is a *client* capability CAR-as-server never initiates, and `resources/templates/list` stays unimplemented by decision because every URI CAR exposes is fully enumerable. The engine's own stdio MCP *client* (`car-engine/src/mcp.rs`) still sends `2024-11-05`, and the remote-connectors client (`car-connectors`) sends `2025-06-18` and echoes whatever the server negotiates.
+
+Tools whose result is a JSON object declare an `outputSchema` in `tools/list` and return `structuredContent` alongside the text block — the same serialization twice, so an old client reads identical data from `content[0].text`. Array- and prose-valued tools (`memory_query`, `skill_find`, `skill_list`, `memory_add_fact`, `skill_ingest`) declare no `outputSchema` and never emit `structuredContent` (the spec requires it to be an object).
 
 > **Daemon-first framing.** The HTTP-streamable MCP endpoint is a feature of the singleton `car-server` daemon — it shares the daemon's `Arc<Mutex<MemgineEngine>>`, so a fact you ingest over MCP shows up in WebSocket queries and vice versa. The standalone `car-mcp-server` stdio binary is the exception: it runs its own fresh, in-memory engine per process and is stateless across requests. Keep that engine-ownership distinction in mind whenever you reason about where memory persists.
 
@@ -4808,7 +4939,7 @@ The `initialize` response shape (`SERVER_NAME = "car-mcp"`):
 
 ```rust
 json!({
-    // the client's version when supported, else "2024-11-05"
+    // the client's version when supported, else "2025-06-18"
     "protocolVersion": negotiate_version(&req.params),
     "capabilities": {
         "tools": {},
@@ -4820,7 +4951,7 @@ json!({
 })
 ```
 
-`completions` was introduced in the 2025-03-26 revision while `PROTOCOL_VERSION` is still `2024-11-05`. It is advertised regardless: capabilities are an unordered bag, a 2024-11-05 client ignores a key it does not recognize, and hosts probe `completion/complete` off this flag. Withholding it would make a method CAR actually serves undiscoverable.
+`completions` was introduced in the 2025-03-26 revision and is advertised to every client regardless of the revision it negotiated: capabilities are an unordered bag, a 2024-11-05 client ignores a key it does not recognize, and hosts probe `completion/complete` off this flag. Withholding it would make a method CAR actually serves undiscoverable.
 
 **`completion/complete`** (car#972 §4) answers argument autocompletion, and it is the one §4 item that needs no server-to-client push — a plain request/response, identical on stdio and on the daemon's stateless HTTP endpoint. Two `ref` shapes:
 
@@ -4888,12 +5019,12 @@ tail -f ~/Library/Logs/Claude/mcp-server-car.log
 | Route | Behavior |
 |-------|----------|
 | `POST /mcp` | One JSON-RPC request → reply. A notification (no `id`) has no reply, so it returns `202 Accepted` with an empty body — don't parse it. The HTTP layer never invents protocol semantics — everything routes through `Server::handle`. |
-| `GET /mcp` | SSE stream for server-initiated events; keyed by the `mcp-session-id` header (generated if absent; `SESSION_HEADER = "mcp-session-id"`, `SSE_KEEPALIVE_SECS = 30`). First event is a `notifications/initialized` payload carrying the `session_id`. Sessions auto-removed on stream `Drop`. |
-| `GET /mcp/health` | Liveness: `{"status":"ok","protocol_version":"2024-11-05", server_name}`. Not `Origin`-guarded and not `MCP-Protocol-Version`-guarded — no side effect, no secrets, the uptime `curl` below has to keep working, and it is how a client whose version was rejected finds out what the server speaks. |
+| `GET /mcp` | **`405 Method Not Allowed`** (with `Allow: POST`) — the streamable-HTTP spec's branch for a server that offers no SSE stream. The push channel was declined outright (car#972 Track B): the SSE stream, session registry, and `push_to_session` primitive that used to live here were removed — they had zero production callers. |
+| `GET /mcp/health` | Liveness: `{"status":"ok","protocol_version":"2025-06-18", server_name}` (interpolates `car_mcp::PROTOCOL_VERSION`). Not `Origin`-guarded and not `MCP-Protocol-Version`-guarded — no side effect, no secrets, the uptime `curl` below has to keep working, and it is how a client whose version was rejected finds out what the server speaks. |
 
-**`Origin` validation** guards `POST /mcp` and `GET /mcp` (DNS-rebinding protection). Absent `Origin` → allowed, which is what every real MCP client sends; an `Origin` naming loopback (`localhost`, `127.0.0.0/8`, `::1`, any port, `http` or `https`) → allowed; anything else, including the literal `null`, → `403 {"error":"origin not allowed"}`. The rule does **not** widen for a non-loopback `--mcp-bind` — a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin`, and wider exposure makes the guard matter more. Put a reverse proxy with its own CORS policy in front if you need browser traffic from another origin.
+**`Origin` validation** guards `POST /mcp` (DNS-rebinding protection; `GET /mcp` is a constant `405` with no side effect, so it needs no guard). Absent `Origin` → allowed, which is what every real MCP client sends; an `Origin` naming loopback (`localhost`, `127.0.0.0/8`, `::1`, any port, `http` or `https`) → allowed; anything else, including the literal `null`, → `403 {"error":"origin not allowed"}`. The rule does **not** widen for a non-loopback `--mcp-bind` — a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin`, and wider exposure makes the guard matter more. Put a reverse proxy with its own CORS policy in front if you need browser traffic from another origin.
 
-**`MCP-Protocol-Version` validation** guards the same two routes, with the same absent-permissive, present-strict shape. Absent → allowed, which is what every shipped client sends today; a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05` today) → allowed; anything else, including an empty or non-UTF-8 value, → `400 {"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05"]}`. The `400` carries the supported list because a client that guessed wrong has no other way to learn what to send. A foreign value is rejected rather than silently downshifted: the header states which dialect the client will read the reply in, so answering in a revision it never agreed to would mean something different than intended. Rejection happens before the JSON-RPC parse on `POST` and before the SSE session insert on `GET`, so no tool runs and no session is registered.
+**`MCP-Protocol-Version` validation** guards `POST /mcp` too, with the same absent-permissive, present-strict shape. Absent → allowed — the 2025-06-18 delta on this surface is additive result keys an older client ignores, so a silent client is answered correctly whichever revision it negotiated; a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05` or `2025-06-18` today) → allowed; anything else, including an empty or non-UTF-8 value, → `400 {"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18"]}`. The `400` carries the supported list because a client that guessed wrong has no other way to learn what to send. A foreign value is rejected rather than silently downshifted: the header states which dialect the client will read the reply in, so answering in a revision it never agreed to would mean something different than intended. Rejection happens before the JSON-RPC parse, so no tool runs.
 
 It binds **`127.0.0.1:9102` by default** (CLI flag `--mcp-bind host:port`, env `CAR_MCP_BIND`; literal `disabled` opts out):
 
@@ -4902,7 +5033,7 @@ car-server --mcp-bind 127.0.0.1:9102      # bind MCP HTTP endpoint (default)
 CAR_MCP_BIND=0.0.0.0:9102 car-server      # env equivalent
 car-server --mcp-bind disabled            # opt out
 
-curl http://127.0.0.1:9102/mcp/health     # -> {status:ok, protocol_version:2024-11-05, ...}
+curl http://127.0.0.1:9102/mcp/health     # -> {status:ok, protocol_version:2025-06-18, ...}
 
 # Origin rule on /mcp itself (health is exempt):
 curl -X POST http://127.0.0.1:9102/mcp -H 'content-type: application/json' \
@@ -4951,23 +5082,22 @@ success: check `isError`.
 
 Then query: `{"name":"memory_query","arguments":{"query":"color","k":5}}`.
 
-**Daemon wiring** — at startup the daemon binds the listener, then installs the URL and SSE registry onto `ServerState` so the rest of the daemon (e.g. external-CLI injection) can reach it:
+**Daemon wiring** — at startup the daemon binds the listener, then installs the URL onto `ServerState` so the rest of the daemon (e.g. external-CLI injection) can reach it:
 
 ```rust
 let mcp_server = Arc::new(car_mcp::Server::with_memgine(shared_memgine.clone()));
 match car_server_core::mcp::start_mcp(mcp_server, mcp_addr).await {
-    Ok((bound, handle, sessions)) => {
+    Ok((bound, handle)) => {
         let mcp_url = format!("http://{}/mcp", bound);
         let _ = server_state.install_mcp_url(mcp_url.clone());
-        let _ = server_state.install_mcp_sessions(sessions);
     }
     Err(e) => { /* warn, continue without MCP */ }
 }
 ```
 
-`start_mcp(server, addr) -> Result<(SocketAddr, JoinHandle<()>, Arc<SessionMap>), String>` returns the *bound* address (may differ from requested when port `0` is supplied), the axum task handle, and the SSE session registry. Bind failure is reported synchronously so startup can log and continue without MCP.
+`start_mcp(server, addr) -> Result<(SocketAddr, JoinHandle<()>), String>` returns the *bound* address (may differ from requested when port `0` is supplied) and the axum task handle. Bind failure is reported synchronously so startup can log and continue without MCP. It used to return a third element — the SSE session registry a handler could `push_to_session` on — removed with the car#972 Track B decline: it had no production callers and existed only for the declined push features.
 
-> **Behavioral notes.** Malformed JSON returns `-32700` with **HTTP 200** (not 4xx), mirroring stdio. Notifications return **HTTP 200 with body `{}`**. `push_to_session(sessions, session_id, payload) -> bool` exists and delivers server-initiated JSON-RPC to a specific SSE client — but the full bidirectional host-owned tool-routing loop on top of it is foundation-only (MCP-3b, pending). Also note: the `car-mcp` `lib.rs` doc comments still call the HTTP transport "Phase 2 stage 4b — pending"; that comment is **stale** — the transport is implemented in `car-server-core/src/mcp.rs` and wired into `car-server` `main.rs`.
+> **Behavioral notes.** Malformed JSON returns `-32700` with **HTTP 200** (not 4xx), mirroring stdio. Notifications return **`202 Accepted` with an empty body**. There is **no server→client push**: `listChanged`, `resources/subscribe`, and `logging/setLevel` are declined (car#972 Track B) — the capabilities advertise them false-or-absent and the subscribe/setLevel methods answer `-32601`.
 
 ---
 
@@ -5234,7 +5364,7 @@ CLI command reference:
 | `car uninstall <id>` | — | stop, remove, reap manifest dir + legacy `agents.json` entry; idempotent |
 | `car agent-start <id>` | — | README variant that invokes `agents.start` over WS |
 
-**What adoption does (the daemon side).** On install the daemon writes `~/.car/agents/<id>/manifest.toml`, mirrors it into the legacy `agents.json` (dual-write during the phase-1 migration), and **mints a per-agent token**. The spawned child gets two env vars injected — `CAR_DAEMON_URL` (daemon WS URL) and `CAR_AGENT_TOKEN` — plus `CAR_AGENT_ID`. The child calls `session.auth { agent_id, token }` to bind its WS connection (#169). Once it does, `agents.list` shows `attached: true`. stdout/stderr are captured to `~/.car/logs/<id>.{stdout,stderr}.log`.
+**What adoption does (the daemon side).** On install the daemon writes `~/.car/agents/<id>/manifest.toml`, mirrors it into the legacy `agents.json` (dual-write during the phase-1 migration), and **mints a per-agent token**. Both files therefore contain bearer tokens. On Unix, CAR creates and atomically replaces them as `0600`, keeps each per-agent directory and the CAR home at `0700`, and repairs permissive modes before loading existing files. The spawned child gets two env vars injected — `CAR_DAEMON_URL` (daemon WS URL) and `CAR_AGENT_TOKEN` — plus `CAR_AGENT_ID`. The child calls `session.auth { agent_id, token }` to bind its WS connection (#169). Once it does, `agents.list` shows `attached: true`. stdout/stderr are captured to `~/.car/logs/<id>.{stdout,stderr}.log`.
 
 > **`install_check` is fail-closed on required capabilities and `car_min_version`.** `HostCapabilities::daemon_default(car_version)` advertises inference/storage/a2ui/a2a features. The check: `car_min_version` must be satisfied by the host `car_version`; every `capabilities.required[ns][feat]` must be advertised (else error); optional misses are returned as `report.missingOptional` (non-blocking). Signed manifests are verified via `car_bundle::verify_signature` — but verification is currently **warn-but-not-reject** (phase 2/3): a tampered/unverifiable signed manifest still loads and installs, logging only a warning.
 
@@ -5299,7 +5429,10 @@ The `car-registry` crate (`car-rs/crates/car-registry/`) provides two sibling co
 
 #### `Supervisor` (declarative lifecycle, car-releases#27)
 
-Reads `~/.car/agents.json` (plus the newer per-agent `~/.car/agents/<id>/manifest.toml` layout), spawns each entry as a child process, and keeps it running per its `RestartPolicy`. The manifest is the source of truth, written through atomically. State transitions are idempotent (`start` on a running agent is a no-op, `stop` on a stopped one too). The supervisor is cheap to clone (state behind `Arc<RwLock>`).
+Reads `~/.car/agents.json` (plus the newer per-agent `~/.car/agents/<id>/manifest.toml` layout), spawns each entry as a child process, and keeps it running per its `RestartPolicy`. The manifest is the source of truth, written through atomically. On Unix, both token-bearing formats are `0600`, the CAR home and per-agent directories are `0700`, and reads tighten files left by older releases before parsing them. State transitions are idempotent (`start` on a running agent is a no-op, `stop` on a stopped one too). The supervisor is cheap to clone (state behind `Arc<RwLock>`).
+
+Use `car agent where <id>` to ask the daemon for a supervised agent's manifest
+and log paths plus its current status.
 
 Core methods:
 
@@ -6797,7 +6930,7 @@ enum Commands {
 
 ### Runtime info: `car info`
 
-`car info` (`cmd_info`, `main.rs:1825`) prints the runtime version, a static feature list, and detected hardware via `car_inference::HardwareInfo::detect()` (OS, arch, RAM MB, GPU backend, GPU memory, max model MB, recommended model, recommended context tokens). It also lists built-in tools: `infer`, `embed`, `classify`, `transcribe`, `synthesize`, `generate_image`, `generate_video`.
+`car info` (`cmd_info`, `main.rs:1825`) prints the runtime version, a static feature list, and hardware detected via `car_inference::HardwareInfo::detect()` (OS, arch, RAM MB, GPU backend, GPU memory, max model MB, and recommended context tokens). Its **recommended model** is then selected from the daemon's fit-annotated catalog, or the embedded catalog fallback, so a local tool-capable row marked `TooBig` by the active resource policy is not recommended. On tight CUDA devices, a matching policy-fit recommendation keeps the warning that its weights fit VRAM but heavier generations may fall back. It also lists built-in tools: `infer`, `embed`, `classify`, `transcribe`, `synthesize`, `generate_image`, `generate_video`.
 
 ### Inference commands
 
@@ -6873,7 +7006,7 @@ Tries daemon `embed` then embedded `embed`.
 
 | Command | Notable flags | Notes |
 |---|---|---|
-| `car models list` | `-c/--capability CAP`, `--provider P`, `--local-only` | CAP ∈ generate, embed, classify, code, reasoning, summarize, tool_use, vision, speech_to_text\|stt, text_to_speech\|tts, image_generation\|image, video_generation\|video |
+| `car models list` | `-c/--capability CAP`, `--provider P`, `--local-only`, `--all` | CAP ∈ generate, embed, classify, code, reasoning, summarize, tool_use, vision, speech_to_text\|stt, text_to_speech\|tts, image_generation\|image, video_generation\|video. Hides rows the daemon marks `too_big`, platform-incompatible or deprecated and prints `N models hidden (do not fit this machine, or deprecated); use --all`; `--all` shows them with a `FIT` column (`ok`, `too-big`, `platform`, `deprecated`, `unknown`) and its legend. There is no `--json`; the machine-readable surface is the unfiltered `models.list_unified` RPC |
 | `car models discover` | `--json` | |
 | `car models pull <name>` | — | |
 | `car models remove <name>` | — | |
@@ -8089,7 +8222,7 @@ car-server --a2a-bind <ADDR>
 
 ### Apple frameworks, MCP, A2A, A2UI (cfg-target gated, each with `is_available()`)
 
-- **MCP:** `POST /mcp` (JSON-RPC 2.0), `GET /mcp/health` (`{"status":"ok","protocol_version":"2024-11-05","server_name":"car-mcp"}`). stdio variant is stateless (memory/skill/verification tools only, no proposal execution). Sixteen tools exposed incl. `memory_add_fact` plus proactive `memory_intervene` / `memory_evaluate` and the four verification tools `verify` / `simulate` / `equivalent` / `optimize`; facts land in the shared memgine and appear in WS `memory.query`.
+- **MCP:** `POST /mcp` (JSON-RPC 2.0), `GET /mcp/health` (`{"status":"ok","protocol_version":"2025-06-18","server_name":"car-mcp"}`). stdio variant is stateless (memory/skill/verification tools only, no proposal execution). Sixteen tools exposed incl. `memory_add_fact` plus proactive `memory_intervene` / `memory_evaluate` and the four verification tools `verify` / `simulate` / `equivalent` / `optimize`; facts land in the shared memgine and appear in WS `memory.query`.
 - **A2A v1.0:** `message/send`, `tasks/get|list|cancel`, `tasks/pushNotificationConfig/{set,get,list,delete}`, `agent/getAuthenticatedExtendedCard`; `message/stream` + `tasks/resubscribe` via SSE. HTTP: `GET /.well-known/agent.json`, `POST /` (JSON-RPC), `GET /a2a/stream/:task_id`. Mount via `car_a2a::serve(dispatcher, addr)` / `build_router(dispatcher)`.
 - **A2UI:** `a2ui_*` in-process (FFI parity added v0.15.x) + WS `a2ui.*`. Renderers: HTML (`car-server/static`), SwiftUI (`apps/host-macos`).
 

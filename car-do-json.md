@@ -46,7 +46,11 @@ failure as the run's answer.
   "summary": "…",              // the assistant's final text
   "turns": 7,                  // the parent loop's own turns — a delegate's are not counted
   "delegations": 1,            // `delegate` calls issued (0 when none)
-  "model_used": "claude-opus-5",
+  "model_used": "mlx/qwen3-4b:4bit", // canonical model on the final turn
+  "models_served": [             // every completed turn, in order
+    { "model_id": "openai/gpt-5", "local_last_resort": false },
+    { "model_id": "mlx/qwen3-4b:4bit", "local_last_resort": true }
+  ],
   "receipts": { … },
   "ungrounded_claims": [ … ],
   "sandbox": { … },
@@ -64,6 +68,7 @@ failure as the run's answer.
   "message": "…",              // NOT `summary`
   "turns": 9,
   "model_used": "…",
+  "models_served": [ … ],      // completed turns before failure remain attributable
   "receipts": { … },           // work done before the failure is still reported
   "sandbox": { … },
   "elapsed_seconds": 12.4,
@@ -224,13 +229,14 @@ Each stderr line is `{"type", "phase", "message", "data"}`.
 | `type` | Meaning |
 |---|---|
 | `started` | Run began. `data` carries the goal, model, and sandbox posture. |
+| `model_served` | One model call completed. `data.model_id` is the canonical model that served the turn; `data.local_last_resort` is true only when CAR appended and then used an on-device model behind a remote-only chain. |
 | `text` | The model's prose for a turn — plus the loop's own bracketed notices (below). |
 | `tool_called` | A tool is about to run. `data.tool`, `data.brief` (the goal, for `delegate`). |
 | `tool_result` | A tool succeeded. |
 | `tool_failed` | A tool failed or was denied. |
 | `goal_evaluated` | One goal-loop verdict. `data.iteration`, `data.met`, `data.grounded`. |
-| `completed` | Run finished. |
-| `failed` | Run failed. `data.error`. |
+| `completed` | Run finished. `data.models_served` matches the terminal receipt. |
+| `failed` | Run failed. `data.error`; completed calls remain in `data.models_served`. |
 
 **Exactly one of `completed` / `failed` terminates every run.** A stream that
 carries `started` and neither terminator means the process was killed — say
@@ -239,6 +245,15 @@ that, rather than guessing at a result from the partial stream.
 `Done` and `Error` from the internal loop are deliberately not emitted as
 events: the terminal event is written alongside the stdout document, so the two
 can never disagree about how the run ended.
+
+Human-readable `car do` prints `model: <id>` on stderr for every completed model
+turn. If the appended on-device last resort served it, the line is marked with a
+warning and says `(on-device last-resort fallback)`. This attribution is per
+turn. The terminal document's `models_served` array retains every completed
+turn in order, including turns before an error; `model_used` is the canonical
+model id for its final entry. Durable assistant transcripts store the same
+`model_id` and `local_last_resort` metadata on each assistant message, without
+sending that metadata back to providers during replay.
 
 Three loop notices arrive as `text` events whose message starts with `[`, so a
 consumer can tell them from the model's prose:

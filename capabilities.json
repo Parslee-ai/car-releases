@@ -75,7 +75,7 @@
     {
       "id": "memory-learning",
       "name": "Memory and learning",
-      "what_you_get_for_free": "Graph memory, spreading-activation recall, learned skills, compaction, and outer-loop optimization.",
+      "what_you_get_for_free": "Graph memory, spreading-activation recall, learned skills, procedural structure, compaction, and outer-loop optimization.",
       "crates": [
         {
           "name": "car-harness-opt",
@@ -85,6 +85,11 @@
         {
           "name": "car-memgine",
           "description": "Memgine — graph-based memory engine for Common Agent Runtime",
+          "readme": true
+        },
+        {
+          "name": "car-procgraph",
+          "description": "Procedural graph core — admissible procedure transitions and step-level guidance for Common Agent Runtime",
           "readme": true
         }
       ],
@@ -101,7 +106,7 @@
     {
       "id": "inference-models",
       "name": "Inference and models",
-      "what_you_get_for_free": "Local and remote model routing, typed conversations, proposal generation, and static proposal ranking.",
+      "what_you_get_for_free": "Local and remote model routing, typed conversations, ChatGPT-subscription inference through the Codex CLI that holds the login, proposal generation, and static proposal ranking.",
       "crates": [
         {
           "name": "car-active-planner",
@@ -172,6 +177,11 @@
         {
           "name": "car-registry",
           "description": "File-based agent registry + lifecycle supervisor for Common Agent Runtime.",
+          "readme": true
+        },
+        {
+          "name": "car-topology",
+          "description": "Amortized coordination-topology selection core for Common Agent Runtime",
           "readme": true
         }
       ],
@@ -403,7 +413,7 @@
         {
           "name": "car-mcp",
           "description": "MCP (Model Context Protocol) server library — transport-agnostic dispatch for exposing CAR capabilities. Used by car-mcp-server (stdio binary) and car-server (HTTP-streamable daemon endpoint).",
-          "readme": false
+          "readme": true
         },
         {
           "name": "car-mcp-server",
@@ -439,6 +449,11 @@
         {
           "name": "car-cli",
           "description": "Native CLI for Common Agent Runtime",
+          "readme": true
+        },
+        {
+          "name": "car-feedback-core",
+          "description": "Diagnostic bundle collection and redaction for CAR's in-app feedback system — daemon-free leaf crate",
           "readme": true
         },
         {
@@ -585,6 +600,13 @@
           "description": "Executable target from car-bench: Benchmark harness for CAR — proves runtime value via frontier model benchmarks"
         },
         {
+          "id": "bin:car-foreman-eval",
+          "name": "car-foreman-eval",
+          "kind": "binary",
+          "entry_point": "crates/car-bench/src/foreman_eval_cli.rs",
+          "description": "Executable target from car-bench: Benchmark harness for CAR — proves runtime value via frontier model benchmarks"
+        },
+        {
           "id": "bin:car-memgine-eval",
           "name": "car-memgine-eval",
           "kind": "binary",
@@ -669,6 +691,10 @@
     {
       "path": "agent run",
       "description": "Run a registered agent on an input"
+    },
+    {
+      "path": "agent where",
+      "description": "Show where a declarative or supervised agent's files live"
     },
     {
       "path": "approvals",
@@ -825,6 +851,10 @@
     {
       "path": "eval",
       "description": "Evaluate agent improvement from stored trajectories"
+    },
+    {
+      "path": "feedback",
+      "description": "Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS-only in this release"
     },
     {
       "path": "files",
@@ -993,6 +1023,10 @@
     {
       "path": "messages chats",
       "description": "List recent Messages.app chats"
+    },
+    {
+      "path": "messages read",
+      "description": "Read Messages.app conversation rows, newest first"
     },
     {
       "path": "messages send",
@@ -1576,6 +1610,50 @@
         "description": "Ask the human user a question and wait for their reply. Use ONLY when you genuinely cannot proceed without a decision or missing fact the user alone can supply (an ambiguous requirement, a destructive choice, a missing credential). Do not use it for things you can determine by reading the repo or running commands. The call blocks until the user answers or a timeout elapses; on timeout you receive an error and should proceed with your best judgment."
       },
       {
+        "name": "browse_click",
+        "description": "Click on a UI element by accessibility node ID"
+      },
+      {
+        "name": "browse_keypress",
+        "description": "Press a key with optional modifiers"
+      },
+      {
+        "name": "browse_navigate",
+        "description": "Navigate the browser to a URL"
+      },
+      {
+        "name": "browse_observe",
+        "description": "Observe the current browser state: take screenshot, extract accessibility tree, produce UiMap"
+      },
+      {
+        "name": "browse_scroll",
+        "description": "Scroll the browser page"
+      },
+      {
+        "name": "browse_type",
+        "description": "Type text into a UI element by accessibility node ID"
+      },
+      {
+        "name": "browse_wait",
+        "description": "Wait for a browser condition to be met"
+      },
+      {
+        "name": "browser_await_answer",
+        "description": "After you submit a question or trigger an action in a web app, call this to WAIT until the response has finished rendering, before you screenshot or stop a recording. It polls the page and returns once the content stops changing. Use it every time between submitting and observing/recording an answer — browse_observe does NOT wait, so without this you capture the page mid-load (a blank or still-thinking state) instead of the actual answer."
+      },
+      {
+        "name": "browser_await_signin",
+        "description": "Ask the USER to sign in, on whatever surface this browser has, and wait until they have. Use this the moment a site needs authentication — you cannot and must not type someone's credentials, but the person can complete any flow (SSO, MFA, a device prompt) themselves: in the CAR app's browser drawer when the app is running, or in the browser window if one is open. TELL THE USER what to sign into before calling this, and say to look in the CAR app if they do not see a browser window; it blocks while they do it. The session persists in the browser profile, so this is a one-time cost per site rather than per run."
+      },
+      {
+        "name": "browser_record_start",
+        "description": "Start RECORDING the browser session to video. Pair it with the browse_* tools: start recording, drive the app (navigate, type a real question, wait for the answer), then call browser_record_stop to get an MP4. Use it whenever the ASK is a product demo, an onboarding or training clip, a bug repro, or release notes — anything where showing the app BEING USED beats a screenshot of its final state. Frames are captured only when the page actually CHANGES, so make sure something happens on screen; a static page records nothing."
+      },
+      {
+        "name": "browser_record_stop",
+        "description": "Stop the recording started by browser_record_start and write an MP4 under the working directory. Returns the path plus the real duration. Requires ffmpeg."
+      },
+      {
         "name": "edit_file",
         "description": "Make a targeted edit to an existing file by replacing `old_text` with `new_text`. Prefer this over write_file for changing part of a file — it never risks clobbering the rest. `old_text` and `new_text` must be the EXACT raw file text: do NOT include the line-number prefixes that read_file displays (the `%6d\\t` before each line are display-only — copy only the text after the tab). By default `old_text` must match EXACTLY ONE place in the file; if it matches several, add surrounding lines to make it unique, or set `replace_all: true` to replace every occurrence. You must read the file (read_file) earlier in this session before editing it, and re-read it if it changed on disk since — the runtime rejects an edit to a file you have not read (or that is stale). A paged read is sufficient only for one unique targeted replacement; replace_all requires a fresh unpaged read."
       },
@@ -1685,31 +1763,38 @@
       "methods": [
         {
           "method": "a2a.peers.add",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2a.peers.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2a.peers.remove",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2a.send",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2a.start",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2a.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2a.stop",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -1718,47 +1803,58 @@
       "methods": [
         {
           "method": "a2ui.action",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui.apply",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui.capabilities",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui.ingest",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui.reap",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui.render_report",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui.surfaces",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui/replay",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui/subscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "a2ui/unsubscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -1767,11 +1863,13 @@
       "methods": [
         {
           "method": "accounts.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "accounts.open",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -1780,7 +1878,8 @@
       "methods": [
         {
           "method": "admission.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -1789,7 +1888,8 @@
       "methods": [
         {
           "method": "agent/getAuthenticatedExtendedCard",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -1798,35 +1898,43 @@
       "methods": [
         {
           "method": "agent_permissions.evaluate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agent_permissions.evaluate_tool",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "agent_permissions.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agent_permissions.reset",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "agent_permissions.reset_tool",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "agent_permissions.set",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "agent_permissions.set_default",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "agent_permissions.set_tool",
-          "documented": true
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -1835,87 +1943,108 @@
       "methods": [
         {
           "method": "agents.chat",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "agents.chat.approve",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.chat.cancel",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.detect_external",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.health",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.health_external",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.install",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "agents.invoke_external",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.list_external",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.message",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.message.approve",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.message.pending",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.peers",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.remove",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "agents.restart",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "agents.start",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "agents.stop",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "agents.tail_log",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "agents.upsert",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "agents.wait",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -1924,11 +2053,13 @@
       "methods": [
         {
           "method": "assistant.identity.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "assistant.identity.set",
-          "documented": true
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -1937,7 +2068,8 @@
       "methods": [
         {
           "method": "assistants.invoke",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -1946,47 +2078,58 @@
       "methods": [
         {
           "method": "auth.accounts",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.authority_hint",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.complete",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.completion_status",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.logout",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.remove_account",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.snapshot",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.start",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.status",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.switch_account",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "auth.switch_org",
-          "documented": true
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -1995,19 +2138,23 @@
       "methods": [
         {
           "method": "automation.run_applescript",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "automation.run_powershell",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "automation.shortcuts.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "automation.shortcuts.run",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2016,7 +2163,8 @@
       "methods": [
         {
           "method": "bookmarks.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2025,79 +2173,98 @@
       "methods": [
         {
           "method": "browser.close",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.producer.register",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.run",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.back",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.click",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.forward",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.hand_back",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.keypress",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.navigate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.paste",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.reload",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.scroll",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.subscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.tab_close",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.tab_open",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.tab_switch",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.take_control",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.type",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "browser.view.unsubscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2106,7 +2273,8 @@
       "methods": [
         {
           "method": "builder.build",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2115,23 +2283,38 @@
       "methods": [
         {
           "method": "calendar.create_event",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "calendar.delete_event",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "calendar.events",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "calendar.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "calendar.update_event",
-          "documented": true
+          "documented": true,
+          "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "capabilities",
+      "methods": [
+        {
+          "method": "capabilities.list",
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2140,7 +2323,8 @@
       "methods": [
         {
           "method": "cascade.run",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2149,91 +2333,113 @@
       "methods": [
         {
           "method": "coder.approve_merge",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.cancel",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.confirm_contract",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.discuss.close",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.discuss.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.discuss.promote",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.discuss.send",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.discuss.start",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.discuss.subscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.discuss.unsubscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.projects.create",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.projects.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.projects.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.respond",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.revise_contract",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.start",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.subscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.unsubscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.unwatch",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "coder.watch",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2242,43 +2448,53 @@
       "methods": [
         {
           "method": "concierge.actions",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.apply",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.ask",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.clear_default",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.defaults",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.dismiss",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.refresh_catalog",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.rollback",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.set_default",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "concierge.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2287,43 +2503,53 @@
       "methods": [
         {
           "method": "connectors.add",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.add_stdio",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.authenticate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.complete_authentication",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.disable_tools",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.enable_tools",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.refresh",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.remove",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "connectors.tools",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2332,11 +2558,13 @@
       "methods": [
         {
           "method": "contacts.containers",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "contacts.find",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2345,35 +2573,43 @@
       "methods": [
         {
           "method": "declagents.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "declagents.invoke",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "declagents.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "declagents.remove",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "declagents.route",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "declagents.route_split",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "declagents.routing_stats",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "declagents.set_enabled",
-          "documented": true
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -2382,7 +2618,8 @@
       "methods": [
         {
           "method": "diagnostics.secret_store_activity",
-          "documented": true
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -2391,15 +2628,18 @@
       "methods": [
         {
           "method": "discovery.report",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "discovery.resolve",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "discovery.route_compose",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2408,39 +2648,48 @@
       "methods": [
         {
           "method": "events.chain.enable",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "events.chain.verify",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "events.clear",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "events.cost_by_agent",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "events.count",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "events.query",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "events.retention",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "events.stats",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "events.truncate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2449,11 +2698,38 @@
       "methods": [
         {
           "method": "evolution.plan",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "evolution.run",
-          "documented": true
+          "documented": true,
+          "role": "agent"
+        }
+      ]
+    },
+    {
+      "namespace": "feedback",
+      "methods": [
+        {
+          "method": "feedback.compose_preview",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "feedback.list",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "feedback.status",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "feedback.submit",
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2462,7 +2738,8 @@
       "methods": [
         {
           "method": "files.locations",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2471,19 +2748,23 @@
       "methods": [
         {
           "method": "fleet.composite",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "fleet.inventory",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "fleet.worker.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "fleet.worker.set",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2492,11 +2773,13 @@
       "methods": [
         {
           "method": "foreman.plan",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "foreman.run",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2505,19 +2788,23 @@
       "methods": [
         {
           "method": "goal.clear",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "goal.set",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "goal.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "goal.suggest",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2526,11 +2813,13 @@
       "methods": [
         {
           "method": "heal.run",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "heal.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2539,19 +2828,23 @@
       "methods": [
         {
           "method": "health.activity",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "health.sleep",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "health.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "health.workouts",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2560,55 +2853,68 @@
       "methods": [
         {
           "method": "host.agents",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.approvals",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.devices",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.events",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.notify",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.register_agent",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.register_device",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.request_approval",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "host.resolve_approval",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "host.set_status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.subscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.unregister_agent",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "host.update_device",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2617,7 +2923,8 @@
       "methods": [
         {
           "method": "image.generate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2626,11 +2933,13 @@
       "methods": [
         {
           "method": "infer.cancel",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "infer.deadline",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2639,19 +2948,23 @@
       "methods": [
         {
           "method": "inference.register_runner",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "inference.runner.complete",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "inference.runner.event",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "inference.runner.fail",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2660,7 +2973,8 @@
       "methods": [
         {
           "method": "keychain.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2669,19 +2983,23 @@
       "methods": [
         {
           "method": "lease.acquire",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "lease.release",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "lease.renew",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "lease.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2690,27 +3008,33 @@
       "methods": [
         {
           "method": "mail.accounts",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "mail.inbox",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "mail.mailboxes",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "mail.message_body",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "mail.messages",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "mail.send",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2719,19 +3043,23 @@
       "methods": [
         {
           "method": "meeting.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "meeting.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "meeting.start",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "meeting.stop",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2740,79 +3068,98 @@
       "methods": [
         {
           "method": "memory.add_fact",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "memory.admission_table",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.build_context",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.build_context_fast",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.consolidate",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "memory.delete",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "memory.evaluate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.fact_count",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.intervene",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.load",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.maintain",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "memory.persist",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.query",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.save_knowledge",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "memory.save_procedural",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "memory.set_admission_table",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.update_status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.utility_get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "memory.utility_set",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2821,11 +3168,13 @@
       "methods": [
         {
           "method": "message/send",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "message/stream",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2834,15 +3183,23 @@
       "methods": [
         {
           "method": "messages.chats",
-          "documented": true
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "messages.read",
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "messages.send",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "messages.services",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2851,27 +3208,33 @@
       "methods": [
         {
           "method": "messaging.config.get",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "messaging.config.set",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "messaging.pairing.start",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "messaging.pairing.status",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "messaging.status",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "messaging.test_send",
-          "documented": true
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -2880,11 +3243,13 @@
       "methods": [
         {
           "method": "metrics.alerts",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "metrics.summary",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2893,7 +3258,8 @@
       "methods": [
         {
           "method": "mobile.runtime",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -2902,111 +3268,138 @@
       "methods": [
         {
           "method": "models.adopt",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "models.catalog_snapshot",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.check_concierge",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.check_upgrade_nudge",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.detect_upgrades",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.dismiss_suggestion",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.dismiss_upgrade",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.install",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "models.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.list_unified",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.preflight",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.pull",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "models.recommend",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.register",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.remove",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "models.resource_policy.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.resource_policy.set",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "models.route",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.route_provenance",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.search",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.setup_plan",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.stats",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.storage_roots",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "models.unregister",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.update_prefs_get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.update_prefs_set",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "models.upgrades",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3015,31 +3408,38 @@
       "methods": [
         {
           "method": "multi.map_reduce",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "multi.pipeline",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "multi.subtask",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "multi.supervisor",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "multi.swarm",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "multi.tournament",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "multi.vote",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3048,15 +3448,18 @@
       "methods": [
         {
           "method": "nlp.extract_entities",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "nlp.identify_language",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "nlp.tokenize",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3065,11 +3468,13 @@
       "methods": [
         {
           "method": "notes.accounts",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "notes.find",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3078,7 +3483,8 @@
       "methods": [
         {
           "method": "notifications.local",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3087,19 +3493,23 @@
       "methods": [
         {
           "method": "openrouter.auth_cancel",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "openrouter.auth_start",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "openrouter.disconnect",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "openrouter.status",
-          "documented": true
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -3108,11 +3518,13 @@
       "methods": [
         {
           "method": "outcomes.resolve_pending",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "outcomes.scoreboard",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3121,15 +3533,18 @@
       "methods": [
         {
           "method": "parslee.auth",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "parslee.capabilities",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "parslee.m365.generate_document",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3138,31 +3553,38 @@
       "methods": [
         {
           "method": "permission.approve",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "permission.classify",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "permission.evaluate",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "permission.get_tier",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "permission.pending",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "permission.reject",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "permission.set_tier",
-          "documented": true
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -3171,19 +3593,23 @@
       "methods": [
         {
           "method": "permissions.domains",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "permissions.explain",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "permissions.request",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "permissions.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3192,7 +3618,8 @@
       "methods": [
         {
           "method": "photos.albums",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3201,15 +3628,18 @@
       "methods": [
         {
           "method": "policy.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "policy.register",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "policy.unregister",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3218,7 +3648,8 @@
       "methods": [
         {
           "method": "proposal.submit",
-          "documented": true
+          "documented": true,
+          "role": "owner"
         }
       ]
     },
@@ -3227,23 +3658,28 @@
       "methods": [
         {
           "method": "registry.heartbeat",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "registry.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "registry.reap",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "registry.register",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "registry.unregister",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3252,11 +3688,13 @@
       "methods": [
         {
           "method": "reminders.items",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "reminders.lists",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3265,7 +3703,8 @@
       "methods": [
         {
           "method": "replan.set_config",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3274,95 +3713,118 @@
       "methods": [
         {
           "method": "CancelTask",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "CreateTaskPushNotificationConfig",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "DeleteTaskPushNotificationConfig",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "GetExtendedAgentCard",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "GetTask",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "GetTaskPushNotificationConfig",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "ListTaskPushNotificationConfigs",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "ListTasks",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "SendMessage",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "SendStreamingMessage",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "SubscribeToTask",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "classify",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "detokenize",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "embed",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "infer",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "infer_stream",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "rerank",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "search",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "synthesize",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tokenize",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "transcribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "verify",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "web_fetch",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3371,39 +3833,48 @@
       "methods": [
         {
           "method": "runs.cancel",
-          "documented": true
+          "documented": true,
+          "role": "owner"
         },
         {
           "method": "runs.complete",
-          "documented": true
+          "documented": true,
+          "role": "owner"
         },
         {
           "method": "runs.get_trace",
-          "documented": true
+          "documented": true,
+          "role": "owner"
         },
         {
           "method": "runs.list",
-          "documented": true
+          "documented": true,
+          "role": "owner"
         },
         {
           "method": "runs.record_turns",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "runs.resume",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "runs.start",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "runs.subscribe",
-          "documented": true
+          "documented": true,
+          "role": "owner"
         },
         {
           "method": "runs.unsubscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3412,35 +3883,43 @@
       "methods": [
         {
           "method": "scheduler.create",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "scheduler.os_install",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "scheduler.os_list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "scheduler.os_reconcile",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "scheduler.os_render",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "scheduler.os_uninstall",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "scheduler.run",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "scheduler.run_loop",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3449,27 +3928,33 @@
       "methods": [
         {
           "method": "secret.available",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "secret.delete",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "secret.get",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "secret.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "secret.put",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "secret.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3478,23 +3963,28 @@
       "methods": [
         {
           "method": "selfheal.detections",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "selfheal.dismiss",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "selfheal.fix",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "selfheal.run",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "selfheal.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3503,27 +3993,38 @@
       "methods": [
         {
           "method": "session.auth",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "session.bindSandbox",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "session.bindSubstrate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "session.clear_halt",
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "session.init",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "session.policy.close",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "session.policy.open",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3532,47 +4033,58 @@
       "methods": [
         {
           "method": "skill.adopt_pack",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.enforce_deployment",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.export",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.find",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.gate_deployment",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.import",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.ingest",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.ingest_governed",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.meta",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.repair",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skill.report",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3581,31 +4093,38 @@
       "methods": [
         {
           "method": "skills.distill",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skills.domains_needing_evolution",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skills.evolve",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skills.gate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skills.ingest_distilled",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skills.ingest_provisional",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "skills.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3614,7 +4133,8 @@
       "methods": [
         {
           "method": "speech.prepare",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3623,23 +4143,28 @@
       "methods": [
         {
           "method": "state.exists",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "state.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "state.keys",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "state.set",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "state.snapshot",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3648,19 +4173,23 @@
       "methods": [
         {
           "method": "supervision.decide",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "supervision.pending",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "supervision.subscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "supervision.unsubscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3669,63 +4198,78 @@
       "methods": [
         {
           "method": "sync.append",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.assistant_action.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.assistant_action.put",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.assistant_checkpoint.get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.assistant_checkpoint.put",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.checkpoint",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.fence_check",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "sync.knowledge",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.pump",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.rebase",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.record_intent",
-          "documented": true
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "sync.record_turn",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.resume",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.status",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "sync.transcript",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3734,47 +4278,58 @@
       "methods": [
         {
           "method": "tasks.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tasks.schedule",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "tasks.unschedule",
-          "documented": true
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "tasks/cancel",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tasks/get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tasks/list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tasks/pushNotificationConfig/delete",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tasks/pushNotificationConfig/get",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tasks/pushNotificationConfig/list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tasks/pushNotificationConfig/set",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tasks/resubscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3783,27 +4338,33 @@
       "methods": [
         {
           "method": "tools.cancel",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tools.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tools.poll",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tools.register",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tools.stream.subscribe",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "tools.unregister",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3812,7 +4373,8 @@
       "methods": [
         {
           "method": "verify.monte_carlo",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3821,7 +4383,8 @@
       "methods": [
         {
           "method": "video.generate",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3830,7 +4393,8 @@
       "methods": [
         {
           "method": "vision.ocr",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3839,67 +4403,83 @@
       "methods": [
         {
           "method": "voice.cancel_turn",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.dispatch_turn",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.enroll_speaker",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.list_enrollments",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.prepare_diarizer",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.prepare_parakeet",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.prewarm_turn",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.providers.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.remove_enrollment",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.sessions.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.transcribe_stream.push",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.transcribe_stream.start",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.transcribe_stream.stop",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.tts_stream.cancel",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.tts_stream.list",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "voice.tts_stream.start",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     },
@@ -3908,27 +4488,33 @@
       "methods": [
         {
           "method": "workflow.build_automation",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "workflow.chain",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "workflow.list_paused",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "workflow.resume",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "workflow.run",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "workflow.verify",
-          "documented": true
+          "documented": true,
+          "role": "operator"
         }
       ]
     }
