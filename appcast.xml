@@ -7,6 +7,18 @@
         <description>CAR Common Agent Runtime in-app updates</description>
         <language>en</language>
                 <item>
+                    <title>Version 0.55.0</title>
+                    <pubDate>Mon, 21 Sep 2026 21:12:07 +0000</pubDate>
+                    <sparkle:version>0.55.0</sparkle:version>
+                    <sparkle:shortVersionString>0.55.0</sparkle:shortVersionString>
+                    <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+                    <sparkle:releaseNotesLink>https://github.com/Parslee-ai/car-releases/releases/tag/v0.55.0</sparkle:releaseNotesLink>
+                    <enclosure
+                        url="https://github.com/Parslee-ai/car-releases/releases/download/v0.55.0/CAR-Host-darwin-arm64.zip"
+                        type="application/octet-stream"
+                        sparkle:edSignature="SQyRfrUO8TIUUc78LcZy4dGmYVYsu2HW+aKvOzRvCJxyeyCh2gmsaWOZL7DS4zAAbppyUx3F6WJWt+iEoiPdCg==" length="171503522" />
+                </item>
+                <item>
                     <title>Version 0.54.0</title>
                     <pubDate>Tue, 15 Sep 2026 17:50:50 +0000</pubDate>
                     <sparkle:version>0.54.0</sparkle:version>
