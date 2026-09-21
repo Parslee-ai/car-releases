@@ -33,8 +33,8 @@ document alone.
 
 ## Check `status` first
 
-The success and failure documents have **different shapes**. A failed run has
-no `summary` key — deliberately, so that a consumer reading `summary` without
+The success and failure documents have **different shapes**. A failed run —
+`status: "error"` or `status: "auth_required"` — has no `summary` key — deliberately, so that a consumer reading `summary` without
 checking `status` gets a missing key rather than quietly presenting a transport
 failure as the run's answer.
 
@@ -66,7 +66,12 @@ failure as the run's answer.
   "status": "error",
   "error": "AssistantLoopFailed",
   "message": "…",              // NOT `summary`
-  "turns": 9,
+  "turns": 9,                   // attempts consumed, including the failed turn
+  "turns_completed": 8,         // primary model turns that returned successfully
+  "failure": {                  // typed; branch on `cause`, not `message`
+    "cause": "transient_inference",
+    "status": 503                // provider HTTP status, or null for transport failures
+  },
   "model_used": "…",
   "models_served": [ … ],      // completed turns before failure remain attributable
   "receipts": { … },           // work done before the failure is still reported
@@ -75,6 +80,55 @@ failure as the run's answer.
   "suggestions": ["…"]
 }
 ```
+
+```jsonc
+// status: "auth_required"
+{
+  "schema": "car.do/1",
+  "status": "auth_required",
+  "error": "AuthRequired",     // a string, like every other `error` value
+  "reason": "signed_out",      // "signed_out" | "expired" | "no_workspace"
+  "message": "…",              // NOT `summary` — the remedy, in plain language
+  "turns": 1,
+  "turns_completed": 0,
+  "model_used": "…",
+  "models_served": [ … ],
+  "receipts": { … },
+  "sandbox": { … },
+  "elapsed_seconds": 0.4,
+  "suggestions": ["Sign in to your Parslee account, then re-run.", "…"]
+}
+```
+
+On an `AssistantLoopFailed` inference error, `failure.cause` is
+`"transient_inference"` when the remote retry budget was exhausted and
+`"inference"` for another generation failure. A transient failure also carries
+`failure.status`: the provider HTTP status when one exists, otherwise `null`
+for a transport/body-read timeout. `message` remains explanatory text; do not
+parse it to recover the cause. `turns_completed` deliberately differs from
+`turns`: the latter includes the failed in-flight attempt, while the former
+counts only primary model calls that returned. Receipts retain the same bounded
+success shape, so inspect `receipts.total` rather than treating `sample` as the
+complete list.
+
+The first suggestion is chosen by `reason` and never contains a shell command —
+this document is read by programs and by hosts with their own sign-in entry, and
+a `no_workspace` account is not repaired by signing in at all. `signed_out`:
+"Sign in to your Parslee account, then re-run."; `expired`: "Your Parslee
+sign-in has expired. Sign in again, then re-run."; `no_workspace`: "Finish
+setting up your Parslee account at parslee.ai, then re-run."
+
+`auth_required` is the third terminal status. The out-of-the-box agent runs on
+Parslee inference through a Parslee account, so a run with no usable account
+ends here rather than on a local model: the turn was refused, not attempted.
+It takes the failure shape — no `summary` — because it is not an answer, and
+`reason` is what you branch on (`message` is for a person to read). A batch
+run exits **1**, through the same mapping as any other non-answer; exit 2
+still means the run never started. `reason` and `message` are additive fields
+on the existing schema, so `car.do/1` is unchanged.
+
+An explicit `--model` or `CAR_DO_MODEL` is not affected: naming a model keeps
+the previous selection behaviour for it, including the on-device fallback.
 
 A flag error before the run starts (`--json` with `--serve`, `--json` with no
 goal, `--until` and `--infer-until` together, a `--json-schema` file that is
@@ -229,18 +283,24 @@ Each stderr line is `{"type", "phase", "message", "data"}`.
 | `type` | Meaning |
 |---|---|
 | `started` | Run began. `data` carries the goal, model, and sandbox posture. |
+| `inference_started` | A model call is about to begin, emitted before CAR awaits the generator. `data.model` is the requested model (or `(router)`), `data.attempt` is `1`, and `data.turn` is the assistant turn. |
+| `inference_retry` | A transient remote failure will be retried. `data.model` is the canonical model, `data.attempt` is the attempt about to start, `data.reason` is a generic failure class (`http_status` or `transport`), and `data.backoff_ms` is the delay before it starts. Provider response bodies are never copied into this event. |
 | `model_served` | One model call completed. `data.model_id` is the canonical model that served the turn; `data.local_last_resort` is true only when CAR appended and then used an on-device model behind a remote-only chain. |
 | `text` | The model's prose for a turn — plus the loop's own bracketed notices (below). |
-| `tool_called` | A tool is about to run. `data.tool`, `data.brief` (the goal, for `delegate`). |
-| `tool_result` | A tool succeeded. |
-| `tool_failed` | A tool failed or was denied. |
+| `tool_called` | A tool is about to run. `data.call_id` is CAR-generated, `data.sequence` is its one-based position in the turn, plus `data.tool` and `data.brief` (the goal, for `delegate`). |
+| `tool_result` | A tool succeeded. `data.call_id` and `data.sequence` match its `tool_called` event. |
+| `tool_failed` | A tool failed, was denied, or was cancelled. `data.call_id` and `data.sequence` still close the matching request. |
 | `goal_evaluated` | One goal-loop verdict. `data.iteration`, `data.met`, `data.grounded`. |
 | `completed` | Run finished. `data.models_served` matches the terminal receipt. |
-| `failed` | Run failed. `data.error`; completed calls remain in `data.models_served`. |
+| `failed` | Run failed. `data.error`; completed calls remain in `data.models_served`. Mid-loop failures also carry `data.turns_completed` and the typed `data.failure` when known. |
 
 **Exactly one of `completed` / `failed` terminates every run.** A stream that
 carries `started` and neither terminator means the process was killed — say
-that, rather than guessing at a result from the partial stream.
+that, rather than guessing at a result from the partial stream. A host can use
+`inference_started` to distinguish an awaited model call from silence between
+loop stages, and `inference_retry` resets that liveness window before each
+remote backoff. Neither event is a success receipt; only `model_served` says a
+call completed.
 
 `Done` and `Error` from the internal loop are deliberately not emitted as
 events: the terminal event is written alongside the stdout document, so the two
@@ -249,11 +309,14 @@ can never disagree about how the run ended.
 Human-readable `car do` prints `model: <id>` on stderr for every completed model
 turn. If the appended on-device last resort served it, the line is marked with a
 warning and says `(on-device last-resort fallback)`. This attribution is per
-turn. The terminal document's `models_served` array retains every completed
-turn in order, including turns before an error; `model_used` is the canonical
-model id for its final entry. Durable assistant transcripts store the same
-`model_id` and `local_last_resort` metadata on each assistant message, without
-sending that metadata back to providers during replay.
+turn. On an assistant-loop error, the terminal block goes to stderr and prints
+the typed cause (when known), completed versus consumed turns, and preserved
+receipt totals/by-tool counts before the error message. The terminal document's
+`models_served` array retains every completed turn in order, including turns
+before an error; `model_used` is the canonical model id for its final entry.
+Durable assistant transcripts store the same `model_id` and
+`local_last_resort` metadata on each assistant message, without sending that
+metadata back to providers during replay.
 
 Three loop notices arrive as `text` events whose message starts with `[`, so a
 consumer can tell them from the model's prose:

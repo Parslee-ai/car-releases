@@ -503,6 +503,13 @@
           "kind": "binary",
           "entry_point": "crates/car-server/src/main.rs",
           "description": "Executable target from car-server: CAR daemon — WebSocket server for the Common Agent Runtime"
+        },
+        {
+          "id": "bin:car-wire-schema",
+          "name": "car-wire-schema",
+          "kind": "binary",
+          "entry_point": "crates/car-server-core/src/bin/car-wire-schema.rs",
+          "description": "Executable target from car-server-core: Transport-neutral library for the CAR daemon JSON-RPC dispatcher (used by car-server and tokhn-daemon)"
         }
       ]
     },
@@ -798,7 +805,7 @@
     },
     {
       "path": "code",
-      "description": "Built-in coding agent: state an intent, confirm the verifiable outcome contract, and CAR delivers it in an isolated git worktree — natively or via an installed frontier CLI. Results land on a `car/coder/<id>` branch after your approval; your checkout is never touched"
+      "description": "Built-in coding agent: state an intent, confirm the verifiable outcome contract, and CAR delivers it in an isolated git worktree — natively or via an installed frontier CLI. Review and apply results to your checkout, or publish a branch with --delivery branch (which is what --yes does by default — an unattended run never edits your checkout)"
     },
     {
       "path": "code-task",
@@ -1123,6 +1130,34 @@
     {
       "path": "models upgrades",
       "description": "Show installed models that have curated newer replacements"
+    },
+    {
+      "path": "mp",
+      "description": "Multiplayer development: a work item moves Build → Improve → Polish through different developers before it merges, each stage a coder session on its owner's machine with the engine they choose. Needs a running daemon and a shared git remote"
+    },
+    {
+      "path": "mp check",
+      "description": "Re-verify an item end to end and, if it holds, create `car/mp/<id>-final` for a pull request. Runs the item's contract here"
+    },
+    {
+      "path": "mp list",
+      "description": "Work items on the shared remote, and whether you can take the next stage of each (you may own at most one stage per item)"
+    },
+    {
+      "path": "mp publish",
+      "description": "Publish a finished coder session as a stage: an approved diff, or an accepted no-change finding. Without --item this publishes a Build and creates the work item"
+    },
+    {
+      "path": "mp show",
+      "description": "One work item's full record"
+    },
+    {
+      "path": "mp submit",
+      "description": "Submit a stage you did outside CAR (for example in Claude Code or Codex). CAR runs the item's contract on the commit itself, without credentials, before recording it"
+    },
+    {
+      "path": "mp take",
+      "description": "Start the item's next stage: a coder session at the item's tip. Then confirm the item's locked contract (adding checks later is fine) and work it like any coder session, e.g. in `car board`"
     },
     {
       "path": "notes",
@@ -1476,6 +1511,22 @@
         "description": "Evaluate a mathematical expression exactly. Prefer this over arithmetic in your head or a shell one-liner whenever a number has to be right."
       },
       {
+        "name": "calendar_create_event",
+        "description": "Create an event in the current Mac user's local Calendar.app through EventKit. This changes on-device calendar data and requires approval unless the session has full access. Omit calendar_id to use the first writable local calendar. Returns the created event with its stable id."
+      },
+      {
+        "name": "calendar_delete_event",
+        "description": "Delete an event from the current Mac user's local Calendar.app through EventKit. Use the stable event_id returned by calendar_events. This changes on-device calendar data and requires approval unless the session has full access; success echoes event_id."
+      },
+      {
+        "name": "calendar_events",
+        "description": "Read events from the current Mac user's local Calendar.app through EventKit. This is the private on-device path: it does not use Parslee or require a Microsoft 365 connection. Pass an RFC3339 range; results include stable event and calendar ids for later updates or deletion. After answering a guided schedule check, end with a concrete offer to add or move an event; do not make the change until the user accepts the approval-gated action."
+      },
+      {
+        "name": "calendar_update_event",
+        "description": "Update an event in the current Mac user's local Calendar.app through EventKit. Use the stable event_id returned by calendar_events or calendar_create_event. This changes on-device calendar data and requires approval unless the session has full access."
+      },
+      {
         "name": "classify_image",
         "description": "Identify what an image depicts — returns ranked content labels with confidence (e.g. \"golden retriever\", \"airliner\", \"beach\"). Give a path to an image under the working directory. Use this to check what a generated or downloaded image actually shows."
       },
@@ -1533,7 +1584,7 @@
       },
       {
         "name": "http_request",
-        "description": "Fetch a URL or call an HTTP API. Defaults to GET. Returns the response status and a (size-capped) body. Runs from the host, so it works even when the filesystem/shell are sandboxed offline."
+        "description": "Fetch a URL or call an HTTP API. Defaults to GET. Returns the requested URL, final URL after redirects, response status, HTML title when present, and a size-capped body. Runs from the host, so it works even when the filesystem/shell are sandboxed offline."
       },
       {
         "name": "linked_devices",
@@ -1549,7 +1600,27 @@
       },
       {
         "name": "m365_task",
-        "description": "Delegate a task to the user's Microsoft 365 assistant (their Parslee AI Employee) — email, calendar, contacts, CRM (HubSpot), meetings, and business research across their connected M365 and tools. Give a plain-language instruction like 'summarize my unread email from today', 'what's on my calendar tomorrow', 'draft a follow-up to the Acme thread', or 'find our latest deal with Contoso in HubSpot'. Returns the assistant's reply (and a conversation_id you can pass back to continue the same thread). IMPORTANT: actions that SEND or CHANGE things (send an email, create a calendar event) are drafted and returned for approval, not executed silently — relay the reply and let the user confirm. Mailbox / calendar access needs a connected Microsoft account; if it isn't connected the reply says so."
+        "description": "Delegate a task to the user's cloud Microsoft 365 assistant (their Parslee AI Employee) — email, calendar, contacts, CRM (HubSpot), meetings, and business research across their connected M365 and tools. Give a plain-language instruction like 'summarize my unread email from today', 'what's on my calendar tomorrow', 'draft a follow-up to the Acme thread', or 'find our latest deal with Contoso in HubSpot'. Returns the assistant's reply (and a conversation_id you can pass back to continue the same thread). IMPORTANT: actions that SEND or CHANGE things (send an email, create a calendar event) are drafted and returned for approval, not executed silently — relay the reply and let the user confirm. Mailbox / calendar access needs a connected Microsoft account; if it isn't connected the reply says so. When local macOS Calendar.app or Mail.app tools are available, prefer them for the user's on-device calendar or mailbox and use this cloud path for their connected work account or broader M365 tasks."
+      },
+      {
+        "name": "mail_draft",
+        "description": "Create a draft in the current Mac user's local Mail.app without sending it. Draft creation changes Mail.app and requires chat approval unless the session has full access. Returns the draft message id."
+      },
+      {
+        "name": "mail_inbox",
+        "description": "Read per-account unread counts and newest subjects from the current Mac user's local Mail.app. This on-device path does not use Parslee or require a Microsoft 365 connection."
+      },
+      {
+        "name": "mail_message_body",
+        "description": "Read one local Mail.app message body by the stable id returned from mail_search. The backend truncates oversized bodies and reports whether truncation occurred."
+      },
+      {
+        "name": "mail_search",
+        "description": "Read newest message rows from one local Mail.app mailbox, optionally limited by account and received time. Results are newest-first, header-only, and include CAR's stable id for mail_message_body plus the RFC 5322 message_id when Mail exposes it. This is local Mail.app; use m365_task for the connected Parslee cloud path. After answering a guided reply check, end with a concrete offer to prepare one reply as an approval-gated Mail.app draft."
+      },
+      {
+        "name": "mail_send",
+        "description": "Send a message through the current Mac user's local Mail.app. This sends externally and requires chat approval unless the session has full access. Returns the sent message id."
       },
       {
         "name": "notify_linked_device",
@@ -1683,7 +1754,7 @@
       },
       {
         "name": "shell",
-        "description": "Run a shell command at the repository root (the worktree). Use for builds, tests, and anything the file tools can't do. Output is the combined stdout+stderr tail. Publishing and privilege-escalating commands are denied by policy: `git push`, `gh`/`glab` writes (`pr create`, `release create`, non-GET `api`), `npm`/`cargo publish`, `docker push`, `sudo`, and destructive operations outside the repo. Reading the forge is allowed (`gh pr view`, `gh run view`, `gh api` GET) so you can watch CI. Do not try to route around these — the runtime opens the pull request itself after it has verified your work."
+        "description": "Run a shell command at the repository root (the worktree). Use for builds, tests, and anything the file tools can't do. Output is the combined stdout+stderr tail. Publishing and privilege-escalating commands are denied by policy: `git push`, `gh`/`glab` writes (`pr create`, `release create`, non-GET `api`), `npm`/`cargo publish`, `docker push`, `sudo`, shell function declarations, and destructive operations outside the repo. Reading the forge is allowed (`gh pr view`, `gh run view`, `gh api` GET) so you can watch CI. Do not try to route around these — the runtime opens the pull request itself after it has verified your work."
       },
       {
         "name": "write_file",
@@ -3444,6 +3515,41 @@
       ]
     },
     {
+      "namespace": "multiplayer",
+      "methods": [
+        {
+          "method": "multiplayer.get",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "multiplayer.list",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "multiplayer.merge_check",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "multiplayer.publish",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "multiplayer.start_stage",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "multiplayer.submit_stage",
+          "documented": true,
+          "role": "operator"
+        }
+      ]
+    },
+    {
       "namespace": "nlp",
       "methods": [
         {
@@ -3879,6 +3985,16 @@
       ]
     },
     {
+      "namespace": "schedule",
+      "methods": [
+        {
+          "method": "schedule.suggest",
+          "documented": true,
+          "role": "operator"
+        }
+      ]
+    },
+    {
       "namespace": "scheduler",
       "methods": [
         {
@@ -3983,6 +4099,16 @@
         },
         {
           "method": "selfheal.status",
+          "documented": true,
+          "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "server",
+      "methods": [
+        {
+          "method": "server.schema",
           "documented": true,
           "role": "operator"
         }

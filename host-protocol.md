@@ -157,6 +157,17 @@ notifications:
 
 `kind` is a discriminated enum:
 
+- `inference_started` — a model call is about to begin. `model: string`,
+  `attempt: number`, `turn: number`. Emitted before the generator is awaited.
+- `inference_retry` — a transient remote failure will be retried.
+  `model: string`, `attempt: number`, `reason: "http_status" | "transport"`,
+  `backoff_ms: number`. The reason is generic; provider response bodies are not
+  forwarded.
+- `model_served` — which model served this call. `model_id: string`,
+  `local_last_resort: boolean` (true only when the appended on-device
+  last resort actually served). Emitted before each completed turn's
+  content, so a turn with several model calls emits several of these;
+  the macOS host captions the answer with the last one.
 - `token` — incremental text delta. `delta: string`.
 - `done` — final frame for the turn. `finish_reason: string`,
   `text?: string` (the full accumulated text). The daemon drops the
@@ -171,6 +182,13 @@ notifications:
   args; object args are shown as compact sorted-key JSON. The
   external-CLI projection (`agents.invoke_external` with `stream`)
   emits `tool` + `params` (plus a legacy `detail` = name).
+- `tool_result` — the outcome row immediately following its `tool_call`.
+  `{ tool: string, ok: boolean, excerpt: string, evidence: object }`.
+  The daemon scrubs the excerpt through the feedback redactor, keeps at
+  most the first 2,048 UTF-8 bytes plus a truncation marker, and sends
+  only closed-world structured evidence (ids, URLs, status/title, and
+  collection counts). The macOS host keeps the excerpt collapsed until
+  requested and shows count/final-URL/id evidence in the row headline.
 - `approval_pending` — agent has parked the turn on a user approval
   (e.g. Milo's calendar-write gate, or `car do`'s write/shell gate).
   `approval_id: string`, `action`/`tool: string`, `details?`/`params?:
@@ -180,6 +198,28 @@ notifications:
   (`host.resolve_approval` is a separate flow — permission-tier /
   ApprovalLedger requests — and does **not** resolve this chat-turn
   gate.) Non-terminal — the agent resumes the stream after resolution.
+  `scope.target` is built from `target`/`url`/`path`/`command` only, so
+  it is the EMPTY string for a `web_search` gate; a host that shows the
+  target should fall back through `params.url`, `params.command`,
+  `params.query`, `params.path` rather than render a blank one.
+- `goal_evaluated` — a goal-driven agent's verifier verdict after each
+  pass. `iteration: number`, `met: boolean`, `grounded: boolean`,
+  `reason: string`. Non-terminal.
+- `receipt_report` — the turn receipt emitted immediately before the
+  terminal frame. It carries `tool_receipts` (up to 100 bounded rows plus
+  `tool_receipts_omitted`), `desktop_actions: [{ action, target?,
+  identifier?, verified, evidence }]` (up to 100, plus
+  `desktop_actions_omitted`), and the existing `completion`
+  object with the six always-present nullable software stages
+  `local_verification`, `remote_main`, `ci_cd`, `deployment`, `health`,
+  `production_browser_proof`. `ungrounded_claims?: string[]` is absent
+  on the goal-turn shape. A host renders desktop actions instead of the
+  software matrix when any are present: successful reads are verified;
+  writes remain attempted until a later successful read contains the
+  same identifier, where "write" is the advertised tool definition's
+  own `mutating` flag rather than a name match. Both lists cover only
+  the turn that just ran. Missing evidence stays absent rather than inferred,
+  so a host must not render an absent stage as passing. Non-terminal.
 
 ### Agent-side contract (`agent.chat`)
 

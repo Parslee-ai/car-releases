@@ -49,12 +49,12 @@ annotations from any server, and keep `policy_check` and `.car/policies/` as
 the actual gate. The full per-tool table is in
 `docs/CAR_AGENT_AUTHORING_GUIDE.md`.
 
-### Three more, on the daemon endpoint only
+### Daemon endpoint additions
 
 Point a client at the running daemon (`http://127.0.0.1:9102/mcp`) instead of
-launching `car-mcp-server`, and `tools/list` returns **nineteen**: the sixteen
-above plus `assistant_start`, `assistant_poll`, and `assistant_cancel` — CAR's
-flagship agent, the one behind `car do`.
+launching `car-mcp-server`, and `tools/list` includes daemon-backed tools the
+stdio process cannot serve: the assistant trio, daemon read groups, and
+`peer_list` / `peer_message` / `peer_inbox`.
 
 They are not missing from the stdio binary by oversight. `car-mcp-server` is
 `car-mcp` plus telemetry: no `Runtime`, no inference engine, no daemon state.
@@ -103,6 +103,22 @@ host **read-only**, because a tool call has no way to ask a human to approve a
 write. If your host is itself an agent CLI, send
 `invoked_by: "claude-code" | "codex" | "gemini"` so CAR's recursion guard can
 see the call — the daemon is not launched by you, so it cannot infer it.
+
+### Peer identity and inbox
+
+The daemon's `initialize` response carries `MCP-Session-Id`. Echo it on later
+POSTs. That session's peer address is `mcp:<session-id>`; `peer_message` uses it
+as the server-derived sender, and `peer_list` returns it as `self` alongside the
+other reachable sessions and CAR agents. Do not invent or pass a `from` field.
+
+Call `peer_inbox {"limit": 50}` between turns to drain messages addressed to
+this session. The result is `{self, messages, count}` and each message carries
+the peer envelope (`id`, `from`, `to`, `body`, `sent_at_ms`, `no_reply`, plus
+lineage fields when present). Queues are capped at 50 unread messages and share
+the ordinary per-session size, duplicate, and sender-rate guards. End the
+address with `DELETE /mcp` plus the session header; sessions idle for 24 hours
+are reaped. CAR-spawned batch children are marked in their generated endpoint,
+remain send-only, and get an error from `peer_inbox`.
 
 ### Daemon-only tool groups: eventlog, workflow, scheduler
 

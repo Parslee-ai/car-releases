@@ -114,13 +114,17 @@ The MCP endpoint shares the daemon's memgine with WS — facts ingested via MCP 
 
 **A notification POST returns `202 Accepted` with an empty body.** A JSON-RPC message with no `id` has no reply, so `POST /mcp` answers it with a bare 202 — do not parse the body.
 
-**The push channel is declined** (car#972 Track B). CAR's MCP server sends no server-initiated messages on either transport, by decision: stdio is a strict request/response loop with exclusively-owned stdout, and the HTTP endpoint is deliberately stateless per request — a posture chosen twice (car#992 and the §3 investigation). Concretely:
+**Each daemon HTTP client gets a peer identity.** A successful `initialize` response includes `MCP-Session-Id`; send that header on every later POST. CAR derives the sender as `mcp:<session-id>`, so concurrent CLI sessions no longer share an audit principal. A receive-capable session appears in `peer_list` as kind `mcp_session`, and `peer_inbox {limit?}` drains only its queue (default/max 50). The ordinary peer guards apply independently to each session: serialized-size cap, identical-repeat window, 20 messages per sender per recipient per minute, and 50 unread queued messages. `DELETE /mcp` with the session header removes the address and unread queue; 24 hours without a request does the same for clients that disappear without DELETE. An unknown/expired supplied session id gets HTTP 404. Calls that omit the header can still use older non-peer tools, but `peer_list`, `peer_message`, and `peer_inbox` refuse rather than falling back to a shared sender.
+
+CAR-spawned batch CLIs remain send-only. Their generated MCP URL carries `car-mcp-mode=batch`; initialize still gives the child a distinct sender principal, but CAR omits it from the peer directory and `peer_inbox` refuses it. This keeps `PeerKind::ExternalCli`'s closed-stdin lifecycle separate from `PeerKind::McpSession`.
+
+**The push channel is declined** (car#972 Track B). CAR's MCP server sends no server-initiated messages on either transport, by decision: stdio is a strict request/response loop with exclusively-owned stdout, and HTTP offers no response stream. The daemon now retains a small protocol-session identity and a polled peer inbox, but neither is a sink and neither can emit a notification. Concretely:
 
 - `initialize` advertises `subscribe: false` and `listChanged: false` on `resources`, `listChanged: false` on `prompts`, no `listChanged` on `tools`, and **no `logging` capability**. These are the decision, not a gap — a host reads them and simply does not subscribe.
 - A client that asks anyway gets the documented method-not-found: `resources/subscribe`, `resources/unsubscribe`, and `logging/setLevel` are all answered `-32601`.
-- **`GET /mcp` returns `405 Method Not Allowed`** (with `Allow: POST`) — the streamable-HTTP spec's branch for a server that offers no SSE stream. The SSE session registry and its `push_to_session` primitive were removed with this decision; they had zero production callers and carried nothing but a session-id announcement and keepalives.
+- **`GET /mcp` returns `405 Method Not Allowed`** (with `Allow: POST, DELETE`) — the streamable-HTTP spec's branch for a server that offers no SSE stream. The old SSE sink registry and its `push_to_session` primitive remain removed.
 
-Reversing this (per-connection sinks, a writer handle through the stdio loop, subscriptions, `logging/setLevel`) is a multi-PR effort to be re-decomposed from car#972, not a patch.
+Adding push would still require per-connection sinks, a writer handle through the stdio loop, subscriptions, and `logging/setLevel`; the polling inbox does not supply any of those pieces.
 
 **`Origin` validation on `/mcp`** (DNS-rebinding protection, required by the MCP HTTP transport). The rule is absent-permissive, present-strict:
 
@@ -130,7 +134,7 @@ Reversing this (per-connection sinks, a writer handle through the stdio loop, su
 | loopback — `http`/`https` on `localhost`, `127.0.0.0/8`, or `::1`, any port | **allowed** |
 | anything else, including the literal `null` (sandboxed iframe, `file://`, redirected cross-origin) | **`403`** with `{"error":"origin not allowed"}` |
 
-`POST /mcp` is guarded; a rejected request never reaches `Server::handle`. `GET /mcp` needs no guard — it is a constant `405` with no side effect (see the push-channel decline above). **`GET /mcp/health` is exempt** — it has no side effect and no secrets, and the documented uptime `curl` plus browser probes must keep working.
+`POST /mcp` and `DELETE /mcp` are guarded; a rejected request never reaches dispatch or session teardown. `GET /mcp` needs no guard — it is a constant `405` with no side effect (see the push-channel decline above). **`GET /mcp/health` is exempt** — it has no side effect and no secrets, and the documented uptime `curl` plus browser probes must keep working.
 
 The rule does not widen for a non-loopback `--mcp-bind`: a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin` value, and wider exposure makes the guard more important, not less. To serve browser traffic from another origin, front the daemon with a reverse proxy that owns its own CORS/`Origin` policy.
 
@@ -142,17 +146,17 @@ The rule does not widen for a non-loopback `--mcp-bind`: a wildcard bind's host 
 | a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05` or `2025-06-18` today) | **allowed** |
 | anything else, including an empty or non-UTF-8 value | **`400`** with `{"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18"]}` |
 
-`POST /mcp` is guarded before the JSON-RPC parse, so a rejected request runs no tool. `GET /mcp` needs no guard — it is a constant `405` whatever the header says. **`GET /mcp/health` is exempt** — a client whose version we just rejected reads `protocol_version` off that probe to learn what we speak.
+`POST /mcp` is guarded before the JSON-RPC parse, so a rejected request runs no tool; `DELETE /mcp` uses the same check before session teardown. `GET /mcp` needs no guard — it is a constant `405` whatever the header says. **`GET /mcp/health` is exempt** — a client whose version we just rejected reads `protocol_version` off that probe to learn what we speak.
 
 A foreign value is a `400` rather than a silent downshift because the header states which dialect the client will read the reply in; answering in a revision it never agreed to is the inversion `initialize` negotiation exists to prevent. The `400` body names the supported list so a client that guessed wrong can correct itself. CAR's own MCP *client* (`car-connectors`) already sends this header with the version it negotiated, so it is unaffected.
 
-**`completion/complete` is served here too** (car#972 §4), and it changes nothing about the endpoint: argument autocompletion is one POST in, one response out — no session, no SSE stream, no server-to-client push — so `POST /mcp` stays stateless. `initialize` advertises `"completions": {}` on both transports. It completes the `car_context` prompt's `mode` argument and resource URIs by prefix; a request naming something CAR does not know returns an empty completion, while a request that names nothing to complete at all (no `ref`, no `argument`, no `argument.name`) is `-32602`. Full semantics in `docs/CAR_AGENT_AUTHORING_GUIDE.md`.
+**`completion/complete` is served here too** (car#972 §4), and it changes nothing about the endpoint's no-push posture: argument autocompletion is one POST in, one response out. `initialize` advertises `"completions": {}` on both transports. It completes the `car_context` prompt's `mode` argument and resource URIs by prefix; a request naming something CAR does not know returns an empty completion, while a request that names nothing to complete at all (no `ref`, no `argument`, no `argument.name`) is `-32602`. Full semantics in `docs/CAR_AGENT_AUTHORING_GUIDE.md`.
 
 #### The assistant tools (`assistant_start` / `assistant_poll` / `assistant_cancel`)
 
 **On the daemon endpoint only.** The MCP tool list is per-`Server`, and the daemon registers three tools the stdio binary (`car-mcp-server`) does not: it has no `Runtime` and no inference engine, so it answers `assistant_start` with a `-32601` "unknown tool". Delegate with `car do --json` there instead.
 
-An assistant run takes minutes, so `assistant_start` returns a handle immediately rather than blocking a `tools/call` that most hosts would time out. **This does not make the endpoint stateful**: the `run_id` is application state the *client* carries between calls, the same category as the opaque `resources/list` cursor. `POST /mcp` still reads no session header.
+An assistant run takes minutes, so `assistant_start` returns a handle immediately rather than blocking a `tools/call` that most hosts would time out. The `run_id` remains application state the *client* carries between calls, separate from the transport's MCP session id and peer inbox.
 
 | Tool | Arguments | Result |
 |---|---|---|
@@ -730,10 +734,11 @@ Independent of the auth gate, the dispatcher wraps a small set of
 methods in a per-call user-approval handshake. The motivating
 threat: an authenticated caller (the user's own NAPI consumer, an
 in-process tool callback driven by a model output, an A2A peer)
-can technically invoke `automation.run_applescript` or
-`messages.send`. AppleScript can do anything the user can; a
-silent `messages.send` ships data to attacker-chosen contacts.
-Auth gates *who* can call; the approval gate gates *what* runs.
+can technically invoke `automation.run_applescript`,
+`messages.send`, or a mutating `calendar.*` method. AppleScript can do
+anything the user can; a silent message or calendar mutation changes or
+ships the user's data without consent. Auth gates *who* can call; the
+approval gate gates *what* runs.
 
 **Gated methods** (default set):
 
@@ -742,6 +747,9 @@ Auth gates *who* can call; the approval gate gates *what* runs.
 - `automation.shortcuts.run`
 - `messages.send`
 - `mail.send`
+- `calendar.create_event`
+- `calendar.update_event`
+- `calendar.delete_event`
 - `vision.ocr`
 
 When one of those arrives, the dispatcher:
@@ -896,6 +904,11 @@ at the remote daemon) and just-work. No code change at the FFI call
 site for either shape. When `read_for_client()` returns `Ok(None)`
 (neither source set — auth disabled on the daemon side), the
 handshake step is skipped entirely.
+
+The release schema can be read before negotiation through
+[`server.schema`](#serverschema), after `session.auth` when daemon auth is
+enabled. A client can therefore check the release's schema digest before using
+application methods.
 
 #### `session.auth`
 
@@ -1058,7 +1071,7 @@ handshake step is skipped entirely.
 
 ## Method reference
 
-411 methods across 71 namespaces. Each section below documents params, returns, and notable
+437 methods across 77 namespaces. Each section below documents params, returns, and notable
 behavior. This section is long — for a compact map of every method with deep links into it, read
 [websocket-protocol-index.md](websocket-protocol-index.md) first and follow only the links you need.
 
@@ -1082,15 +1095,16 @@ behavior. This section is long — for a compact map of every method with deep l
 ### assistant
 
 The name the flagship assistant answers to — in its own system prompt, in every
-host's addressing copy, and as its voice wake word. One record
-(`~/.car/identity.json`, via the `car-identity` crate) feeds all three.
+host's addressing copy, and as its voice wake word — plus the user profile that
+makes a first conversation personal. One record (`~/.car/identity.json`, via
+the `car-identity` crate) feeds the prompt, addressing surfaces, and memory.
 
 Not to be confused with `assistants.invoke` (invoking a *named assistant*) or
 with `session.identity` (which identifies the connected *client*).
 
 #### `assistant.identity.get`
 - **Params**: `{}`
-- **Returns**: `{ name, spellings: string[], aliases: string[], user_name: string | null, brand, updated_at_unix }`
+- **Returns**: `{ name, spellings: string[], aliases: string[], user_name: string | null, role: string | null, focus_areas: ("calendar" | "email" | "files" | "browser" | "research" | "writing" | "other")[], apps: string[], brand, updated_at_unix }`
 - `aliases` is derived, not stored: the name and its alternate spellings crossed
   with `hey`/`hi`/`ok`/`okay`, longest first. Hosts match wake phrases against it
   **locally** (their matcher has to work before the daemon answers), and deriving
@@ -1113,11 +1127,17 @@ with `session.identity` (which identifies the connected *client*).
   is the least useful possible answer.
 
 #### `assistant.identity.set`
-- **Params**: `{ name?: string, spellings?: string[], user_name?: string | null }`
+- **Params**: `{ name?: string, spellings?: string[], user_name?: string | null, role?: string | null, focus_areas?: ("calendar" | "email" | "files" | "browser" | "research" | "writing" | "other")[] | null, apps?: string[] | null }`
 - **Returns**: the updated identity, same shape as `assistant.identity.get`
 - Read-modify-write: every field is optional and unset fields are preserved, so
-  a host that only knows about the name cannot wipe spellings a voice-settings
-  pane wrote. Pass `user_name: null` to clear it.
+  a host that only knows about the name cannot wipe spellings or profile fields
+  another surface wrote. Pass `null` to clear `user_name`, `role`,
+  `focus_areas`, or `apps`; an empty array also clears an array field.
+- The built-in assistant renders non-empty profile fields in an **About the
+  person** prompt block. The daemon also upserts the profile into a
+  `MemKind::Identity` node so memory recall sees it. That node is deliberately
+  omitted from generic memory snapshots and rebuilt from `identity.json` when
+  an engine starts, avoiding two durable copies of the profile.
 - `name` is validated: 1–32 characters, at least one letter or digit, and not a
   conversational role (`system`, `user`, `assistant`, …).
 - **Host/local-auth gated** (`require_approval_authority`), the same trust root
@@ -1334,15 +1354,18 @@ Shared by `browser.view.event`'s `presentation` payload, `browser.view.subscribe
 
 #### `calendar.create_event`
 - **Params**: `{ calendar_id, title, start, end, all_day?, notes?, location?, url? }` — `start`/`end` are RFC3339.
+- **Approval**: required by the default high-risk WS gate.
 - **Returns**: `{ ok: bool, event?: Event, reason?: string }` — on success `event` carries the host-assigned id, calendar metadata, and the round-trip times.
 - Calendar must be writable; if it isn't, `ok: false` with `reason: "calendar_is_read_only"`. Permission failures surface as `unavailable` errors at the request layer (same as `calendar.list`/`events`).
 
 #### `calendar.update_event`
 - **Params**: `{ event_id, title?, start?, end?, all_day?, notes?, location?, url? }` — any absent field leaves the existing value alone. Empty-string for `notes`/`location`/`url` *clears* that field; `null` is treated the same as absent.
+- **Approval**: required by the default high-risk WS gate.
 - **Returns**: `{ ok: bool, event?: Event, reason?: string }` with the round-tripped event on success.
 
 #### `calendar.delete_event`
 - **Params**: `{ event_id: string }`
+- **Approval**: required by the default high-risk WS gate.
 - **Returns**: `{ ok: bool, reason?: string }`
 
 #### `calendar.events`
@@ -1929,19 +1952,32 @@ per-method result. Embedders wanting to plug in a custom
 #### `mail.accounts`
 - **Params**: `{}`
 - **Returns**: `{ accounts: MailAccount[] }`
+- **Access**: requires the daemon auth token when daemon authentication is
+  enabled. It is **not** in the default approval-transport gate. On macOS the
+  Mail.app path uses the daemon process's Mail Automation permission (and can
+  fall back to Internet Accounts); it does not require Full Disk Access.
 
 #### `mail.inbox`
 - **Params**: `{ account_ids?: string[] }`
 - **Returns**: `{ available, backend, reason?, summaries: InboxSummary[] }` where
   `InboxSummary` is `{ account_id, unread, total, most_recent_subject? }`
-- **Note**: counts per account, **not** message rows — use `mail.messages` for
-  rows. (This entry previously documented `{ messages: Message[] }`, which the
-  code has never returned.)
+- **Access**: requires the daemon auth token when daemon authentication is
+  enabled. It is **not** in the default approval-transport gate. On macOS the
+  Mail.app backend uses the daemon process's Mail Automation permission, not
+  Full Disk Access.
+- **Note**: returns counts per account, **not** message rows — use
+  `mail.messages` for rows. (This entry previously documented
+  `{ messages: Message[] }`, which the code has never returned.)
 
 #### `mail.mailboxes`
 - **Params**: `{ account_ids?: string[] }` — omit to enumerate all accounts
 - **Returns**: `{ available, backend, reason?, mailboxes: Mailbox[] }` where
   `Mailbox` is `{ account_id, name, full_name, unread, total }`
+- **Access**: requires the daemon auth token when daemon authentication is
+  enabled. It is **not** in the default approval-transport gate. On macOS it
+  uses Full Disk Access when available for the read-only Envelope Index, but
+  falls back to the daemon process's Mail Automation permission when the index
+  is unreadable; Full Disk Access is therefore not a hard gate for this method.
 - **Notes**:
   - Nested mailboxes are included on **both** backends. `full_name` is the
     **selector** — pass it back verbatim as `mail.messages`'s `mailbox`. On
@@ -1964,11 +2000,16 @@ per-method result. Embedders wanting to plug in a custom
 
 #### `mail.messages`
 - **Params** (the params object *is* the `MessageQuery`; every field defaults):
-  `{ account_ids?: string[], mailbox?: string | null, limit?: number,
-  since?: string (RFC3339), include_body?: boolean }`
+  `{ account_ids?: string[], mailbox?: string | null, limit?: number (maximum
+  `500`), since?: string (RFC3339), include_body?: boolean }`
 - **Returns**: `{ available, backend, reason?, messages: MessageSummary[] }`
-  where `MessageSummary` is `{ id, account_id, mailbox, subject?, sender?,
-  recipients: string[], date_received?, read, preview?, body? }`
+  where `MessageSummary` is `{ id, message_id: string | null, account_id,
+  mailbox, subject?, sender?, recipients: string[], date_received?, read,
+  preview?, body? }`
+- **Access**: requires the daemon auth token when daemon authentication is
+  enabled. It is **not** in the default approval-transport gate. On macOS the
+  Mail.app backend uses the daemon process's Mail Automation permission, not
+  Full Disk Access.
 - **Notes**:
   - `mailbox: null` (or omitted) reads `INBOX`, and `limit` defaults to `50`, so
     `{}` reproduces the pre-existing INBOX-only read for every current caller.
@@ -1991,6 +2032,11 @@ per-method result. Embedders wanting to plug in a custom
   - `id` is opaque and backend-qualified — feed it to `mail.message_body`, do
     not parse it. A Mail.app id is composite because its numeric message id is
     only addressable inside one mailbox of one account.
+  - On Mail.app rows, `message_id` is the RFC 5322 `Message-ID` header exactly
+    as Mail exposes it. It is read as one bulk property array for each bounded
+    detail window, so adding it does not add a per-message Apple Event. The
+    value can identify the same message across mailboxes; it is `null` when
+    Mail does not expose the header and on Microsoft Graph rows.
   - A row's `mailbox` is the mailbox as the backend **resolved** it, not the
     selector the caller sent: a query for `"travel"` returns rows stamped
     `"Travel"`, and one for the bare leaf `"2026"` returns rows stamped
@@ -2004,14 +2050,19 @@ per-method result. Embedders wanting to plug in a custom
 - **Params**: `{ message_id: string }` — an `id` from a `mail.messages` row
 - **Returns**: `{ available, backend, reason?, id, content_type: "text" | "html",
   body: string | null, truncated: boolean }`
-- **Note**: like `mail.inbox`, this is **not** in the default `ApprovalGate` set
-  (which covers write ops plus `vision.ocr`). An operator who wants message
-  bodies to require approval adds it via
-  `ServerStateConfig::with_approval_gate`.
+- **Access**: requires the daemon auth token when daemon authentication is
+  enabled. It is **not** in the default approval-transport gate. On macOS the
+  Mail.app backend uses the daemon process's Mail Automation permission, not
+  Full Disk Access. An operator who wants message bodies to require approval
+  may add it via `ServerStateConfig::with_approval_gate`.
 
 #### `mail.send`
 - **Params**: raw mail message object (`to`, `subject`, `body`, etc.)
 - **Returns**: `{ message_id: string, ... }`
+- **Access**: this is a mutation, not a read. It requires the daemon auth token
+  when daemon authentication is enabled, **is** in the default per-call
+  approval-transport gate, and on macOS uses the daemon process's Mail
+  Automation permission. It does not require Full Disk Access.
 
 ### messages
 
@@ -2024,9 +2075,13 @@ per-method result. Embedders wanting to plug in a custom
 - **Returns**: `{ available, backend, reason?, chats: Chat[] }`
 
 #### `messages.read`
-- **Params**: `{ chat_ids?: string[], since?: string (RFC3339), limit?: number, include_body?: boolean }`
+- **Params**: `{ chat_ids?: string[], since?: string (RFC3339), limit?: number (maximum `500`), include_body?: boolean }`
 - **Returns**: `{ available, backend, reason?, messages: ChatMessage[] }` where
   `ChatMessage` is `{ id, chat_id?, handle?, is_from_me, date, text? }`
+- **Access**: requires the daemon auth token when daemon authentication is
+  enabled and, on macOS, Full Disk Access for the daemon/CLI process to read
+  `chat.db`. It is **not** in the default approval-transport gate; operators
+  may add it with `ServerStateConfig::with_approval_gate`.
 - **Notes**:
   - `chat_ids` contains the `chat.guid` values returned by `messages.chats`.
     Omit it to read across chats. `id` is the stable `message.guid` and must be
@@ -2040,9 +2095,6 @@ per-method result. Embedders wanting to plug in a custom
     `available: false`, a `reason` naming the database failure, and
     `messages: []`. Callers must not interpret that envelope as an empty
     conversation.
-  - This method is read-only and is not in the default `ApprovalGate` set,
-    matching `mail.messages`. Operators may add it with
-    `ServerStateConfig::with_approval_gate`.
 
 #### `messages.send`
 - **Params**: `{ recipient: string, body: string, service_id?: string }`
@@ -2684,7 +2736,7 @@ All variants also accept an optional `budget` object — a runtime-enforced coor
 
 #### `permissions.status`
 - **Params**: `{ domain: string, target_bundle_id?: string }`
-- **Returns**: `{ domain, status, target_bundle_id }`. `status` is one of `granted` | `denied` | `not_determined` | `restricted` | `not_applicable` | `restart_required` | `signature_changed` | `unknown`. The `calendar` domain reports a real, non-prompting EventKit query (not a stub) and can additionally return `write_only` (macOS-14 write-only calendar grant).
+- **Returns**: `{ domain, status, target_bundle_id }`. `status` is one of `granted` | `denied` | `not_determined` | `restricted` | `not_applicable` | `restart_required` | `signature_changed` | `unknown`. The `calendar` domain reports a real, non-prompting EventKit query (not a stub) and can additionally return `write_only` (macOS-14 write-only calendar grant). On macOS, the `automation` domain uses `target_bundle_id` for a non-prompting, target-specific Apple Events readiness check; omitting the target remains `not_determined` because Automation grants are per app.
 
 #### `permissions.request`
 - **Params**: `{ domain: string, target_bundle_id?: string }`
@@ -2728,6 +2780,14 @@ All variants also accept an optional `budget` object — a runtime-enforced coor
 - What is currently in force, in registration order. Without it a client could register a policy but never ask what was enforced, so an action rejection could not be explained beyond the single message on the rejection itself.
 
 ### scheduler
+
+#### `schedule.suggest`
+- **Params**: `{ phrase: string, timezone?: string }`
+- **Returns**: `{ cadence: { trigger: "interval"|"cron"|"manual", schedule: string, timezone: string|null, phrase: string } | null, reason?: string }`
+- Deterministic and inference-free. The supported grammar is `every N minutes`, `every N hours`, `hourly`, `daily at HH:MM`, `weekdays at HH:MM`, `weekly on <day> at HH:MM`, and `on request`. Matching ignores case and repeated whitespace; times are 24-hour values. Interval schedules use `Nm`/`Nh`; cron schedules use the ordinary five-field form; manual schedules use an empty string.
+- The Agent Builder's three shipped template phrases are also stable inputs: `Weekdays in the morning, plus when I ask` maps to weekday cron at 09:00, while `Whenever I assign a research question` and `When I ask for a reply or follow-up` map to `manual`.
+- `timezone` is trimmed and preserved as cadence metadata; an empty value becomes `null`. It is not embedded in the cron string. Unsupported or invalid phrases are not RPC errors: `cadence` is `null` and `reason` tells the caller which forms are accepted.
+- FFI: `suggestSchedule(phrase, timezone?)` (NAPI) and `suggest_schedule(phrase, timezone=None)` (PyO3) return the same JSON.
 
 #### `scheduler.create`
 - **Params**: `{ name: string, prompt: string, trigger?: "once"|"cron"|"interval"|"file_watch" = "manual", schedule?: string, system_prompt?: string }`
@@ -2813,6 +2873,43 @@ Schedule a **deterministic command** on a cadence expressed ONCE, with the OS ba
 - **Params**: `{}`
 - **Returns**: `{ secrets: [{ service: string, key: string, exists: boolean | null }] }`
 - Lists the **names** of secrets stored through the FFI/CLI/WS surface — never the values. Backed by the `~/.car/secret_index.json` name index (the OS keychain has no portable enumeration), with each name joined to a live existence check (`exists` is `null` when the backend couldn't be probed). CAR-internal secrets written directly to the keychain (connector OAuth tokens, browser session refs) are deliberately absent.
+
+### server
+
+#### `server.schema`
+
+- **Params**: `{}`
+- **Returns**: `{ schema: object, digest: string, digest_algorithm: "sha256", car_version: string }`.
+  `schema` is the exact parsed document from `docs/wire-schema.json` embedded in
+  this daemon binary. `digest` is the lowercase SHA-256 of that file's exact
+  UTF-8 bytes, including its final newline; the same digest ships in
+  `docs/wire-schema.sha256`. Consumers can pin the digest for accepted CAR
+  releases and validate results or journal records against the named schemas.
+- **The release version is reported here, not inside the digested document.**
+  `car_version` is read from the running binary at serve time. Keeping it out of
+  `wire-schema.json` means the digest tracks *wire shape* alone: two releases
+  that changed nothing on the wire share a digest, so a consumer that has
+  already accepted one does not have to re-accept the other. It also keeps the
+  release version bump — which rewrites the workspace version without
+  regenerating this pair — from making the published artifact name the previous
+  release.
+- Available before protocol negotiation (after `session.auth` when daemon auth
+  is enabled) and implicitly allowed for scoped agent tokens, because a client
+  may need the schema to decide whether it can negotiate or consume the
+  release. The call is read-only and performs no filesystem or network I/O; the
+  release artifact is compiled into the daemon.
+- `coverage.complete` becomes `true` only when both source-derived inventories
+  are exhausted. `coverage.rpc_results` partitions every daemon dispatch method
+  into `covered` and `uncovered`; `coverage.journal_event_payloads` does the
+  same for every `EventKind`. The top-level `coverage.covered` list names schema
+  keys that are safe to rely on. This release adds exact schemas from the real
+  emitted Rust types for `capabilities.list`, all five `state.*` results, and
+  all six `tools.*` results. The remaining method names and every still-open
+  event `data` kind are listed explicitly under `uncovered`, rather than being
+  summarized by prose. Do not treat an uncovered result or event payload as
+  promised by this artifact.
+- NAPI: `CarRuntime.serverSchema()`. Python:
+  `CarRuntime.server_schema()`. Both return the whole result as a JSON string.
 
 ### session
 
@@ -4033,9 +4130,18 @@ existence/owner oracle on the write path either).
 - Same-key retries with the same reason/principal return the same receipt and
   digest. A different key after a terminal returns `already_terminal` bound to
   the immutable terminal digest and appends nothing after `ended`.
-  Lost/ambiguous control persists `cancellation_result` with
-  `termination_unconfirmed`; this is a quarantined nonterminal state that
-  blocks proposals, completion, orphan adoption, and retention eviction.
+- If the durable run has no live metadata, or its live owner session is gone,
+  and no cancellation row already exists, only a host-management caller may
+  close the orphan. CAR durably records the body-free request and an
+  `Incomplete` terminal, then returns `already_terminal` with that terminal's
+  digest. It deliberately does not claim `cancelled_confirmed`: without the
+  owner session CAR cannot prove an external child stopped. An owning agent or
+  ordinary operator still receives `run cancellation control is unavailable`.
+  Same-key host retries return the same receipt.
+- Lost/ambiguous control after a cancellation request was already recorded
+  persists `cancellation_result` with `termination_unconfirmed`; this is a
+  quarantined nonterminal state that blocks proposals, completion, orphan
+  adoption, and retention eviction.
 - This is a WebSocket newsroom/operator surface only; no NAPI, PyO3, UniFFI,
   or mobile binding is part of this contract.
 
@@ -4416,7 +4522,7 @@ disable one.
 
 #### `agents.list`
 - **Params**: `{}`
-- **Returns**: `[ ManagedAgent ]` — every supervised entry in `~/.car/agents.json` plus its current runtime status `{spec, method_allowlist?, status, pid?, last_exit_code?, restart_count, started_at?, blocked_by_pid?, attached, session_id?, manifest_path, log_path, stderr_log_path}`. `status` is one of `stopped | starting | running | backoff | errored`. `method_allowlist` is absent for an unrestricted legacy token, present (including `[]`) for a scoped token, and is shown by `car inspect`. `manifest_path` is the daemon-resolved per-agent `agents/<id>/manifest.toml`; `log_path` and `stderr_log_path` are the captured stdout/stderr files. Declarative rows remain tagged `kind:"declarative"` and do not carry supervised paths.
+- **Returns**: `[ ManagedAgent ]` — every supervised entry in `~/.car/agents.json` plus its current runtime status `{spec, method_allowlist?, status, pid?, last_exit_code?, restart_count, started_at?, blocked_by_pid?, attached, tools?, session_id?, manifest_path, log_path, stderr_log_path}`. `status` is one of `stopped | starting | running | backoff | errored`. `method_allowlist` is absent for an unrestricted legacy token, present (including `[]`) for a scoped token, and is shown by `car inspect`. `tools`, when present, is the attached flagship assistant's sorted current model-visible tool names, obtained through a bounded reverse query; it is omitted for detached, older, and other supervised agents rather than inferred from broad capabilities. `manifest_path` is the daemon-resolved per-agent `agents/<id>/manifest.toml`; `log_path` and `stderr_log_path` are the captured stdout/stderr files. Declarative rows remain tagged `kind:"declarative"` and carry their manifest tool allowlist but do not carry supervised paths.
 - `blocked_by_pid` (car#732) is present only when the agent is in `backoff` **because a live process this supervisor does not own is already running as it** — typically one that outlived a previous `car-server` and still holds the agent's port. Without it, `backoff` + `pid: null` + a healthy process on the port is indistinguishable from a broken agent, and the cause is only visible via `lsof`. Stop the named pid and restart, or leave it: supervision resumes automatically once it exits.
 - `attached` is `true` once the supervised child has called `session.auth { agent_id }` and bound a WS connection (#169). `session_id` carries the bound `client_id` while attached. The lifecycle status alone can't distinguish "alive but never attached" from "alive and attached".
 - Driven by `car_registry::supervisor::Supervisor`. Closes [Parslee-ai/car-releases#27].
@@ -4516,7 +4622,7 @@ disable one.
   - `attachments` — optional array of image `ContentBlock`s the user attached: `{ "type": "image_base64", "data": "<b64>", "media_type": "image/png" }` or `{ "type": "image_url", "url": "https://…", "detail": "auto" }`. The daemon validates each entry's shape and content — `image_base64` must carry a string `data` and a `media_type` in `{image/png, image/jpeg, image/gif, image/webp}`; `image_url` must be http(s) — rejecting a malformed entry with a JSON-RPC error, then forwards the array verbatim to the agent's reverse-called `agent.chat` handler, which passes it to inference as `imagesJson`. Omitted when the turn has no images, so agents that don't read it see the legacy request shape. The daemon does **not** check provider vision capability; an agent or provider that can't accept images surfaces that error downstream.
   - `goal` — optional deterministic completion contract for this chat turn. `check` is a shell command the agent runtime runs after each assistant iteration; exit 0 means the condition is met. `max_iterations` defaults to 8 and is clamped to 1–50. Goal-driven agents stream `goal_evaluated { iteration, met, grounded, reason }` after each verifier pass and emit terminal `done` once the deterministic check passes (`met` with `grounded: true`). The flagship assistant still cross-checks conservative final-summary operational claims such as "tests passed" against same-run tool receipts, but once the deterministic check has itself passed an unmatched claim only **annotates the reply text** (a `[claim check]` note appended to the `done` message) — it no longer re-opens a deterministically-verified iteration on prose wording, and `grounded` stays `true`. A summary claim can still keep a completion ungrounded when the met verdict rested on a model judge rather than deterministic ground truth (it fails closed and keeps iterating). If the governor halts on a condition that actually ran and was not met (turn/cost/wall-clock budget, no-progress, cancel), the terminal event is `error`, naming the halt reason. If the check itself never got to run within its own bound — a stuck approval wait, a wedged subprocess — the loop fails open instead of hanging or discarding a working reply: it halts on the *first* such stall (it does not burn the rest of `max_iterations` retrying a check that structurally cannot be evaluated), and the terminal event is still `done`, with the reply text carrying a `[goal check] not verified — …` note (mirroring the `[claim check]` annotation convention above), `finish_reason` set to a short "unevaluated" string, and `goal_unevaluated: true` — a machine-readable marker `goal.status`'s persistence layer reads to record `status: "unevaluated"` rather than `"met"`, so a client polling `chatGoal.status`/`goal.status` cannot misread an unchecked condition as a verified pass. Currently mutually exclusive with `attachments`.
   - If no inline `goal` is passed, the daemon looks for a standing goal stored for the same `session_id` via `goal.set` and forwards that contract to the agent.
-- **Returns**: an ack `{ accepted: true, session_id: string }`. The reply does **not** carry the answer — for attached supervised agents, the daemon reverse-calls the agent's `agent.chat` handler and fans the streamed reply back as `agents.chat.event` notifications (`kind: "model_served" | "token" | "tool_call" | "approval_pending" | "goal_evaluated" | "receipt_report" | "done" | "error"`) keyed by `session_id`. `model_served` precedes each completed turn's content and carries `{ model_id, local_last_resort }`, where the boolean is true only when the appended on-device last resort actually served. `receipt_report` is emitted immediately before the terminal frame and reports local verification, remote main, CI/CD, deployment, health, and production-browser proof separately; missing evidence remains absent rather than being inferred. For in-daemon declarative agents, no child process or reverse call is needed: the daemon runs the declarative runner directly and emits the same event stream. `stream: false` still returns via the same event channel as a single terminal frame.
+- **Returns**: an ack `{ accepted: true, session_id: string }`. The reply does **not** carry the answer — for attached supervised agents, the daemon reverse-calls the agent's `agent.chat` handler and fans the streamed reply back as `agents.chat.event` notifications (`kind: "inference_started" | "inference_retry" | "model_served" | "token" | "tool_call" | "tool_result" | "approval_pending" | "goal_evaluated" | "receipt_report" | "done" | "error" | "auth_required"`) keyed by `session_id`. `inference_started { model, attempt, turn }` is emitted before each model call is awaited; `inference_retry { model, attempt, reason, backoff_ms }` is emitted before a transient remote retry's backoff, with a generic reason that never copies the provider body. `model_served` precedes each completed turn's content and carries `{ model_id, local_last_resort }`, where the boolean is true only when the appended on-device last resort actually served. Each requested tool emits `tool_call { call_id, sequence, tool, params }` and exactly one matching `tool_result { call_id, sequence, tool, ok, excerpt, evidence }` before later assistant text; `call_id` is generated by CAR as `turn_<n>_call_<sequence>` because provider ids may repeat, and `sequence` is the call's one-based position in that turn. `n` counts every assistant turn the session has had, including turns history compaction has since removed, so an id is never reused within a session. A receipt merged up from a `delegate` child is namespaced `<parent call id>/<child call id>`: the child loop numbers its own turns from one and would otherwise collide with the parent's first call. A dispatch error or cancellation still closes the request with `ok: false`. `excerpt` is feedback-redaction-scrubbed and bounded to the first 2,048 UTF-8 bytes plus an explicit truncation marker; structured header maps drop every non-allowlisted header (including Authorization/Cookie), and URL userinfo plus credential query values are removed. Evidence is extracted from the complete observation before the model-facing cap can invalidate large JSON. It is a closed-world object containing only applicable identifiers/destinations/status/title/count fields (`requested_url`, `final_url`, `redirected`, `url`, `status`, `title`, `event_id`, `message_id`, `id`, `count`, `total`, `event_count`, `event_ids`, `message_count`, `message_ids`, `result_count`, `result_ids`); `redirected` is present when requested and final URLs are both known. Evidence strings are capped at 512 bytes and id lists at 20 items. `receipt_report` is emitted immediately before the terminal frame and is capped at 64 KiB as a complete serialized frame. It carries the bounded software `completion` matrix, `desktop_actions: [{ action, target?, identifier?, verified, evidence }]` plus `desktop_actions_omitted`, and bounded `tool_receipts: [{ tool, call_id?, sequence?, ok, via?, excerpt, evidence }]` plus `tool_receipts_omitted`. Both lists cover **only the turn that just ran** — a continuity turn's earlier evidence still grounds the summary but is not republished as work the person just watched. A successful read action is verified; a write is verified only when a later successful read receipt contains the same identifier, otherwise it remains attempted. Whether an action counts as a write is read from the advertised tool definition's own `mutating` flag, not from its name, so a tool added later is classified without a protocol change. Hosts show `desktop_actions` instead of the six-stage software-delivery matrix when the list is non-empty; missing matrix evidence remains absent rather than inferred. `auth_required { reason, message }` is a THIRD terminal frame alongside `done` and `error`: it arrives after `receipt_report`, is never followed by `done` or `error`, and means the turn could not reach Parslee inference because of the account — `reason` is `"signed_out" | "expired" | "no_workspace"` (branch on it; `message` is written for a person to read). The out-of-the-box agent runs on Parslee inference through a Parslee account, so a host should render this as a sign-in prompt rather than an error row; a turn that names an explicit `model` is unaffected and still reports that model's own failure. For in-daemon declarative agents, no child process or reverse call is needed: the daemon runs the declarative runner directly and emits the same event stream. `stream: false` still returns via the same event channel as a single terminal frame.
 - **Task scoping on authenticated A2A surfaces.** `tasks/list` returns only the caller's own tasks; `tasks/get` and `tasks/cancel` answer `TaskNotFound` for a task created by a different verified caller (rather than confirming it exists); and a `message/send` whose `taskId` names another caller's task is refused instead of appending to their history. Tasks created on a surface with no caller identity are un-owned and stay visible to everyone, so unauthenticated embedder deployments are unchanged.
 - **Admission (agent callers only).** When the caller is an *agent* rather than
   the host, this method now passes the same admission `agents.message` applies:
@@ -4562,7 +4668,7 @@ disable one.
 - **Params**: `{ session_id?: string }`.
   - With `session_id`, returns `{ session_id, goal: ChatGoalState | null }`.
   - Without `session_id`, returns `{ goals: ChatGoalState[] }`.
-  - `ChatGoalState` carries `{ session_id, check, max_iterations, status, last_iteration?, last_met?, last_grounded?, last_reason?, terminal_kind?, terminal_message?, updated_at }`. `status` is one of `"active"` (set, not yet run), `"running"`, `"met"`, `"unevaluated"` (a `done` whose goal check never got the chance to run — see the fail-open case under `agents.chat`'s `goal` param above; `terminal_message` carries `finish_reason` for human-readable detail), or `"error"` (a check that ran and genuinely failed, or a governor halt). It is updated from forwarded `goal_evaluated`, `done`, and `error` chat events and persisted. On daemon restart, a stale persisted `running` status is reloaded as `active` while verifier details are preserved.
+  - `ChatGoalState` carries `{ session_id, check, max_iterations, status, last_iteration?, last_met?, last_grounded?, last_reason?, terminal_kind?, terminal_message?, updated_at }`. `status` is one of `"active"` (set, not yet run), `"running"`, `"met"`, `"unevaluated"` (a `done` whose goal check never got the chance to run — see the fail-open case under `agents.chat`'s `goal` param above; `terminal_message` carries `finish_reason` for human-readable detail), or `"error"` (a check that ran and genuinely failed, a governor halt, or a turn refused on the Parslee account). It is updated from forwarded `goal_evaluated` events and from the three TERMINAL chat kinds — `done`, `error` and `auth_required` — and persisted. `auth_required` records `terminal_kind: "auth_required"` and carries its `message` in `terminal_message`, and it maps to `status: "error"` exactly as an `error` terminal does: the condition was not met and the run is over, so a poller reads `terminal_kind` when it needs to tell an account problem from a failed check. Ordering is the same as for the other two — it arrives after `receipt_report` and nothing follows it — so a poller that sees it has the last word it is going to get. On daemon restart, a stale persisted `running` status is reloaded as `active` while verifier details are preserved.
 
 #### `goal.clear`
 - **Params**: `{ session_id?: string }`.
@@ -4570,7 +4676,7 @@ disable one.
   - Without `session_id`, removes all standing goals and returns `{ cleared: number }`.
 
 #### `agent.chat` (daemon → agent reverse-call) + `agent.chat.event`
-- For attached supervised agents, `agents.chat` reverse-calls **`agent.chat`** on the target agent's WS connection — resolved via `attached_agents`, so the agent must have `session.auth`'d **with its `agent_id`** (`{ session_id, prompt, model?, attachments?, goal?, context? }`). The optional `model` is forwarded unchanged from the host request. The agent **acks** `{ accepted: true }` immediately, then streams its reply as **`agent.chat.event`** notifications `{ session_id, kind, delta? }` (`kind: "model_served" | "token" | "tool_call" | "approval_pending" | "goal_evaluated" | "receipt_report" | "done" | "error"`), which the daemon rewrites to `agents.chat.event` for the host. `model_served` carries `{ model_id, local_last_resort }` before each completed turn's content, so a host can identify the actual serving model and mark an on-device last-resort turn. `goal_evaluated` is emitted by goal-driven agents after each verifier pass as `{ iteration, met, grounded, reason }`; `receipt_report` is the stage-separated terminal evidence matrix. `agents.chat.cancel` proxies to `agent.chat.cancel`; `agents.chat.approve` reverse-*requests* `agent.chat.approve` (resolving an `approval_pending` gate so the turn resumes). In-daemon declarative agents skip the reverse call and stream `token`/`goal_evaluated`/terminal frames directly; cancel flips a local run flag and halts at the next model/tool/goal-check boundary; inline `agents.chat.goal` and image attachments are rejected for them because their own manifest `goal` and scratch-worktree runner own completion.
+- For attached supervised agents, `agents.chat` reverse-calls **`agent.chat`** on the target agent's WS connection — resolved via `attached_agents`, so the agent must have `session.auth`'d **with its `agent_id`** (`{ session_id, prompt, model?, attachments?, goal?, context? }`). The optional `model` is forwarded unchanged from the host request. The agent **acks** `{ accepted: true }` immediately, then streams its reply as **`agent.chat.event`** notifications `{ session_id, kind, delta? }` (`kind: "inference_started" | "inference_retry" | "model_served" | "token" | "tool_call" | "tool_result" | "approval_pending" | "goal_evaluated" | "receipt_report" | "done" | "error" | "auth_required"`), which the daemon rewrites to `agents.chat.event` for the host. `inference_started { model, attempt, turn }` arrives before CAR awaits a model call, and `inference_retry { model, attempt, reason, backoff_ms }` arrives before remote retry backoff. `model_served` carries `{ model_id, local_last_resort }` before each completed turn's content, so a host can identify the actual serving model and mark an on-device last-resort turn. `tool_result` carries the bounded/redacted observation shape documented above. `goal_evaluated` is emitted by goal-driven agents after each verifier pass as `{ iteration, met, grounded, reason }`; `receipt_report` carries bounded per-tool receipts, desktop actions when present, and the software completion matrix. `auth_required { reason, message }` replaces the `done`/`error` frame when the turn could not reach Parslee inference because of the account: it follows `receipt_report`, nothing follows it, and on the goal path the loop returns before the verifier runs, so no `goal_evaluated` is emitted for that iteration. `agents.chat.cancel` proxies to `agent.chat.cancel`; `agents.chat.approve` reverse-*requests* `agent.chat.approve` (resolving an `approval_pending` gate so the turn resumes). In-daemon declarative agents skip the reverse call and stream `token`/`goal_evaluated`/terminal frames directly; cancel flips a local run flag and halts at the next model/tool/goal-check boundary; inline `agents.chat.goal` and image attachments are rejected for them because their own manifest `goal` and scratch-worktree runner own completion.
 - **FFI (agent side):** `registerChatHandler(handlerFn)` / `register_chat_handler(handler)` installs the handler (stored-callback pattern; the per-`CarRuntime` bridge acks and fires it with the params JSON). `CarRuntime.chatEvent(sessionId, kind, delta?)` / `chat_event(...)` emits each `agent.chat.event`. **The handler may call any runtime method and should run the turn inline** — in Python it is dispatched on a dedicated CAR-owned OS thread, never a tokio worker, so `infer_tracked`, `submit_proposal`, `state_set`, and `chat_event` all work from inside it. Before car#905 the Python bridge dispatched on a runtime worker and every one of those raised `PanicException: Cannot start a runtime from within a runtime`; because that is a `BaseException` and `chat_event` hit the same wall, the accepted turn was stranded with the host receiving zero frames. Any `threading.Thread` offload written to work around that is now unnecessary. NAPI was never affected (async `ThreadsafeFunction` dispatch). The same contract covers the `tools.execute`, `tools.cancel`, and `voice.event` callbacks. A `--serve` agent **attaches automatically**: the binding sends `agent_id` on `session.auth` when `CAR_AGENT_ID` + `CAR_AGENT_TOKEN` are set (the supervisor injects them). The bundled `create-car-agent` harness wires all of this in `--serve`, keeping an ephemeral per-`session_id` message thread and running the standard propose→verify→execute loop per turn.
 - Bundled `car do` / `car do --serve` assistant loops run proactive memory before every model turn. The hidden pass maintains compact execution-state memory from the runtime event log, selects at most one relevant remembered fact/procedural warning, and injects it as a `## Proactive Memory` context block. This uses the same assistant memory bank as `remember` / `recall`, but does not require the model to call `recall`; maintenance/intervention decisions are journaled as `proactive_memory_maintained` and `proactive_memory_intervention`.
 - Native coder loops also run proactive memory over the shared repair memgine when learning is enabled. The pass mines the coder session journal into procedural/open-subgoal facts, injects at most one `## Proactive Memory` context block before the next coding turn, and journals the same proactive-memory events into the coder session event log.
@@ -4657,7 +4763,7 @@ disable one.
   durable, by design.
 - **Lineage.** A peer message carries `trace` (the id of the message that began
   the chain) and `via` (the ordered principals it passed through, origin first).
-  Segments are `agent:<id>`, `conn:<id>`, `mcp:external-cli`, or
+  Segments are `agent:<id>`, `conn:<id>`, `mcp:<session-id>`, or
   `peer:<key>` — and a `peer:` segment is a **host-boundary marker stamped by
   the receiving daemon from the key it verified, never by the sender**. So
   everything before the last `peer:` marker is that key's *attestation*, and
@@ -4809,6 +4915,79 @@ See `docs/proposals/verified-parallel-coding-orchestrator.md`.
 - **Cost note**: farms each subtask to a real external CLI — **burns subscription/API quota** and can run for minutes. Hosts should rate-limit. A distributed run spends **other machines' quota** as well as this one's.
 - **FFI**: `foremanRun(goal, repo?, adapter?, verifyCommand?, unionVerifyCommand?, maxAttempts?, distributed?, workers?)` (Node) / `foreman_run(goal, repo=None, adapter=None, verify_command=None, union_verify_command=None, max_attempts=None, distributed=None, workers=None)` (Python).
 
+### multiplayer
+
+Multiplayer development: a **work item** moves Build → Improve → Polish through
+**different developers**, each stage an ordinary `coder.*` session on its
+owner's own machine with the engine they chose (CAR native, Claude Code, Codex,
+Gemini, Foreman). Design and rationale: `docs/proposals/multiplayer-development.md`.
+
+What travels between stages is a git commit and a small record, nothing else.
+The record is committed at `.car/multiplayer/<id>.json` on the branch
+`car/mp/<id>` in the team's shared remote. It has no free-text field except the
+intent fixed at Build and rejects unknown fields, so a hand-off cannot carry the
+previous owner's reasoning. Stage sessions never run on anyone else's machine
+and never spend anyone else's coding-CLI seat; this namespace coordinates, it
+does not dispatch.
+
+**Eligibility is advisory.** A stage is attributed to the caller's signed-in
+Parslee account (`auth.snapshot`'s `active_account_id`), written into a git
+file anyone with push access could edit. The rules catch honest mistakes;
+unforgeable ownership needs server-attested stage receipts (proposal slice 5).
+Every `multiplayer.*` method is operator-only: a session bound to an agent id is
+refused (even `list`/`get` fetch into the repository the caller names, which
+runs that repository's git config and hooks). Network git runs with
+`GIT_TERMINAL_PROMPT=0`, so a remote needing interactive credentials fails
+instead of hanging the daemon.
+
+**Running other developers' checks.** `submit_stage` and `merge_check` run a
+contract other people wrote, on this machine. They run it the way the model's
+own shell runs: **without the forge credential** (no `GH_*`/`GITHUB_*` tokens,
+neutralized git/gh/ssh credential helpers) and under the inspector chain that
+refuses credential-shaped commands, whatever `allow_credentials` says. That is
+hardening, not a sandbox — the rest of the environment is inherited — which is
+also true of merging or testing anyone's branch.
+
+Typical flow: Build runs `coder.start` → `coder.confirm_contract` →
+`coder.approve_merge`, then `multiplayer.publish { session_id }` creates the
+item. Each later developer runs `multiplayer.start_stage { repo, item }`,
+confirms with `coder.confirm_contract { contract: <multiplayer.locked_contract> }`
+(adding checks is fine), approves the diff or accepts a no-change finding, and
+runs `multiplayer.publish { session_id, item }`. Anyone runs
+`multiplayer.merge_check` once Polish is published and opens a pull request from
+the branch it produces. The terminal front end is `car mp list | show | take |
+publish | submit | check`, a thin wrapper over these methods.
+
+#### `multiplayer.publish`
+- **Params**: `{ session_id: string, item?: string, remote?: string }` — `remote` defaults to `"origin"`. Without `item` this publishes a **Build** and creates the work item; with it, the item's next stage.
+- **Returns**: `{ item_id, stage: "build"|"improve"|"polish"|"extra", commit, branch: "car/mp/<id>", remote, next_stage, owners: [string] }`.
+- The session must be finished: `merged` or `reported` (an accepted no-change finding; not valid for Build). For `merged`, the stage's work is the `car/coder/<id>` branch **only while it is still the single approved commit on the session's start** — a branch moved since approval is refused, because its tip is no longer the reviewed work. Refused when the caller's account already owns a stage of the item, when the session did not start at the item's tip (`coder.start { base: <tip> }`), when the stage touched `.car/multiplayer/`, when the contract fails the coder's own validation, names a check twice, or carries `baseline`/`differential` checks (every stage and the merge check re-run it cold, where no before-value exists), and when it drops or changes a locked check or grants credential access the locked one did not (adding checks is allowed and becomes the new locked contract). A Build must start from a commit already on the remote — the final squash is based there, so unpushed commits under it would reach the pull request unowned. Managed-project sessions are refused.
+- The record stores the contract with its prose `description` replaced by the item's intent, so the description cannot carry the previous owner's reasoning. Checks only grow in *command*: a later stage can still weaken a script a check runs, which is what the next stage's review and the merge check's final run are for.
+- Commits the updated record on top of the stage's work with a private index (the user's index and checkout are untouched; commits are never signed), pushes `car/mp/<id>` **without force** — two developers finishing the same stage race, and the second is refused — and then moves the local branch of the same name unless a worktree has it checked out (`local_branch_updated` says which; a successful push is never reported as a failure because of it). The record gains `{ stage, account_id, session_id?, engine, model?, base_commit, result_commit, no_change, contract_hash, finished_at, signals: { files_changed, lines_added, lines_removed, checks_added }, cost_usd? }` — `cost_usd` only when the stage's engine metered its spend (absent is unknown, not free).
+
+#### `multiplayer.start_stage`
+- **Params**: `{ repo: string, item: string, remote?: string, engine?: string, model?: string }`.
+- **Returns**: `coder.start`'s reply (the session starts at the item's tip via `base`, with the item's intent), plus `multiplayer: { item_id, stage, locked_contract, owners }`. Confirm with `coder.confirm_contract { contract: locked_contract }`. `locked_contract` always has `allow_credentials: false`: a credential grant does not travel to the next owner, who grants it again only if they choose to.
+- Fetches the item and refuses when the caller already owns a stage. The same checks run again at `publish`, which is the one that counts.
+
+#### `multiplayer.submit_stage`
+- **Params**: `{ repo: string, item: string, commit: string, remote?: string, contract_additions?: [ContractCheck] }`.
+- **Returns**: `multiplayer.publish`'s reply plus `checks: [CheckResult]`.
+- For a stage done **outside CAR** — a developer's own Claude Code or Codex session in their terminal — so a team need not switch assistants. CAR did not watch those edits, so it verifies only what it can itself: `commit` descends from the item's tip, differs from it (an empty submission is refused: "no change" cannot be judged for work CAR did not see), leaves `.car/multiplayer/` alone, and passes the locked contract plus `contract_additions` (checks only, never replacing one), run here in a fresh worktree without credentials. The stage is recorded with `engine: "external-unmanaged"` and no `session_id`. Operator-only; the same one-stage-per-account rule applies.
+
+#### `multiplayer.list`
+- **Params**: `{ repo: string, remote?: string }`.
+- **Returns**: `{ items: [{ item_id, intent, tip, stages: [{ stage, account_id, engine, no_change, signals, cost_usd }], next_stage, eligible: boolean|null, ready_to_merge }], unreadable: [{ item_id, error }] }` — `eligible` is `null` when signed out; `ready_to_merge` is the stage shape only (count and distinct owners) — `merge_check` is the verdict.
+
+#### `multiplayer.get`
+- **Params**: `{ repo: string, item: string, remote?: string }`.
+- **Returns**: `{ tip, item }` — the full record.
+
+#### `multiplayer.merge_check`
+- **Params**: `{ repo: string, item: string, remote?: string }`.
+- **Returns**: `{ item_id, tip, mergeable, problems: [string], checks: [CheckResult], final_branch: string|null, final_commit: string|null, advisory }`.
+- Re-verifies the whole history rather than trusting the latest record, and ties the record to the code: build, improve and polish are recorded in order by distinct accounts; every commit that changed the record changed **only** the record (a forged trailer on a commit that also changes code is caught); each version appends exactly one stage and only grows the contract; record commit *i* sits directly on stage *i*'s result and stage *i* started from record commit *i-1* (Build from the origin), so every code commit on the branch is some stage's work; and the tip **is** the last record commit, so code pushed after Polish is caught. A branch that fails any of this gets no commands run at all. Otherwise it builds the squash that would merge — the tip's tree without the record, on the item's origin — runs the final contract **on that commit** (not the tip), and only if green names it `car/mp/<id>-final` (refused if that branch is checked out). CAR never pushes it, and never pushes to `main`.
+
 ### fleet
 
 One composite view of every CAR instance this daemon can reach — their agents,
@@ -4953,7 +5132,7 @@ keep_workspace_on_failure = false                        # keep the worktree for
 default_max_iterations = 8                               # coder.start fallback when max_iterations omitted
 model = "parslee/reasoning"                              # session model pin; coder.start's `model` overrides
 max_session_wall_secs = 3600                             # ordinary coder session; 0 = unlimited
-max_agent_build_wall_secs = 600                          # whole Agent-project build; 0 = unlimited
+max_agent_build_wall_secs = 600                          # Agent-build ceiling; 0 keeps contract value
 max_replay_events = 2000                                 # reconnect replay per live session; 0 = unlimited
 max_sessions = 200                                       # session-snapshot retention; 0 = unlimited
 max_session_age_days = 30                                # 0 = unlimited
@@ -4988,11 +5167,18 @@ max_session_age_days = 30                                # 0 = unlimited
   it resolves to a review seat.
 - `max_session_wall_secs` / `max_agent_build_wall_secs` — end-to-end wall
   clocks. The ordinary coder fallback ladder defaults to 3600 seconds; an
-  Agent-project build defaults to 600 seconds across credential discovery,
-  spec generation, every repair attempt, and every scenario. `0` means
-  unlimited for both. The Agent-project value is also the synthesized
-  `agent_scenarios_pass.timeout_secs`, so the confirmation card and enforced
-  deadline cannot disagree. At expiry the session ends as `failed` with
+  Agent-project build defaults to a 600-second operator ceiling across
+  credential discovery, spec generation, every repair attempt, and every
+  scenario. A confirmed contract may lower that Agent-build deadline, but it
+  cannot remove or raise a positive ceiling. An Agent-build value of `0` is the
+  operator's explicit choice to keep the contract's positive timeout, with a
+  missing or zero contract timeout meaning unlimited; ordinary-session `0`
+  remains unlimited. The synthesized `agent_scenarios_pass.timeout_secs` is
+  the configured Agent-project value at synthesis time. The ceiling is read
+  again when the build starts, so if the operator lowers it between synthesis
+  and confirmation, the enforced deadline is the lower current ceiling, not
+  what the card showed (raising it later has no effect on a card that already
+  carries the lower value). At expiry the session ends as `failed` with
   `failure_kind: "budget_exhausted"`, a failed timed-out
   `agent_scenarios_pass` result, and retry/config guidance, and the build's
   in-flight model call is dropped. That stops the work on the default paths:
@@ -5091,8 +5277,15 @@ max_session_age_days = 30                                # 0 = unlimited
   and is tracked as car#1339.
 
 #### `coder.start`
-- **Params**: `{ repo?: string, project?: string, intent: string, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, distributed?: boolean, browser?: boolean, workers?: string[], repair_invokes?: number, transient_retries?: number, model?: string, discussion_id?: string }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. Its `agent_scenarios_pass.timeout_secs` comes from `[coder] max_agent_build_wall_secs` (600 by default, `0` = unlimited), and that same value enforces one deadline across generation, repair, and scenarios. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `8`). `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis. `browser` defaults to `false`. With `engine: "auto"`, true selects the native coder loop; an explicitly external or foreman engine is refused because it cannot receive CAR's in-process tools. When true, the native coder loop receives the assistant's lazy Chromium tools (`browse_navigate`, `browse_click`, `browse_type`, `browse_scroll`, `browse_keypress`, `browse_wait`, `browse_observe`, `browser_await_answer`, `browser_await_signin`, `browser_record_start`, `browser_record_stop`). The option is a session-scoped approval for those exact full-access names, but it does not override an Agent Permissions `Deny` or any built-in/project policy rule. Every attempted call is recorded as the ordinary `tool_call` / `tool_result` pair. Each coder browser owns a fresh isolated profile, independent of assistant and standing-session profiles and of `CAR_BROWSER_PROFILE_DIR`. Cookies and sign-ins do not persist across coder sessions; the profile is deleted when its browser is dropped. When false or omitted, the browser tools are neither attached nor advertised.
-- **Returns**: `{ session_id, state: "contract_proposed", engine, worktree, contract: { description, checks: [{ name, command, expect_exit_zero, output_contains?, timeout_secs, baseline?, differential? }] }, baseline, baseline_gates_nothing, journal_path, model, browser }` — `baseline: true` marks a capture-only check, run once at session start with its output kept as a before-value; `differential: { baseline: "<capture name>", expect: "changed" | "unchanged" | { "delta_within": { "min"?, "max"? } } }` makes the runtime compare the check's output against that capture at every later evaluation (car#1067) — the before/after vocabulary for live-system claims ("the row count fell", "the control group did not move"). Both fields are additive with defaults, so pre-existing contracts parse and serialize unchanged. — `journal_path` is the `car_eventlog` JSONL this session journals its actions to (subject to the coder state dir's retention — see `max_session_age_days` above; consume it before the session ages out) (per-tool `action_id`, `ActionFailed`/`TurnCompleted`/…), so a caller (e.g. `car coder-ab`) can attribute the run's failure mechanisms via `harness_adapt::diagnose` without guessing the state dir. `browser` echoes the effective opt-in. `model` is the **effective** native-loop pin (the per-session request, else the config, else `null` = adaptive routing) — surfaced so a caller can verify the coder is on the intended backbone rather than silently falling back to a local model.
+For native raw-repository and app tasks, the effective model pin also applies
+to initial check planning and `coder.revise_contract`. Those calls use strict
+selection and retain the chosen model during JSON repair attempts. An external
+engine's model name is not forwarded to CAR's planning router because it belongs
+to the external CLI's namespace. A saved `coder.discuss.start` model choice
+also controls conversation replies and supplies the default for linked native tasks.
+
+- **Params**: `{ repo?: string, project?: string, intent: string, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, distributed?: boolean, browser?: boolean, workers?: string[], repair_invokes?: number, transient_retries?: number, model?: string, discussion_id?: string, base?: string }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. Its initial `agent_scenarios_pass.timeout_secs` comes from `[coder] max_agent_build_wall_secs` (600 by default). A confirmed card may shorten the Agent-build deadline but cannot remove or extend it past a positive configured ceiling; a configured `0` instead keeps a positive contract timeout and treats a missing or zero contract timeout as unlimited. The effective value enforces one deadline across generation, repair, and scenarios. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `8`). `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis. `browser` defaults to `false`. With `engine: "auto"`, true selects the native coder loop; an explicitly external or foreman engine is refused because it cannot receive CAR's in-process tools. When true, the native coder loop receives the assistant's lazy Chromium tools (`browse_navigate`, `browse_click`, `browse_type`, `browse_scroll`, `browse_keypress`, `browse_wait`, `browse_observe`, `browser_await_answer`, `browser_await_signin`, `browser_record_start`, `browser_record_stop`). The option is a session-scoped approval for those exact full-access names, but it does not override an Agent Permissions `Deny` or any built-in/project policy rule. Every attempted call is recorded as the ordinary `tool_call` / `tool_result` pair. Each coder browser owns a fresh isolated profile, independent of assistant and standing-session profiles and of `CAR_BROWSER_PROFILE_DIR`. Cookies and sign-ins do not persist across coder sessions; the profile is deleted when its browser is dropped. When false or omitted, the browser tools are neither attached nor advertised.
+- **Returns**: `{ session_id, state: "contract_proposed", engine, requested_engine, engine_ran, worktree, base, contract: { description, allow_credentials?, checks: [{ name, command, expect_exit_zero, output_contains?, timeout_secs, baseline?, differential? }] }, baseline, baseline_gates_nothing, journal_path, model, browser }` — `allow_credentials` defaults to `false`. A caller-supplied or user-edited `true` runs this contract's checks through a policy chain with only `DenyCredentialAccess` removed; all other built-in and project rules remain, and the model's shell keeps the full chain. Model-derived contracts are forced to `false`, including unattended self-heal runs. `baseline: true` marks a capture-only check, run once at session start with its output kept as a before-value; `differential: { baseline: "<capture name>", expect: "changed" | "unchanged" | { "delta_within": { "min"?, "max"? } } }` makes the runtime compare the check's output against that capture at every later evaluation (car#1067) — the before/after vocabulary for live-system claims ("the row count fell", "the control group did not move"). These fields are additive with defaults, so pre-existing contracts parse unchanged; false `allow_credentials` is omitted when serialized. — `journal_path` is the `car_eventlog` JSONL this session journals its actions to (subject to the coder state dir's retention — see `max_session_age_days` above; consume it before the session ages out) (per-tool `action_id`, `ActionFailed`/`TurnCompleted`/…), so a caller (e.g. `car coder-ab`) can attribute the run's failure mechanisms via `harness_adapt::diagnose` without guessing the state dir. `browser` echoes the effective opt-in. `model` is the **effective** native-loop pin (the per-session request, else the config, else `null` = adaptive routing) — surfaced so a caller can verify the coder is on the intended backbone rather than silently falling back to a local model. `requested_engine` echoes the `engine` the caller passed, before resolution — `engine` is the RESOLVED choice, so `auto` that picks claude-code and an explicit `external:claude-code` are indistinguishable there. `engine_ran` is the engine that produced the outcome and is always `null` in this reply (nothing has run yet); read it from `coder.get` / `session_summary` once the session ends. Both are additive and `null` on a session started before they existed.
 - **`distributed`** (car#1243, default `false`) farms this session's subtasks
   across every reachable CAR instance that can serve the repository, instead of
   this machine alone. It applies to the **`foreman` engine only** — nothing else
@@ -5243,12 +5436,36 @@ max_session_age_days = 30                                # 0 = unlimited
     cancelled run records nothing; car#1346 tracks making the ledger survive
     that.
 
-- **Red-green baseline** (car#707): before returning, the contract is evaluated once against the **unmodified** worktree. `baseline` is a `CheckResult[]` in check order, and `baseline_gates_nothing` is true when *every* check already passed — meaning the contract verifies nothing for this task and there is nothing to turn red-to-green. Only an all-green baseline sets the flag: individual passing checks are ordinary (a refactor's checks are green before and after by design), so flagging one would abort sessions over a non-fault. `validate()` already rejects contracts that gate nothing *structurally* (assertion-less checks, toolchain-only no-ops); this catches the semantic case that clears validation. Skipped for `agent`-kind projects, whose synthesized check is an in-daemon scenario run rather than a shell command. Costs one contract evaluation, bounded by the checks' own `timeout_secs`. The same results are pushed as a `coder.contract_baseline` event. The baseline is a vacuity check, not a captured measurement a later evaluation compares against — every evaluation point sits before delivery, and none of them receives the baseline results, so a before/after claim about a live system is not expressible in a contract even though an individual check may reach one. See "What a contract cannot assert" in [`docs/car-code-task.md`](car-code-task.md).
+- **`base`** (optional) starts the worktree at this commit-ish instead of the
+  repository's `HEAD` — another developer's published branch, a tag, a SHA —
+  without touching the user's checkout. It is resolved to a full commit SHA
+  before anything is provisioned, and that SHA is what the reply's `base`
+  carries (`null` = the repository's `HEAD`) and what the session snapshot
+  persists, so the session names exactly what it started from after the ref
+  moves. An unknown revision, a non-commit, or a value beginning with `-`
+  fails the start with no worktree and no session left behind; fetch another
+  developer's branch before naming it. Not valid with `project`, which
+  delivers straight to the project's `main`. Explicit branch delivery publishes
+  `car/coder/<id>` on top of the base, carrying its history plus this session's
+  squash commit. Checkout delivery applies only the task delta. This is the primitive a
+  multiplayer Improve or Polish stage starts from
+  (`docs/proposals/multiplayer-development.md`).
+- **Current checkout inputs.** Without an explicit base, saved conversation result,
+  retained workspace, or managed project, a task snapshots the current tracked
+  and non-ignored untracked files into a private input commit. A temporary index
+  leaves the original HEAD and staged index unchanged. The reply's `base` names
+  this input commit when it differs from HEAD; review compares against it so
+  preexisting edits are not attributed to the agent. An unresolved merge refuses
+  start. Ignored inputs are excluded. Concurrent edits during capture are not an
+  atomic filesystem snapshot. After a checkout delivery, follow-ups capture
+  current checkout files again, including manual edits and deletions.
+- **Baseline inputs are disposable.** Each baseline check runs in its own temporary workspace copied from the task's current tracked and non-ignored untracked files, including staged and unstaged contents. Its writes cannot feed the next baseline check through the task directory. Existing frozen policies still apply, with additional path checks for the temporary root. Build artifacts are discarded; ignored dependencies/caches are not copied. Internal symlinks point into the copy; external/broken symlinks and nested Git inputs currently fail preparation rather than being followed or silently flattened. Preparation failures produce failed checks. This is filesystem separation, not a new OS sandbox or a guarantee about external side effects. Ordinary post-implementation checks retain their existing execution path.
+- **Red-green baseline** (car#707): before returning, the contract is evaluated once against the **unmodified** worktree. `baseline` is a `CheckResult[]` in check order, and `baseline_gates_nothing` is true when *every* check already passed — meaning the contract verifies nothing for this task and there is nothing to turn red-to-green. Only an all-green baseline sets the flag: individual passing checks are ordinary (a refactor's checks are green before and after by design), so flagging one would abort sessions over a non-fault. `validate()` already rejects contracts that gate nothing *structurally* (assertion-less checks, toolchain-only no-ops); this catches the semantic case that clears validation. Skipped for `agent`-kind projects, whose synthesized check is an in-daemon scenario run rather than a shell command. Costs one contract evaluation, bounded by the checks' own `timeout_secs`. The same results are pushed as a `coder.contract_baseline` event. The pass also captures the output of checks marked `baseline: true`; later differential checks receive those runtime-owned before-values and compare them with their current output as `changed`, `unchanged`, or `delta_within`. This makes a live-system before/after claim expressible across the session, while an evaluation after a deployment the session does not perform still belongs to the surrounding orchestrator. See "What a contract can and cannot assert" in [`docs/car-code-task.md`](car-code-task.md).
 - **Visible while drafting.** The session is registered at `created` **before**
   contract derivation begins, so it appears in `coder.list` / `coder.watch` (and
   fans out a `coder.session_changed`) for the whole 3-5 minute drafting window,
   with `needs_you: null` — nothing is being asked of the operator yet. It is
-  also **cancellable** there: `coder.cancel` aborts the derivation, reaps the
+  also **cancellable** there: `coder.cancel` aborts the derivation, retains the
   worktree, and lands the session at `abandoned`, and the abandon sticks (the
   contract is never proposed into existence afterwards, and no
   `contract_proposed` reaches a subscriber). `coder.start`'s own return shape
@@ -5294,6 +5511,18 @@ type; the rest is additive.
   // `iterations` tracks the run live (the last `iteration_started.n`) and settles
   // to the loop's final count when it finishes — it previously read 0 until then.
 
+  // --- which engine, asked for vs. ran ---
+  // `engine` above is the RESOLVED choice: `auto` that picked claude-code and an
+  // explicit `external:claude-code` both read `external:claude-code` there.
+  "requested_engine": "auto" | "native" | "external[:id]" | "foreman[:id]" | null,
+                                      // what the caller passed to `coder.start`;
+                                      // null on a session started before this existed
+  "engine_ran": "native" | "external:id" | "foreman:id" | null,
+                                      // the engine that produced the outcome —
+                                      // `native` after an external → native fallback.
+                                      // null until the run ends, and on older sessions;
+                                      // show `engine` when it is null.
+
   // --- what the session is waiting on a human for ---
   "needs_you": "contract" | "question" | "approval" | "auth" | null,
   "needs_you_label": "contract awaiting confirmation" | "question waiting"
@@ -5303,11 +5532,12 @@ type; the rest is additive.
   "auth_wait_secs": 120 | null,       // set iff needs_you == "auth"
 
   // --- outcome + provenance ---
-  "failure_kind": "budget_exhausted" | "auth_required" | "configuration" | "infrastructure" | "error" | null,
+  "failure_kind": "budget_exhausted" | "auth_required" | "configuration" | "infrastructure" | "stalled" | "error" | null,
                                       // set iff state == "failed"
   "worktree": "/abs/path" | null,     // only when the directory still exists on disk
   "project": "slug" | null,
   "result_branch": "car/coder/ab12cd34" | null,
+  "result_commit": "<full delivered commit SHA>" | null,
   "model": "…" | null,                // the pin the CALLER asked for
   "authored_by": ["…"],               // every model that actually completed a turn,
                                       // distinct, first-seen order; `[]` for a
@@ -5348,19 +5578,34 @@ RPCs the client is blocked on, so they emit `auth_required` with `wait_secs: 0`
 and end rather than hold the call open). `"configuration"` means routing
 constraints left no eligible model before dispatch; self-heal releases the
 item claim without adding item backoff or posting a public failure comment,
-because changing the item cannot repair `heal.toml`. A run loop with no auth gate — the
+because changing the item cannot repair `heal.toml`. Since car#1534 it also
+covers a broken ENVIRONMENT under an external engine: the MCP config could not
+be written, or stdin/stdout/stderr could not be acquired, so the CLI never
+received the task. That ends the session naming the underlying error and
+NEVER falls back to native — the native engine would run in the same broken
+environment. Automatic fallback is now exactly one case: the engine cannot run
+here at all (not installed, not detected, not executable, unknown adapter,
+`ENOENT`), on a session that did not name its engine. An explicit
+`engine: "external:<id>"` or `"foreman:<id>"` never falls back; it ends with
+its typed cause plus guidance to re-run without the pin, or with
+`engine: "native"`. A run loop with no auth gate — the
 default adaptive-routing path — is the one case that emits `auth_required` and
 still ends `"infrastructure"`: it does not wait, so the strikes run out
 normally. Read the **event**, not `failure_kind`, to decide whether to show a
 sign-in prompt.
 `"infrastructure"` is used when the machinery failed rather than the work (the
 worker
-could not be started or never received the task, the backbone stopped
+could not be started — an external CLI that never received the task because
+its environment was broken is `"configuration"` instead, see above — the
+backbone stopped
 answering, the outcome contract could not even be derived for any reason other
 than a rejected credential, or a **daemon
 restart** adopted the session while it was still mid-flight — the most common
-of the four), and `"error"`
-otherwise — i.e. the work ran and was judged red.
+of the four). `"stalled"` means the live-session watchdog observed no progress
+for longer than that session's wall deadline plus its 60-second grace period,
+set its cancellation flag, and moved it to `failed`; sessions waiting at a
+contract, approval, question, or sign-in gate are exempt. `"error"` means the
+work ran and was judged red.
 
 `"infrastructure"` is the one to check before reading a failure as a result: no
 check ever passed judgement on the task, so a scorer must exclude it rather than
@@ -5436,16 +5681,22 @@ reaped is a snapshot detail, not a place to send someone.
   resume (which also re-answers with the full current list).
 
 #### `coder.revise_contract`
-- **Params**: `{ session_id: string, request: string }` — `request` is plain English, e.g. `"also verify the Windows path"`.
+A revision request of `/check name command` sets that named check's command
+verbatim (or appends a new exit-zero check when absent), without inference.
+Existing check assertions, captures and timeouts are preserved. It still uses
+the same validation, baseline execution, concurrency guard and separate confirm
+step; it does not authorize broader execution or credentials.
+
+- **Params**: `{ session_id: string, request: string }` — `request` is plain English, e.g. `"also verify the Windows path"`, or the verbatim `/check` form described above.
 - **Returns**: `{ state: "contract_proposed", revised: boolean, contract: OutcomeContract, baseline: CheckResult[], baseline_gates_nothing: boolean, message: string | null }`
-- `CheckResult` is `{ name, passed, exit_code: number | null, output_tail, duration_ms, timed_out, deadline_clamped }`. The last two are additive and optional (default `false`) — see `coder.check_completed` below for what they mean and why a starved check is not a red verdict.
+- `CheckResult` is `{ name, passed, exit_code: number | null, output_tail, duration_ms, timed_out, deadline_clamped, credentials_allowed }`. The three booleans are additive and default `false`; `credentials_allowed` records the effective contract policy used for that execution. See `coder.check_completed` below for the timeout fields and why a starved check is not a red verdict.
 - Redrafts a **proposed** contract from the operator's reply instead of making
   them hand-edit JSON or reject and start over. Legal **only** in
   `contract_proposed`; any other state returns the already-happened error below.
-  **Nothing executes** — the session stays at the gate awaiting a fresh
-  confirm/reject either way. **Unlimited rounds**; there is no principled cap,
-  since each round costs one derivation and the alternative (reject and restart)
-  costs strictly more.
+  Baseline checks execute; coding stays at the gate awaiting a fresh
+  confirm/reject. Requests are limited to 16 KiB, and accepted revisions share
+  the session's 64-message durable guidance limit. Their exact wording is
+  retained for execution and subsequent revisions.
 - On success: `revised: true`, a re-run red-green `baseline` for the new checks,
   and fresh `contract_proposed` + `contract_baseline` events so **every**
   subscribed client re-renders the new draft and cannot confirm the stale one.
@@ -5501,12 +5752,15 @@ shapes**; the already-happened information arrives in additive keys there.
 
 #### `coder.get`
 - **Params**: `{ session_id: string }`
-- **Returns**: the full session snapshot (contract, `last_check_results`, `workspace_path`, `result_branch?`, `error?`, `live`, `next_seq` when live), plus optional `agent_build_progress` for an Agent-project build:
+- `event_cursor` reserves the next event sequence at durable state transitions. `review_restored: true` identifies a review reopened after restart; its check results are historical, not newly executed.
+- Completed diff reviews may include `review_identity: { head, tree }`, the worktree HEAD and staged Git tree presented for review. It persists across restart and is absent on older snapshots and no-change findings. Delivery for a live task carrying this receipt refuses changed HEAD, staged content, unstaged tracked files, or non-ignored untracked files. The receipt does not claim fresh verification or restore a post-restart approval gate by itself.
+- **Returns**: the full session snapshot (contract, `last_check_results`, `workspace_path`, `result_branch?`, `result_commit?`, `error?`, `live`, `next_seq` when live), plus optional `agent_build_progress` for an Agent-project build:
   `{ phase: "generating_spec" | "repairing" | "running_scenario", attempt, max_attempts, scenario?, scenarios_total?, model?, started_at, elapsed_secs }`. `scenario` is 1-based and appears only while a scenario is running; `model` is the requested pin until a completed generation identifies the model that actually served; it clears when a repair attempt or scenario starts, because those route independently of spec generation, and then follows the model serving each scenario turn. `started_at` is Unix seconds and `elapsed_secs` is refreshed on each live `coder.get` poll, then frozen when the build ends. The whole object is additive and omitted for every non-Agent session, so older hosts keep working unchanged.
 
 #### `coder.subscribe` / `coder.unsubscribe`
 - **Params**: `{ session_id: string, from_seq?: number }` / `{ session_id: string }`
 - **Returns**: `{ state, events_replayed, events_skipped, live, replay_available }` / `{ ok: true }`
+- Opening a stopped native task at diff review can restore its live delivery gate. Restoration requires a saved review identity, event cursor, passing saved checks, the original linked worktree, and unchanged staged/revision/file state. It runs no model or verification commands. It emits a newly reconstructed diff and a notice labeling the saved checks and missing earlier activity. The reply includes `review_restored: true`, `live: true`, and `replay_available: false` (earlier activity is unavailable); new review events use sequences above the saved cursor. Clients should refresh `coder.get` for delivery capabilities after restoration. Repeated opens reuse the live entry. A failed restoration keeps the snapshot readable and adds `review_restore_error`; legacy snapshots, unfinished executions, findings, managed projects, and external-engine tasks remain historical. Direct approval before opening a recoverable task asks the caller to open it first.
 - A session that is **not live but has a persisted snapshot** (the daemon
   restarted under it) succeeds with `{ state, events_replayed: 0,
   events_skipped: 0, live: false, replay_available: false }` rather than erroring. Erroring made every
@@ -5545,19 +5799,37 @@ shapes**; the already-happened information arrives in additive keys there.
 - Subscribes this connection to the session's `coder.event` stream. Buffered events with `seq >= from_seq` are replayed before live delivery (no gap, no dup), so a reconnecting client resumes from its cursor. Subscriptions are per-connection and dropped on disconnect; the session keeps running.
 
 #### `coder.respond`
-- **Params**: `{ session_id: string, text: string }`
+
+With `steer: true`, queues operator guidance for a running native loop instead
+of answering a question. First require `steering_available: true` from
+`coder.get` or a session summary; older daemons do not support this mode.
+Returns `{ok: true, queued: true}` after persisting the text in the session's
+`steering_messages`. Guidance is delivered at the next model-turn boundary;
+an unused tool proposal from an in-flight inference is discarded if another
+turn remains. An already executing tool is not interrupted. Use `coder.cancel`
+to stop execution. This does not revise the approved checks or permissions.
+The event `operator_guidance {text, status}` distinguishes `queued`, `applied`
+(included in the next model request), and `not_applied` (the loop ended first).
+At most 16 messages may be pending, with 64 accepted per task and 16 KiB per
+message. Rejected guidance leaves the persisted history unchanged. Saved
+guidance is included in linked-task observations for follow-up conversations;
+it does not make a crashed task automatically resumable.
+- **Params**: `{ session_id: string, text: string, steer?: boolean }`
 - **Returns**: `{ ok: true }` when a pending request was fulfilled; errors with "no pending user-input request for this session" when nothing is waiting.
 - Answers a mid-session `user_input_requested` event. The **native** loop can call an `ask_user` tool (offered to the model only when it genuinely cannot proceed without a user decision); the loop emits `user_input_requested { prompt }` and blocks until either `coder.respond` supplies `text` or a 600s timeout elapses (on timeout the model receives a tool error and continues). `coder.cancel` unblocks a waiting request immediately. The external/foreman CLIs own their own interaction model and do not surface this event.
 
 #### `coder.approve_merge`
 - **Params**: `{ session_id: string, approve: bool }`
-- **Returns**: `{ state: "merged", branch, agent_id?, registry_path? }` on approve; `{ state: "abandoned" }` on deny. Agent-project approvals populate `agent_id` and the daemon-derived declarative `registry_path`; ordinary code-project approvals leave both null.
-- The second human gate, valid only in `needs_approval`. Approve squash-commits the worktree (author `car-coder`) and creates `car/coder/<short-id>` in the repo — merge with `git merge <branch>`; fully reversible via `git branch -D`.
+- **Returns**: `{ state: "merged", branch, commit, agent_id?, registry_path? }` on approve; `{ state: "abandoned" }` on deny. Agent-project approvals populate `agent_id` and the daemon-derived declarative `registry_path`; ordinary code-project approvals leave both null. When the project was created with `existing_agent_id`, `agent_id` is that same id rather than the project slug.
+- The second human gate, valid only in `needs_approval`. Approve squash-commits the worktree (author `car-coder`) and creates `car/coder/<short-id>` in the repo — merge with `git merge <branch>`; fully reversible via `git branch -D`. An Agent rebuild replaces the matching registry entry and retains its immediately preceding spec as `previous` (one level only).
+- **A pending no-change finding** (`needs_you: "finding"`, `no_change_finding` on `coder.get` with `resolved_at: null`) is decided by the same call, with an **explicit** optional param: `{ session_id, approve: true, accept_finding: true }` accepts it — publishes nothing, marks the finding `verification: "human_approved"`, emits `finding_resolved { accepted: true }`, and returns `{ state: "reported", branch: null }`. A plain `approve: true` on a finding is **refused** (it is what every pre-finding client and every unattended approver sends, and an accepted finding leaves nothing in git to review afterwards), and `accept_finding: true` on a session with a diff waiting is refused too. `approve: false` resolves the finding as rejected (`resolved_at` set, `verification` null), emits `finding_resolved { accepted: false }`, and abandons. A daemon session reaches a finding two ways: the native loop's `report_no_change` nomination, judged by the runtime (a session that edited anything, or whose worktree moved off the commit it was provisioned at, is refused and fails; an admissible one **always** waits here — the daemon never takes `car code-task`'s autonomous path, because it cannot know a human read the contract), or a run that finished green with the worktree still on its provisioning commit and no edit recorded by the session's executor, which the runtime records itself (noting whether the baseline was already green) rather than offering an unpublishable empty diff. `car code --yes` never accepts a finding; it leaves it at the gate and exits non-zero.
+
+- `delivery: "checkout"` applies the reviewed patch to the original checkout without moving its HEAD or staged index. It is available only for live, ordinary-repository tasks whose worktree starts from the checkout's current `HEAD` (or the private input snapshot committed on top of it) — a task started from an explicit `base`, a follow-up continuing a published branch, or a continuation whose checkout has since moved reports `checkout_delivery_available: false`, because its patch is computed against a tree the checkout does not have. Clients must check `checkout_delivery_available: true` in `coder.get` before sending this option, so an older daemon cannot silently ignore the additive option. A changed starting revision/branch or a conflicting patch is refused, preserving the worktree. Returns `{state:"merged", delivery:"checkout", branch:null, commit, repo, already_applied}`. The commit is a private checkpoint under `refs/car/coder/<session-id>` for follow-up work, not a commit on the user's branch. Checks passed in the isolated worktree, not necessarily in a checkout with additional user edits. The default remains legacy branch delivery for callers omitting `delivery`. Managed projects retain their existing save flow. A task started from a dirty checkout also reports `inputs_snapshot: "<commit>"` — the private `refs/car/coder-inputs/<session-id>` commit holding the user's uncommitted work that the worktree starts from. It is informational: branch delivery rebuilds the delivered commit on the checkout's `HEAD` rather than on that snapshot, so the user's uncommitted work is never published, and a multiplayer stage is placed on that same `HEAD`.
 
 #### `coder.cancel`
 - **Params**: `{ session_id: string }`
-- **Returns**: `{ state: "abandoned", already_terminal: false, message: null }`
-- Flags the loop, aborts its task (in-flight shell processes are killed), abandons the session, removes the worktree. Valid from any non-terminal state. Note: an in-flight **external** CLI invocation cannot be killed mid-run yet (same limitation as `agents.chat`); its own timeout bounds the wait.
+- **Returns**: `{ state: "abandoned", already_terminal: false, message: null, worktree: string | null, recoverable: bool }`
+- Flags the loop, aborts and joins its task (in-flight shell processes are killed), and abandons the session. Both conversation-backed and standalone sessions retain unfinished work and return its path in `worktree`. Retention is persisted before signalling cancellation and is honored if failure or daemon restart races with cancellation. `recoverable` requires confirmed execution stop and an existing worktree; retaining a path alone does not prove execution stopped. Valid from any non-terminal state. Note: an in-flight **external** CLI invocation cannot be killed mid-run yet (same limitation as `agents.chat`); its own timeout bounds the wait.
 - Cancelling an **already-terminal** session **succeeds** — same `state` key, same
   type — with `already_terminal: true` and an operator-readable `message`, e.g.
   `{ state: "merged", already_terminal: true, message: "coder-ab12cd34 was already merged — nothing left to cancel" }`.
@@ -5586,10 +5858,20 @@ hold unconditionally is that it never touches the repo. The refusal is visible
 as a `tool_result { ok: false }` rather than silent. `coder.start` is the only
 thing that starts work.
 
-Discussions are **in-memory only** and do not survive a daemon restart: the model
-thread, the bound runtime and the substrate are process-local, and persisting the
-transcript alone would resume a conversation whose grounding no longer exists.
-They are also **owned by the connection that opened them** — closing that
+Discussion model transcripts and action receipts are checkpointed through the
+daemon's existing assistant oplog, scoped to the discussion id and repository.
+Use `coder.discuss.start { repo, resume_id }` to recover a closed conversation,
+including after a daemon restart. Recovery rebuilds the read-only repository
+runtime and projects saved user/assistant messages into a fresh event stream
+(subscribe from sequence 0). The conversation id and exact model checkpoint
+are retained. Local metadata binds recovery to the same canonical repository
+and authenticated principal: operator connections share the single-owner daemon
+identity; supervised agents are bound to their authenticated agent id. Caller
+parameters cannot choose this identity. An already-open conversation cannot be
+reclaimed by a second connection. Closing revokes its checkpoint writer before
+cancelling the turn, preventing late writes from an old runtime after recovery.
+This recovers discussions, not unfinished coding worktrees.
+Discussions are **owned by the connection that opened them** — closing that
 connection closes the discussion and cancels any in-flight turn, because a
 detached turn keeps billing model tokens to nobody. Bounded four ways: at most
 **8 open discussions** per daemon (a slot is reserved before the runtime is
@@ -5603,8 +5885,10 @@ most recent 12 handed to `promote`), and a **64 KiB cap on one `send`**.
 opening connection, with
 `discussion '<id>' belongs to another connection — a discussion is owned by the
 connection that opened it and closes with it; start your own with
-coder.discuss.start`. `coder.discuss.list` returns only the caller's own
-discussions. Resolving by id alone let any connected client drive — or close
+coder.discuss.start`. `coder.discuss.list` keeps live `discussions` scoped to
+the opening connection. Its additive `saved` array lists closed conversations
+owned by the authenticated principal; conversations still open on any connection
+are excluded. Resolving by id alone let any connected client drive — or close
 mid-turn — a discussion it did not open.
 
 **One wedged subscriber cannot stall a discussion.** Each subscriber owns a
@@ -5622,10 +5906,20 @@ subscriber — so a prompt-injected repo file could ask for
 `grep_files {"path":"/Users/<user>","pattern":"sk-ant-"}` and exfiltrate the
 hits. Scoped to this surface; the general assistant's read reach is unchanged.
 
-- `coder.discuss.start` — **Params** `{ repo: string }`. **Returns**
-  `{ discussion_id: "disc-…", repo, repo_summary }`. A non-git path errors with
+- `coder.discuss.start` — **Params** `{ repo: string, resume_id?: string, model?: string }`. **Returns**
+  `{ discussion_id: "disc-…", repo, repo_summary, persistent: true, resumed: boolean, model: string | null }`. A non-git path errors with
   `"<path> is not a git repository — discuss needs a repo to ground itself in"`
   (the same git check `coder.start` uses).
+  `model` pins replies, task distillation, and new linked native tasks to a
+  registered tool-capable model without cross-model fallback. Models without
+  tool support are rejected before opening, including a saved choice that is
+  no longer supported. Omission restores the saved
+  choice on resume; `"auto"` or a blank string clears it. The returned `model`
+  is the effective saved choice, or `null` for default routing. Close the
+  conversation before reopening it with a different model. Changing its saved
+  model is refused while a linked task is unfinished. A pinned conversation
+  selects the native engine for linked tasks and rejects an explicitly requested
+  external engine; an explicit per-task model can override the conversation pin.
 - `coder.discuss.send` — **Params** `{ discussion_id, text }`. **Returns**
   `{ ok: true, seq }`, where `seq` is the sequence number of the FIRST event
   this turn emits (the `user_message`), so a caller that has not yet subscribed
@@ -5663,9 +5957,40 @@ hits. Scoped to this surface; the general assistant's read reach is unchanged.
 - `coder.discuss.close` — **Params** `{ discussion_id }`. **Returns**
   `{ ok: true }`. Frees the in-memory discussion and drops its subscribers.
   Owner-only.
+Discussion answers and promotion read linked coder records matching both the
+conversation id and repository. They include bounded check results and task status
+as runtime observations, persisted with the model checkpoint. These observations
+do not switch the repository checkout to a result branch or retained worktree.
+Conversation-backed tasks retain their worktree on cancellation, failure, and
+restart. Cancellation waits for the execution task to exit before returning its
+retained path. `recoverable` is true only after native execution was joined.
+For a conversation-backed task with no explicit base, the next `coder.start`
+reopens this retained tree without reset and returns `resumed_from` naming the
+prior task. It creates a fresh plan and verification run, preserving partial
+files and recording the continuation link. Reopening validates both the state
+directory and Git repository identity. A failed reopen cannot delete the tree.
+Crash orphans and external-engine tasks remain retained but cannot automatically
+resume without evidence that their execution stopped.
+Starting another task from a discussion with unfinished linked work is refused;
+finish or cancel the existing run first. New turns invalidate cached constraints.
+For a raw-repository task with `discussion_id` and no explicit `base`, the next
+worktree uses the previous delivery destination: a branch delivery starts from
+the recorded `result_commit`, while a checkout delivery captures current checkout
+files so later manual edits and deletions remain authoritative. Approval persists
+the immutable result SHA and returns it as `commit`; branch movement does not
+change a branch delivery's continuation base. A legacy delivery without a recorded SHA,
+or retained failed/abandoned work without a confirmed native stop, refuses implicit
+restart from repository HEAD.
+Ambiguous delivery ordering (different commits with the same recorded timestamp)
+also requires an explicit base. An explicit `base` remains authoritative.
+Managed projects keep their existing
+main-based delivery behavior.
+
 - `coder.discuss.list` — **Params** `{}`. **Returns**
-  `{ discussions: [{ discussion_id, repo, created_at, turns }] }` — **this
-  connection's** discussions only. Also serves
+  `{ discussions: [{ discussion_id, repo, created_at, turns }], saved: [{ discussion_id, repo, created_at }] }`.
+  `discussions` contains **this connection's** open discussions; `saved` contains
+  the authenticated principal's closed conversations, newest-created first.
+  Missing `saved` indicates an older daemon without history discovery. Also serves
   as the **capability probe**: a daemon predating this work answers JSON-RPC
   `-32601` (method not found), which a client maps to a plain "this daemon is
   too old for discuss / promote / revise" message rather than a raw protocol
@@ -5679,7 +6004,9 @@ and every session summary surface as provenance. An unknown `discussion_id` is a
 clear error; it never silently starts an ungrounded run. It must be **your own**
 discussion, and it must not be mid-turn — starting while it is still answering
 is refused, because the constraints would be distilled from a question with no
-answer beside it.
+answer beside it. If extracting requirements from the conversation fails,
+starting also fails before provisioning a task; retry after resolving model
+access. Failure never substitutes an empty requirements list.
 
 Carry-through is **verified against the checks, not the prose.** Each constraint
 is judged against the drafted contract, and a constraint counts as captured only
@@ -5694,7 +6021,7 @@ enforces and one it merely narrates.
 
 A **project** is a named, CAR-managed git repository under `~/.car/projects/<slug>/` — created and initialized for the user so the coder's worktree/branch machinery works underneath while they only ever see a name. The non-developer path: no repo to pick. Projects have a **kind** — `app` (generic code) or `agent` (an in-daemon declarative agent, see `declagents` below). A project session delivers on approve by committing straight to the project's `main` (fast-forward), not a `car/coder/<id>` branch. `coder.start` takes **exactly one of** `repo` (a raw git path) or `project` (a managed slug).
 
-- `coder.projects.create` — **Params** `{ name: string, kind?: "app"|"agent" }` (default `app`). **Returns** `CoderProject { slug, display_name, kind, repo_path, created_at }`. Idempotent: an existing slug loads its metadata (the persisted kind wins). Agent project names are free-form build descriptions: descriptions whose sanitized form exceeds 60 characters receive a bounded slug made from a readable prefix plus a digest, while `display_name` and the later `coder.start` intent retain the complete description.
+- `coder.projects.create` — **Params** `{ name: string, kind?: "app"|"agent", existing_agent_id?: string, builder_draft?: { template_id, name, responsibility, example, access, cadence, delivery, privacy } }` (default `kind` is `app`; the two edit fields require `agent`). **Returns** `CoderProject { slug, display_name, kind, repo_path, created_at, existing_agent_id?, builder_draft? }`. `existing_agent_id` must name a registered declarative agent and makes the approved build replace that id instead of minting the project slug; an existing project cannot be rebound to a different id. `builder_draft` carries the seven guided answers and template id through registration. Idempotent: an existing slug loads its metadata (the persisted kind wins) and may refresh its staged builder draft. Agent project names are free-form build descriptions: descriptions whose sanitized form exceeds 64 characters receive an at-most-64-character slug made from a readable prefix plus a 16-hex-character digest, while `display_name` and the later `coder.start` intent retain the complete description. Slugs contain only lowercase ASCII letters, digits, and hyphens.
 - `coder.projects.list` — **Params** `{}`. **Returns** `{ projects: [CoderProject] }`, newest first.
 - `coder.projects.get` — **Params** `{ slug: string }`. **Returns** `CoderProject`.
 
@@ -5705,7 +6032,7 @@ A **project** is a named, CAR-managed git repository under `~/.car/projects/<slu
 **Security**: the tool allowlist is strict — an empty/typo'd allowlist exposes ZERO tools, never the full set — and the daemon's inspector chain hard-enforces beneath it. A declarative agent can only call tools it was granted, gated by the same policy as the coder.
 
 - `declagents.list` — **Params** `{}`. **Returns** `{ agents: [{ id, name, description, kind:"declarative", enabled, capabilities:["chat"], tools, goal?, scenarios }] }`; `description` is the trimmed standing goal when nonblank, otherwise the trimmed identity.
-- `declagents.get` — **Params** `{ id: string }`. **Returns** the full `DeclarativeAgentSpec` plus `registry_path`, the exact daemon-resolved file that supplied it. `registry_path` is response metadata and is never written into `declagents.json`. The spec includes `context: "car" | "self"` — who manages the agent's conversation context (see `declagents.invoke`). It is optional on disk and defaults to `"car"`, so a spec registered before the field loads unchanged, but the response always carries it.
+- `declagents.get` — **Params** `{ id: string }`. **Returns** the full `DeclarativeAgentSpec` plus `registry_path`, the exact daemon-resolved file that supplied it. `registry_path` is response metadata and is never written into `declagents.json`. Builder-created specs may include `builder_draft: { template_id, name, responsibility, example, access, cadence, delivery, privacy }`; edited specs additionally include `previous`, the immediately preceding full spec with its own `previous` cleared. Both fields default absent, so legacy and hand-authored specs keep loading. The spec also includes `context: "car" | "self"` — who manages the agent's conversation context (see `declagents.invoke`). It is optional on disk and defaults to `"car"`, so a spec registered before the field loads unchanged, but the response always carries it. The optional structured `cadence` is `{ trigger: "interval"|"cron"|"manual", schedule, timezone?, phrase }`; `phrase` preserves what the user entered, while `trigger` and `schedule` are the result from `schedule.suggest`. Its absence means no cadence was requested.
 - `declagents.remove` — **Params** `{ id: string }`. **Returns** `{ removed: bool }`.
 - `declagents.set_enabled` — **Params** `{ id: string, enabled: bool }`. **Returns** `{ ok: true }`. A disabled agent stays registered but refuses to run.
 - **Admission on `declagents.invoke` / `.route` / `.route_split`.** All three reach the same in-daemon declarative executor, so all three pass the admission `agents.chat` and `agents.message` apply when the caller is an *agent* rather than the host: the per-recipient channel guard (dedupe inside 10s, 20 per sender per minute) and the `AgentPermissionPolicy` decision at the `read_only` tier. Gating chat while leaving these open would just make them the way around it. For `route` and `route_split` the check is applied to the **chosen** agent, not the requested need, so a routed run is graded against the agent that actually ran. The host is exempt.
@@ -6269,14 +6596,18 @@ monotonically increasing per session (the resume cursor for
     "type": "check_completed",
     "result": {
       "name": "tests_pass", "passed": true, "exit_code": 0, "output_tail": "…",
-      "duration_ms": 8123, "timed_out": false, "deadline_clamped": false
+      "duration_ms": 8123, "timed_out": false, "deadline_clamped": false,
+      "credentials_allowed": false
     }
   }
 }
 ```
-A `CheckResult` carries two additive booleans alongside the verdict (both
-optional, defaulting to `false`, so a result persisted before car#1053 still
-deserializes). `timed_out` says the command was killed at a timeout instead of
+A `CheckResult` carries three additive booleans alongside the verdict (all
+default to `false`, so older persisted results still deserialize).
+`credentials_allowed` records that this execution used the contract's explicit
+credential opt-in; it is false for the default policy and does not describe the
+model shell, which always keeps `DenyCredentialAccess`. `timed_out` says the
+command was killed at a timeout instead of
 exiting on its own; `deadline_clamped` says the timeout it was killed at was the
 **session's** remaining wall-clock budget rather than the check's own ceiling.
 That ceiling is `min(timeout_secs, 600)` — every contract command runs through
@@ -6333,6 +6664,11 @@ exclusion and the circuit breaker filter the candidate list before dispatch, so
 a lane dropped that way is invisible here. Read an absence of rows as "nothing
 was attempted and passed over", not as "the backbone did not change"),
 `iteration_started {n, max}`,
+`inference_waiting {elapsed_secs}` (a native model call is still pending,
+reported every 15 seconds; not evidence of tool activity or completion),
+`inference_retry {model, attempt, reason, backoff_ms}` (sanitized retry metadata
+from the inference engine within one native model call; `attempt` starts at 2,
+and `reason` is a generic failure class, not a provider response body),
 `budget_exhausted {reason, elapsed_secs, iterations}` (the session hit its
 wall-clock ceiling and the next iteration was not admitted; the session ends in
 `failed` — it does not reach the approval gate, which requires green checks —
@@ -6414,7 +6750,17 @@ monotonic per discussion (the resume cursor for
 `assistant_delta {text}` (streaming chunk), `assistant_message {text}`
 (the complete turn), `tool_call {tool, params_preview}`,
 `tool_result {tool, ok, preview}` — **`ok` is always `false` today**: the underlying loop does not surface successful tool results as their own event (the model's following text conveys them), so the only `tool_result` emitted is the auto-denied write/shell refusal below. Treat a success row as reserved, not as something to wait for.
+`task_prepared {proposed_intent, constraints}` (an editable task prepared from an
+implementation request; no execution or approval has occurred),
 `turn_complete {}`, `error {message}`.
+
+`task_prepared` is emitted after a successful reply when the assistant calls
+`prepare_coding_task`. Clients may show the existing task editor, but must preserve
+unsent drafts and deduplicate by `seq`. Existing `coder.start` and check review
+remain required before execution. Prepared proposals and constraints are persisted
+in the owned conversation record and replayed as `task_prepared` after reopening.
+A new conversation turn or acceptance through `coder.start` clears the saved
+proposal. Unsent client-side edits are not included in that saved proposal.
 
 A `tool_result` with `ok: false` is how the no-mutation boundary surfaces: a
 discussion's write/shell attempt is auto-denied and reported, never silently

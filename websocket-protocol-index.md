@@ -7,7 +7,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 **Not indexed, on purpose:** the separate "## Notification methods (server → client)" section (`host.event`, `voice.event`, `coder.event`, `coder.discuss.event`, `browser.signin_needed`/`resolved`) documents push-notification *payload shapes*, not additional namespaced RPC methods — read it directly in the full doc. Six headings documented **inside** "## Method reference" itself are excluded for the same reason — they are server-initiated pushes, not client-callable requests: `browser.view.event`, `models.pull_progress`, `models.upgrade_available`, `models.suggestion_available`, `runs.trace.event`, and `coder.session_changed` (documented a second time, briefly, in the separate Notification methods section above). The "a2a (in-core dispatcher)" subsection's 9-11 A2A v1.0 methods are also excluded: they're documented as a table of `PascalCase` / `slash/form` name pairs with no per-method heading to anchor to, and the source doc doesn't say which form is the literal wire `method` string.
 
-**76 namespaces, 436 methods.**
+**79 namespaces, 444 methods.**
 
 ## a2a (7)
 
@@ -136,11 +136,11 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 ## calendar (5)
 
-- [`calendar.create_event`](websocket-protocol.md#calendarcreate_event) — Calendar must be writable; if it isn't, ok: false...
-- [`calendar.delete_event`](websocket-protocol.md#calendardelete_event)
+- [`calendar.create_event`](websocket-protocol.md#calendarcreate_event) — Approval: required by the default high-risk WS gate.
+- [`calendar.delete_event`](websocket-protocol.md#calendardelete_event) — Approval: required by the default high-risk WS gate.
 - [`calendar.events`](websocket-protocol.md#calendarevents) — { name?, email?, status?, role?, is_current_user }...
 - [`calendar.list`](websocket-protocol.md#calendarlist)
-- [`calendar.update_event`](websocket-protocol.md#calendarupdate_event) — any absent field leaves the existing value alone.
+- [`calendar.update_event`](websocket-protocol.md#calendarupdate_event) — Approval: required by the default high-risk WS gate.
 
 ## cascade (1)
 
@@ -149,25 +149,25 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 ## coder (22)
 
 - [`coder.approve_merge`](websocket-protocol.md#coderapprove_merge) — The second human gate, valid only in needs_approval.
-- [`coder.cancel`](websocket-protocol.md#codercancel) — Flags the loop, aborts its task (in-flight shell...
+- [`coder.cancel`](websocket-protocol.md#codercancel) — Flags the loop, aborts and joins its task...
 - [`coder.confirm_contract`](websocket-protocol.md#coderconfirm_contract) — The first human gate.
 - [`coder.discuss.close`](websocket-protocol.md#coderdiscuss) — Params { discussion_id }.
 - [`coder.discuss.list`](websocket-protocol.md#coderdiscuss) — Params {}. Returns
 - [`coder.discuss.promote`](websocket-protocol.md#coderdiscuss) — Params { discussion_id }.
 - [`coder.discuss.send`](websocket-protocol.md#coderdiscuss) — Params { discussion_id, text }.
-- [`coder.discuss.start`](websocket-protocol.md#coderdiscuss) — Params { repo: string }.
+- [`coder.discuss.start`](websocket-protocol.md#coderdiscuss) — Params { repo: string, resume_id?: string, model?:...
 - [`coder.discuss.subscribe`](websocket-protocol.md#coderdiscuss) — Params
 - [`coder.discuss.unsubscribe`](websocket-protocol.md#coderdiscuss) — Params
-- [`coder.get`](websocket-protocol.md#coderget)
+- [`coder.get`](websocket-protocol.md#coderget) — event_cursor reserves the next event sequence at...
 - [`coder.list`](websocket-protocol.md#coderlist) — live sessions plus persisted snapshots from prior...
-- [`coder.projects.create`](websocket-protocol.md#managed-projects-coderprojects) — Params { name: string, kind?: "app"|"agent" }...
+- [`coder.projects.create`](websocket-protocol.md#managed-projects-coderprojects) — Params { name: string, kind?: "app"|"agent",...
 - [`coder.projects.get`](websocket-protocol.md#managed-projects-coderprojects) — Params { slug: string }.
 - [`coder.projects.list`](websocket-protocol.md#managed-projects-coderprojects) — Params {}. Returns { projects: [CoderProject] },...
 - [`coder.respond`](websocket-protocol.md#coderrespond) — Answers a mid-session user_input_requested event.
 - [`coder.revise_contract`](websocket-protocol.md#coderrevise_contract) — CheckResult is { name, passed, exit_code: number |...
 - [`coder.start`](websocket-protocol.md#coderstart) — distributed (car#1243, default false) farms this...
-- [`coder.subscribe`](websocket-protocol.md#codersubscribe-coderunsubscribe) — A session that is not live but has a persisted...
-- [`coder.unsubscribe`](websocket-protocol.md#codersubscribe-coderunsubscribe) — A session that is not live but has a persisted...
+- [`coder.subscribe`](websocket-protocol.md#codersubscribe-coderunsubscribe) — Opening a stopped native task at diff review can...
+- [`coder.unsubscribe`](websocket-protocol.md#codersubscribe-coderunsubscribe) — Opening a stopped native task at diff review can...
 - [`coder.unwatch`](websocket-protocol.md#coderwatch-coderunwatch) — The board's one subscription.
 - [`coder.watch`](websocket-protocol.md#coderwatch-coderunwatch) — The board's one subscription.
 
@@ -323,12 +323,12 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 ## mail (6)
 
-- [`mail.accounts`](websocket-protocol.md#mailaccounts)
-- [`mail.inbox`](websocket-protocol.md#mailinbox) — use mail.messages for
-- [`mail.mailboxes`](websocket-protocol.md#mailmailboxes) — Notes:
-- [`mail.message_body`](websocket-protocol.md#mailmessage_body) — an id from a mail.messages row
-- [`mail.messages`](websocket-protocol.md#mailmessages) — Notes:
-- [`mail.send`](websocket-protocol.md#mailsend)
+- [`mail.accounts`](websocket-protocol.md#mailaccounts) — Access: requires the daemon auth token when daemon...
+- [`mail.inbox`](websocket-protocol.md#mailinbox) — Access: requires the daemon auth token when daemon...
+- [`mail.mailboxes`](websocket-protocol.md#mailmailboxes) — Access: requires the daemon auth token when daemon...
+- [`mail.message_body`](websocket-protocol.md#mailmessage_body) — Access: requires the daemon auth token when daemon...
+- [`mail.messages`](websocket-protocol.md#mailmessages) — Access: requires the daemon auth token when daemon...
+- [`mail.send`](websocket-protocol.md#mailsend) — Access: this is a mutation, not a read.
 
 ## meeting (4)
 
@@ -362,7 +362,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 ## messages (4)
 
 - [`messages.chats`](websocket-protocol.md#messageschats)
-- [`messages.read`](websocket-protocol.md#messagesread) — Notes:
+- [`messages.read`](websocket-protocol.md#messagesread) — Access: requires the daemon auth token when daemon...
 - [`messages.send`](websocket-protocol.md#messagessend)
 - [`messages.services`](websocket-protocol.md#messagesservices)
 
@@ -423,6 +423,15 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`multi.swarm`](websocket-protocol.md#multiswarm)
 - [`multi.tournament`](websocket-protocol.md#multitournament) — Each competitor produces one candidate answer to...
 - [`multi.vote`](websocket-protocol.md#multivote)
+
+## multiplayer (6)
+
+- [`multiplayer.get`](websocket-protocol.md#multiplayerget) — the full record.
+- [`multiplayer.list`](websocket-protocol.md#multiplayerlist) — eligible is null when signed out; ready_to_merge is...
+- [`multiplayer.merge_check`](websocket-protocol.md#multiplayermerge_check) — Re-verifies the whole history rather than trusting...
+- [`multiplayer.publish`](websocket-protocol.md#multiplayerpublish) — The session must be finished: merged or reported...
+- [`multiplayer.start_stage`](websocket-protocol.md#multiplayerstart_stage) — Fetches the item and refuses when the caller...
+- [`multiplayer.submit_stage`](websocket-protocol.md#multiplayersubmit_stage) — For a stage done outside CAR — a developer's own...
 
 ## nlp (3)
 
@@ -505,6 +514,10 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`runs.subscribe`](websocket-protocol.md#runssubscribe) — Atomicity (R7). The snapshot read and the...
 - [`runs.unsubscribe`](websocket-protocol.md#runsunsubscribe) — removed is true when a
 
+## schedule (1)
+
+- [`schedule.suggest`](websocket-protocol.md#schedulesuggest) — Deterministic and inference-free.
+
 ## scheduler (8)
 
 - [`scheduler.create`](websocket-protocol.md#schedulercreate) — just constructs the task definition)
@@ -532,6 +545,10 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`selfheal.fix`](websocket-protocol.md#selfhealfix) — Starts one explicit bounded round even when...
 - [`selfheal.run`](websocket-protocol.md#selfhealrun) — Runs the same path as the cadence.
 - [`selfheal.status`](websocket-protocol.md#selfhealstatus) — route is "local" only when the tick validates a...
+
+## server (1)
+
+- [`server.schema`](websocket-protocol.md#serverschema) — The release version is reported here, not inside...
 
 ## session (6)
 

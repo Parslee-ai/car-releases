@@ -45,9 +45,11 @@ Daemon URL override: ``CAR_DAEMON_URL=ws://...`` (default
 """
 
 from types import ModuleType
-from typing import Any, Callable, List, NoReturn, Optional
+from typing import Any, Callable, List, NoReturn, Optional, overload
 
 # Importable, versioned agent-loop helper: ``import car_runtime.agent_loop``.
+# Its ``run_agent`` outcome includes ``run_id: str | None``; pass a non-null id
+# directly to ``CarRuntime.runs_get_trace`` to retrieve that run's records.
 agent_loop: ModuleType
 
 
@@ -639,6 +641,24 @@ class CarRuntime:
     def multi_vote(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `multi.vote` (operator).
 
+    def multiplayer_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multiplayer.get` (operator).
+
+    def multiplayer_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multiplayer.list` (operator).
+
+    def multiplayer_merge_check(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multiplayer.merge_check` (operator).
+
+    def multiplayer_publish(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multiplayer.publish` (operator).
+
+    def multiplayer_start_stage(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multiplayer.start_stage` (operator).
+
+    def multiplayer_submit_stage(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multiplayer.submit_stage` (operator).
+
     def nlp_extract_entities(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `nlp.extract_entities` (operator).
 
@@ -731,6 +751,9 @@ class CarRuntime:
 
     def runs_unsubscribe(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `runs.unsubscribe` (operator).
+
+    def schedule_suggest(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `schedule.suggest` (operator).
 
     def scheduler_create(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `scheduler.create` (operator).
@@ -1685,6 +1708,17 @@ class CarRuntime:
         are callable" (Parslee-ai/car#892).
         """
 
+    def server_schema(self) -> str:
+        """Return the daemon release's wire schema as JSON.
+
+        `{schema, digest, digest_algorithm, car_version}`. The version is read
+        from the running binary at serve time and is not part of the digested
+        document, so the digest tracks wire shape alone. Within ``schema``,
+        ``coverage.rpc_results`` and ``coverage.journal_event_payloads``
+        partition the source-derived inventories into exact ``covered`` and
+        ``uncovered`` lists.
+        """
+
     def unregister_tool(self, name: str) -> int:
         """Remove a tool by name; returns how many were removed.
 
@@ -2356,8 +2390,9 @@ class CarRuntime:
         """``assistant.identity.get`` — the name the flagship assistant answers
         to.
 
-        Returns JSON ``{"name", "spellings", "aliases", "user_name", "brand",
-        "updated_at_unix"}``. ``aliases`` is the derived match set (name and
+        Returns JSON ``{"name", "spellings", "aliases", "user_name", "role",
+        "focus_areas", "apps", "brand", "updated_at_unix"}``. ``aliases`` is
+        the derived match set (name and
         spellings crossed with "hey"/"ok"/…), longest first — hosts match wake
         phrases against it locally so their matcher works before the daemon
         answers. ``brand`` is the fixed product name and never changes;
@@ -2371,10 +2406,11 @@ class CarRuntime:
         """``assistant.identity.set`` — name the assistant. Host/local-auth
         gated on the daemon, because a rename repoints the voice wake word.
 
-        ``request_json`` is ``{"name"?, "spellings"?, "user_name"?}``. Every
-        field is optional and unset fields are preserved, so a caller that only
-        knows about the name cannot wipe spellings another surface wrote. Pass
-        ``user_name: None`` to clear it. Returns the updated identity JSON.
+        ``request_json`` is ``{"name"?, "spellings"?, "user_name"?, "role"?,
+        "focus_areas"?, "apps"?}``. Every field is optional and unset fields are
+        preserved. Focus values are calendar/email/files/browser/research/
+        writing/other. Pass ``None`` to clear any profile field. Returns the
+        updated identity JSON.
         """
 
     def messaging_config_get(self, request_json: str | None = None) -> str:
@@ -2456,6 +2492,7 @@ class CarRuntime:
         distributed: bool | None = None,
         workers: list[str] | None = None,
         discussion_id: str | None = None,
+        base: str | None = None,
     ) -> str:
         """Start a coder session (built-in coding agent): provisions an
         isolated git worktree of ``repo`` and derives a verifiable outcome
@@ -2463,8 +2500,24 @@ class CarRuntime:
         "external[:agent_id]"`` (default auto). ``model`` pins the native
         loop's inference model for this session (e.g. ``"parslee/reasoning"``),
         overriding ``~/.car/coder.toml``; blank/omitted = the config default,
-        then adaptive routing. Returns ``{"session_id", "state", "engine",
-        "worktree", "contract", "model"}`` JSON, where ``model`` is the
+        then adaptive routing. Returns, in this order,
+        ``{"session_id", "state", "engine", "requested_engine", "engine_ran",
+        "worktree", "base", "contract", "baseline", "baseline_gates_nothing",
+        "model", "browser", "journal_path"}`` JSON. ``engine`` is the RESOLVED
+        choice; ``requested_engine`` is what the caller ASKED for, which
+        resolution can differ from (``"auto"`` that picks claude-code and an
+        explicit ``"external:claude-code"`` both leave ``engine`` reading
+        ``"external:claude-code"``) and is ALWAYS recorded when a session
+        starts on this version, so ``None`` means a session persisted by an
+        older daemon. ``engine_ran`` is the engine that produced the outcome
+        (``"native"`` after an external engine fell back); it is ``None``
+        until one has, so always ``None`` in THIS reply, and ``None`` on an
+        older session too. ``baseline`` is the contract's per-check red-green
+        baseline against the untouched worktree and ``baseline_gates_nothing``
+        says every check already passed; ``model`` is the effective pin
+        (``null`` = adaptive); ``browser`` echoes the effective opt-in; and
+        ``journal_path`` is the ``car_eventlog`` JSONL this session journals
+        to.
         ``distributed`` farms a **foreman** session's subtasks across every
         reachable CAR instance that can serve the repository instead of this
         machine alone; the merge-verify gate and delivery stay on the
@@ -2472,7 +2525,7 @@ class CarRuntime:
         Only foreman decomposes a goal into subtasks, so any other engine runs
         locally and reports that it did. Off by default — it spends agent quota
         on other machines. ``workers`` restricts placement to named instances.
-        effective pin (``null`` = adaptive). ``repair_invokes`` is the external
+        ``repair_invokes`` is the external
         engine's hypothesis budget (fresh repair invocations after a red pass;
         recurrence escalation needs >= 2 to reach the model) and
         ``transient_retries`` its availability budget (re-invocations after the
@@ -2485,7 +2538,12 @@ class CarRuntime:
         constraints ride into contract derivation, so a rule stated once in the
         discussion need not be restated in the intent, and the session records
         the provenance. An unknown id is an error, never a silently ungrounded
-        run. Sessions live in the daemon; live ``coder.event`` streaming is
+        run. ``base`` is a commit-ish to start the worktree at instead of the
+        repository's ``HEAD`` (e.g. another developer's published branch); the
+        daemon resolves it to a full SHA, echoed as ``base`` in the reply
+        (``None`` = ``HEAD``), and an unknown revision fails the start before
+        anything is provisioned. Not valid with a managed project.
+        Sessions live in the daemon; live ``coder.event`` streaming is
         WebSocket-only (``coder.subscribe``).
 
         .. versionchanged:: 0.44.0
@@ -2505,13 +2563,31 @@ class CarRuntime:
     def coder_get(self, session_id: str) -> str:
         """Full coder session detail, including contract and check results."""
 
-    def coder_respond(self, session_id: str, text: str) -> str:
-        """Answer a ``user_input_requested`` coder event (reserved)."""
+    @overload
+    def coder_respond(self, session_id: str, text: str) -> str: ...
 
-    def coder_approve_merge(self, session_id: str, approve: bool) -> str:
+    @overload
+    def coder_respond(self, session_id: str, text: str, steer: bool) -> str:
+        """Answer a question, or queue native guidance with steer=True."""
+
+    @overload
+    def coder_approve_merge(
+        self, session_id: str, approve: bool, accept_finding: bool | None = None
+    ) -> str:
         """Approve (publish the ``car/coder/<id>`` branch in the repo) or
         deny (abandon) a coder session awaiting merge approval. Agent-project
-        approvals include ``agent_id`` and daemon-derived ``registry_path``."""
+        approvals include ``agent_id`` and daemon-derived ``registry_path``.
+        A session waiting on a no-change finding (``needs_you == "finding"``)
+        is accepted only with ``accept_finding=True``: nothing is published
+        and the reply is ``{"state": "reported", "branch": None}``. A plain
+        approve on a finding, or ``accept_finding`` on a diff, is refused."""
+
+    @overload
+    def coder_approve_merge(
+        self, session_id: str, approve: bool, accept_finding: bool | None = None,
+        delivery: str | None = None,
+    ) -> str:
+        """Choose checkout or branch delivery; checkout support is preflighted."""
 
     def coder_cancel(self, session_id: str) -> str:
         """Cancel a coder session: stop the loop, abandon, remove the
@@ -2531,6 +2607,13 @@ class CarRuntime:
 
         Each row carries the pre-existing ``{"session_id", "state", "intent",
         "repo", "engine", "iterations", "updated_at", "live", "error"}`` plus
+        ``requested_engine`` (the engine the caller asked for; ``engine`` is
+        the RESOLVED choice — ALWAYS recorded when a session starts on this
+        version, so ``None`` there means a session persisted by an older
+        daemon) and ``engine_ran`` (the engine that produced the outcome,
+        ``"native"`` after an external engine fell back — ``None`` until one
+        has, i.e. a run still in progress or one that never reached an engine,
+        and on older sessions) — plus
         ``needs_you`` (``"contract" | "question" | "approval" | "auth" |
         None``), ``needs_you_label`` (daemon-owned wording so every client says
         the same thing), ``question_prompt``, ``auth_message``,
@@ -2563,7 +2646,7 @@ class CarRuntime:
         a ``message`` explaining why, and the daemon emits a
         ``contract_revision_rejected`` event."""
 
-    def coder_discuss_start(self, repo: str) -> str:
+    def coder_discuss_start(self, repo: str, *, resume_id: Optional[str] = None, model: Optional[str] = None) -> str:
         """Open a repo-grounded, strictly **read-only** discussion — a thinking
         surface for working out what a change should be, before a run exists.
         Bound at ``PermissionTier::ReadOnly`` with every write/shell escalation
@@ -2594,10 +2677,18 @@ class CarRuntime:
         "created_at", "turns"}]}``. Also the capability probe — a daemon
         predating this surface answers JSON-RPC ``-32601``."""
 
-    def project_create(self, name: str, kind: str | None = None) -> str:
+    def project_create(
+        self,
+        name: str,
+        kind: str | None = None,
+        *,
+        existing_agent_id: str | None = None,
+        builder_draft_json: str | None = None,
+    ) -> str:
         """Create (or load) a CAR-managed git-backed project under
-        ``~/.car/projects/``. ``kind`` is ``"app"`` (code) or ``"agent"``
-        (an in-daemon declarative agent). Returns CoderProject JSON."""
+        ``~/.car/projects/``. For an agent edit, ``existing_agent_id`` names
+        the registered agent to replace and ``builder_draft_json`` carries the
+        seven answers plus ``template_id``. Returns CoderProject JSON."""
 
     def project_list(self) -> str:
         """List managed projects, newest first."""
@@ -2952,9 +3043,9 @@ class CarRuntime:
         """Message rows, newest first.
 
         ``query_json`` is a ``MessageQuery``: ``{account_ids?, mailbox?,
-        limit?, since?, include_body?}``. Every field defaults and
-        ``mailbox: null`` means INBOX, so ``"{}"`` reproduces the pre-existing
-        INBOX-only read.
+        limit?, since?, include_body?}``. ``limit`` may not exceed 500. Every
+        field defaults and ``mailbox: null`` means INBOX, so ``"{}"``
+        reproduces the pre-existing INBOX-only read.
 
         "Newest first" is GLOBAL, not per account: rows from every matched
         account are merged into one date-ordered list before ``limit`` applies,
@@ -2964,8 +3055,11 @@ class CarRuntime:
         Each row carries a stable opaque ``id`` accepted by
         :meth:`mail_message_body`, and a ``mailbox`` holding the mailbox as the
         backend RESOLVED it (a query for ``"travel"`` comes back stamped
-        ``"Travel/2026"``), so rows match :meth:`mail_mailboxes` output. An
-        unresolvable mailbox or an unmatched ``account_ids`` returns
+        ``"Travel/2026"``), so rows match :meth:`mail_mailboxes` output.
+        Mail.app rows also carry ``message_id``, the RFC 5322 Message-ID header
+        exactly as Mail exposes it; it is ``null`` if Mail does not expose the
+        header and on Microsoft Graph rows. An unresolvable mailbox or an
+        unmatched ``account_ids`` returns
         ``available: false`` with a reason, never an empty list.
         """
         ...
@@ -2987,8 +3081,9 @@ class CarRuntime:
     def messages_read(self, query_json: str) -> str:
         """Read Messages.app rows newest first.
 
-        ``query_json`` is ``{chat_ids?, since?, limit?, include_body?}``.
-        Returns ``{available, backend, reason?, messages}``; an unreadable
+        ``query_json`` is ``{chat_ids?, since?, limit?, include_body?}``;
+        ``limit`` may not exceed 500. Returns
+        ``{available, backend, reason?, messages}``; an unreadable
         database is unavailable, not an empty conversation.
         """
         ...
@@ -4278,6 +4373,11 @@ def reconcile_os_schedules() -> str:
     """Reap orphaned OS-level schedules — uninstall every CAR-managed launchd/cron
     entry whose task is gone from ``~/.car/tasks/`` or whose trigger is no longer
     schedulable. Returns the reconcile report ``{ removed, kept, errors }``."""
+
+
+def suggest_schedule(phrase: str, timezone: Optional[str] = None) -> str:
+    """Parse the supported cadence phrase grammar without inference. Unsupported
+    input returns ``cadence: null`` plus a reason."""
 
 
 def schedule_task(spec_json: str) -> str:

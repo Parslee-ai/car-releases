@@ -118,7 +118,7 @@ package is in **[DISTRIBUTION.md](./DISTRIBUTION.md)**.
 # macOS + Linux convenience installer (Windows: use CAR-setup-x64.exe or Scoop above;
 # inspect-then-run guidance in SECURITY.md):
 curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/install.sh | sh
-# pin a version with CAR_VERSION=v0.54.0
+# pin a version with CAR_VERSION=v0.55.0
 ```
 
 macOS is Apple Silicon only (15+). Linux x86_64/aarch64 and Windows x86_64 are

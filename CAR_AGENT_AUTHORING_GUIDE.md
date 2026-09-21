@@ -75,7 +75,7 @@ The Rust core is a **46-crate workspace** (older prose says 42 — treat 46 as c
 | Node.js (NAPI) | `car-runtime` (npm) | camelCase at runtime | Thin daemon client; bundles `car-server`. |
 | Python (PyO3) | `car-runtime` (PyPI, import `car_runtime`) | snake_case | Thin daemon client; **proposal execution NOT exposed in v0.8** — use the WS directly. |
 | WebSocket JSON-RPC | `car-server` | — | **73+ methods across 23 namespaces.** The canonical surface. |
-| MCP (stdio + HTTP-streamable) | `car-mcp-server` (stdio), the daemon (HTTP) | — | **stdio: stateless** — memory, skill lookup, verify, policy check; no proposal execution. **The daemon endpoint adds `assistant_start`/`assistant_poll`/`assistant_cancel`**, which run the full agent behind a run handle. |
+| MCP (stdio + HTTP-streamable) | `car-mcp-server` (stdio), the daemon (HTTP) | — | **stdio: stateless** — memory, skill lookup, verify, policy check; no proposal execution. **The daemon endpoint adds the assistant tools plus per-session peer identity and a polled inbox.** |
 
 Rust consumers add `car-*` crates from crates.io (35 library crates ship per release). The common starter set:
 
@@ -220,14 +220,14 @@ for level in &levels {
 
 **Terminal outcomes (`AgentOutcome`, `car-ir/outcome.rs`).** A model-driven loop drives verify/execute repeatedly until an `AgentOutcome` is terminal: `{ status: OutcomeStatus, summary, evidence: Vec<Evidence>, metrics: OutcomeMetrics, timestamp }`. `OutcomeStatus` (snake_case): `success`, `partial_success`, `give_up`, `timeout`, `failure`, `done`. **All statuses are `is_terminal()`;** `is_completed()` is true for success/partial_success/done. `EvidenceKind`: `self_assessment`, `tool_result`, `state_change`, `external_verification`, `stop_reason`, `evaluator`. Constructors: `success()`, `failure()`, `timeout(summary, turns, max_turns)`, `give_up(reason)`.
 
-**Run-trace lifecycle (the harness brackets every run).** The canonical Node harness (`car-loop.mjs`, shipped by the create-car-agent skill) wraps each `runAgent` invocation in a **run** so CarHost can trace it end-to-end — the intent it was given, every turn's prompt/CLI-outcome/verifier-verdict, and the final `AgentOutcome`. Capture is daemon-side and generic (no per-agent code); the harness only marks the run's boundaries:
+**Run-trace lifecycle (the harness brackets every run).** The canonical packaged Node harness (`car-runtime/agent-loop`, imported by agents from the create-car-agent skill) wraps each `runAgent` invocation in a **run** so CarHost can trace it end-to-end — the intent it was given, every turn's prompt/CLI-outcome/verifier-verdict, and the final `AgentOutcome`. Capture is daemon-side and generic (no per-agent code); the harness only marks the run's boundaries:
 
 - **Open.** Before the first proposal, the harness calls `rt.runsStart(JSON.stringify({ intent, agent_id, agent_name, outcome_description }))` and **awaits** the ack to obtain `{ run_id }`. The daemon mints a durable `run_id` and tags it as the session's current run *before replying*, so the per-turn recorder reads the right id. `intent` is the goal the agent was given; `agent_id` resolves from `CAR_AGENT_ID` (injected by the supervisor) when supervised, else falls back to `config.agentName` for the unsupervised one-shot / `run_scenarios.py` path; `outcome_description` comes from `config.targetOutcome` when present, else `''`.
-- **Close.** After the terminal `AgentOutcome` is assembled and **before `runAgent` returns**, the harness calls `rt.runsComplete(JSON.stringify({ run_id, outcome }))` and awaits the ack (the connection may close right after), so a healthy run is never raced into `Incomplete`.
-- **Graceful degradation.** Both calls are wrapped in `try/catch` exactly like `registerAgentBasics` — a daemon **without** the `runs.*` methods (an older build) makes them throw, the harness swallows it, and the run proceeds unchanged. Neither call ever writes to stdout, so the **last** stdout line in `--json` mode stays the `AgentOutcome` JSON (`run_scenarios.py` depends on this contract).
+- **Close and return the key.** After the terminal `AgentOutcome` is assembled and **before `runAgent` returns**, the harness calls `rt.runsComplete(JSON.stringify({ run_id, outcome }))` and awaits the ack (the connection may close right after), then adds the acknowledged id as return-only `outcome.run_id`. This keeps the daemon's `car-ir` outcome wire shape unchanged while giving a host the key to pass directly to `runs.get_trace`.
+- **Graceful degradation.** Both calls are wrapped in `try/catch` exactly like `registerAgentBasics` — a daemon **without** the `runs.*` methods (an older build) makes them throw, the harness swallows it, and the run proceeds unchanged except for the additive `run_id: null`. Neither call ever writes to stdout, so the **last** stdout line in `--json` mode stays the `AgentOutcome` JSON (`run_scenarios.py` depends on this contract).
 - **One run per `runAgent`.** In `--serve` mode each iteration is its own run on its own fresh `CarRuntime`/connection — its own `runsStart`/`runsComplete` bracket. Two sequential standing-goal runs produce two distinct `run_id`s.
 
-This is a deliberate evolution of the canonical template, not a per-agent fork: edit it in the skill (`.claude/skills/create-car-agent/assets/templates/node/car-loop.mjs`), never in a generated `agent.mjs` — generated agents inherit it on their next harness sync. See `runsStart` / `runsComplete` in `car-ffi-napi/npm/index.d.ts` for the exact request/response shapes.
+This is a deliberate evolution of the packaged helper, not a per-agent fork: edit `car-rs/crates/car-ffi-napi/npm/agent-loop.js`, never a generated `agent.mjs` — generated agents import the package implementation. See `runsStart` / `runsComplete` in `car-ffi-napi/npm/index.d.ts` for the exact request/response shapes.
 
 ### Anchor 3 — The four safety layers (deny wins, first-Deny short-circuits)
 
@@ -361,9 +361,11 @@ caller's shell environment; its JSON `agents` block identifies that provenance
 as `source: "cli-environment"`. If either registry is unreadable or malformed,
 the `agents` section is unavailable instead of reporting a misleading zero.
 
-The complete description remains the build
-request used to generate the agent's identity, standing goal, and scenarios;
-long descriptions only shorten the filesystem-safe project id.
+The complete description remains the build request used to generate the agent's
+identity, standing goal, and scenarios. The project id uses only lowercase ASCII
+letters, digits, and hyphens. It stays at or below 64 characters; longer
+descriptions retain a readable prefix plus a 16-hex-character digest without
+shortening the build request.
 
 The managed project's `agent.json` and `scenarios.json` are versioned build
 output committed to that project's `main` branch. Approval separately registers
@@ -371,7 +373,12 @@ the built spec in the daemon's active declarative-agent registry,
 `$CAR_DECLAGENTS_PATH`, `$CAR_HOME/declagents.json`, or `~/.car/declagents.json`.
 The daemon runs the registry copy: editing the project `agent.json` alone does
 not change the active agent. Rebuild and approve the project again to register
-those edits.
+those edits. Agent Builder registrations keep the selected template and all
+seven guided answers in the spec's `builder_draft`. An edit creates its managed
+project with `existing_agent_id`; approval then replaces that exact registry id
+instead of deriving a new one from the project slug. The prior registered spec
+is retained one level deep as `previous`, so a host can offer one-step revert
+without maintaining a second history store.
 
 
 | Agent kind | Durable definition | Runtime output | Locate it |
@@ -570,11 +577,10 @@ rt.register_policy("no_rm", "deny_tool_param",
 
 See `examples/python/hello_car.py` and `examples/python/agent_with_tools.py`.
 
-Air-gapped / no-PyPI wheel install — wheel filenames carry the version, so there is **no** version-independent "latest" wheel URL. Substitute the release version:
+Air-gapped / no-PyPI wheel install — wheel filenames carry the version, so there is **no** version-independent "latest" wheel URL. Download the matching wheel from the [latest public release](https://github.com/Parslee-ai/car-releases/releases/latest), copy it to the target machine, then install the local file:
 
 ```bash
-VERSION=0.15.0
-pip install "https://github.com/Parslee-ai/car-releases/releases/download/v${VERSION}/car_runtime-${VERSION}-cp39-abi3-macosx_15_0_arm64.whl"
+pip install ./car_runtime-*-cp39-abi3-macosx_15_0_arm64.whl
 ```
 
 Available wheels: `…macosx_15_0_arm64.whl` (Apple Silicon 15+), `…manylinux_2_28_x86_64.whl` (Linux x64), `…win_amd64.whl` (Windows x64). **Linux aarch64 has no wheel** — use the platform tarball instead.
@@ -3700,7 +3706,7 @@ Build a `ModelSchema` JSON with a `remote_api` source, then register it:
   "context_length": 128000,
   "source": {
     "type": "remote_api",
-    "endpoint": "https://api.myco.com",
+    "endpoint": "https://api.example.com",
     "api_key_env": "MYCO_API_KEY",
     "protocol": "openai_compat"   // or anthropic | google | azure_open_ai | open_ai_responses
   }
@@ -4840,7 +4846,7 @@ The **stdio** binary exposes only CAR's stateless capabilities. Anything needing
 - **Exposed over stdio MCP:** graph-memory facts, skills, proposal verification (no execution), policy checks, four-layer context assembly.
 - **NOT exposed over MCP at all (use WebSocket):** proposal execution (tool callbacks), multi-agent (swarm/pipeline/supervisor), streaming inference, voice, browser, meeting capture.
 
-**The daemon's HTTP endpoint is the exception, and it is deliberate.** It adds `assistant_start` / `assistant_poll` / `assistant_cancel` (car#972 §6) — the flagship agent behind `car do`, driven through a **run handle** rather than a blocking call. That does not make the transport stateful: the `run_id` is application state the *client* carries between calls, like the opaque `resources/list` cursor, and `POST /mcp` still reads no session header. What it does mean is that "MCP is the stateless half of CAR" is now true of the stdio binary specifically, not of MCP as such.
+**The daemon's HTTP endpoint is the exception, and it is deliberate.** It adds `assistant_start` / `assistant_poll` / `assistant_cancel` (car#972 §6) — the flagship agent behind `car do`, driven through a **run handle** rather than a blocking call — plus peer tools. `initialize` mints an `MCP-Session-Id`; later requests use it to derive a distinct `mcp:<session-id>` sender, and long-lived sessions poll `peer_inbox`. The `run_id` remains separate application state the client carries between calls. "MCP is the stateless half of CAR" is true of the stdio binary, not the daemon endpoint.
 
 The split is one of *capability ownership*, not protocol taste: the daemon holds a live `Runtime`, an inference engine, and daemon state; `car-mcp-server` is `car-mcp` + `car-telemetry` and holds none of them. The tool list is per-`Server`, so the stdio binary never advertises a tool it could not run. Full contract in `docs/websocket-protocol.md`; the envelope is `docs/car-do-json.md`.
 
@@ -4850,7 +4856,7 @@ The split is one of *capability ownership*, not protocol taste: the daemon holds
 
 #### The exposed surface: 16 tools, 2 resource families, 1 prompt
 
-`tools/list` returns the **16 built-in tools** below, defined in `car-mcp/src/schemas.rs` and cached via `OnceLock`, **plus whatever the embedding transport registered** through `Server::register_tool`. The advertised set is per-`Server`, not per-process: the daemon holds a live `Runtime` and can therefore carry tools the stdio binary has no way to run and must not advertise, so the two transports legitimately differ. The stdio binary advertises exactly these 16; **the daemon advertises 19** — these plus `assistant_start`, `assistant_poll`, and `assistant_cancel`. The wire names are **underscored** (`memory_add_fact`, not `memory.add_fact`):
+`tools/list` returns the **16 built-in tools** below, defined in `car-mcp/src/schemas.rs` and cached via `OnceLock`, **plus whatever the embedding transport registered** through `Server::register_tool`. The advertised set is per-`Server`, not per-process: the daemon holds a live `Runtime` and can therefore carry tools the stdio binary has no way to run and must not advertise, so the two transports legitimately differ. The stdio binary advertises exactly these 16; the daemon adds its assistant, daemon-read, and peer tools, including `peer_list`, `peer_message`, and `peer_inbox`. The wire names are **underscored** (`memory_add_fact`, not `memory.add_fact`):
 
 | Tool | Hints | Required args | Optional args | Returns |
 |------|-------|---------------|---------------|---------|
@@ -4953,7 +4959,7 @@ json!({
 
 `completions` was introduced in the 2025-03-26 revision and is advertised to every client regardless of the revision it negotiated: capabilities are an unordered bag, a 2024-11-05 client ignores a key it does not recognize, and hosts probe `completion/complete` off this flag. Withholding it would make a method CAR actually serves undiscoverable.
 
-**`completion/complete`** (car#972 §4) answers argument autocompletion, and it is the one §4 item that needs no server-to-client push — a plain request/response, identical on stdio and on the daemon's stateless HTTP endpoint. Two `ref` shapes:
+**`completion/complete`** (car#972 §4) answers argument autocompletion, and it is the one §4 item that needs no server-to-client push — a plain request/response, identical on stdio and on the daemon HTTP endpoint. Two `ref` shapes:
 
 - `{"type":"ref/prompt","name":"car_context"}` with `argument.name = "mode"` completes `["full","fast"]` filtered by `argument.value` as a prefix. `argument.name = "query"` completes to nothing — it is arbitrary task text and there is no corpus to suggest from.
 - `{"type":"ref/resource","uri":"car://memory/fact/"}` prefix-matches `ref.uri` against the URIs `resources/list` would page over (both read the same enumeration, so a completed URI is always a readable one). CAR exposes no URI *templates* — `resources/templates/list` is not implemented — so "which existing URIs start with this" is the only meaningful reading.
@@ -5018,13 +5024,14 @@ tail -f ~/Library/Logs/Claude/mcp-server-car.log
 
 | Route | Behavior |
 |-------|----------|
-| `POST /mcp` | One JSON-RPC request → reply. A notification (no `id`) has no reply, so it returns `202 Accepted` with an empty body — don't parse it. The HTTP layer never invents protocol semantics — everything routes through `Server::handle`. |
-| `GET /mcp` | **`405 Method Not Allowed`** (with `Allow: POST`) — the streamable-HTTP spec's branch for a server that offers no SSE stream. The push channel was declined outright (car#972 Track B): the SSE stream, session registry, and `push_to_session` primitive that used to live here were removed — they had zero production callers. |
+| `POST /mcp` | One JSON-RPC request → reply. A notification (no `id`) has no reply, so it returns `202 Accepted` with an empty body — don't parse it. A successful `initialize` returns `MCP-Session-Id`; later peer-tool calls require that header. |
+| `DELETE /mcp` | With `MCP-Session-Id`, closes that peer address and discards its unread inbox. Unknown sessions return 404. |
+| `GET /mcp` | **`405 Method Not Allowed`** (with `Allow: POST, DELETE`) — the streamable-HTTP spec's branch for a server that offers no SSE stream. The old SSE sink registry and `push_to_session` primitive remain removed; the identity/inbox record is polling-only. |
 | `GET /mcp/health` | Liveness: `{"status":"ok","protocol_version":"2025-06-18", server_name}` (interpolates `car_mcp::PROTOCOL_VERSION`). Not `Origin`-guarded and not `MCP-Protocol-Version`-guarded — no side effect, no secrets, the uptime `curl` below has to keep working, and it is how a client whose version was rejected finds out what the server speaks. |
 
-**`Origin` validation** guards `POST /mcp` (DNS-rebinding protection; `GET /mcp` is a constant `405` with no side effect, so it needs no guard). Absent `Origin` → allowed, which is what every real MCP client sends; an `Origin` naming loopback (`localhost`, `127.0.0.0/8`, `::1`, any port, `http` or `https`) → allowed; anything else, including the literal `null`, → `403 {"error":"origin not allowed"}`. The rule does **not** widen for a non-loopback `--mcp-bind` — a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin`, and wider exposure makes the guard matter more. Put a reverse proxy with its own CORS policy in front if you need browser traffic from another origin.
+**`Origin` validation** guards `POST /mcp` and `DELETE /mcp` (DNS-rebinding protection; `GET /mcp` is a constant `405` with no side effect, so it needs no guard). Absent `Origin` → allowed, which is what every real MCP client sends; an `Origin` naming loopback (`localhost`, `127.0.0.0/8`, `::1`, any port, `http` or `https`) → allowed; anything else, including the literal `null`, → `403 {"error":"origin not allowed"}`. The rule does **not** widen for a non-loopback `--mcp-bind` — a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin`, and wider exposure makes the guard matter more. Put a reverse proxy with its own CORS policy in front if you need browser traffic from another origin.
 
-**`MCP-Protocol-Version` validation** guards `POST /mcp` too, with the same absent-permissive, present-strict shape. Absent → allowed — the 2025-06-18 delta on this surface is additive result keys an older client ignores, so a silent client is answered correctly whichever revision it negotiated; a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05` or `2025-06-18` today) → allowed; anything else, including an empty or non-UTF-8 value, → `400 {"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18"]}`. The `400` carries the supported list because a client that guessed wrong has no other way to learn what to send. A foreign value is rejected rather than silently downshifted: the header states which dialect the client will read the reply in, so answering in a revision it never agreed to would mean something different than intended. Rejection happens before the JSON-RPC parse, so no tool runs.
+**`MCP-Protocol-Version` validation** guards `POST /mcp` and `DELETE /mcp` too, with the same absent-permissive, present-strict shape. Absent → allowed — the 2025-06-18 delta on this surface is additive result keys an older client ignores, so a silent client is answered correctly whichever revision it negotiated; a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05` or `2025-06-18` today) → allowed; anything else, including an empty or non-UTF-8 value, → `400 {"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18"]}`. The `400` carries the supported list because a client that guessed wrong has no other way to learn what to send. A foreign value is rejected rather than silently downshifted: the header states which dialect the client will read the reply in, so answering in a revision it never agreed to would mean something different than intended. Rejection happens before the JSON-RPC parse, so no tool runs.
 
 It binds **`127.0.0.1:9102` by default** (CLI flag `--mcp-bind host:port`, env `CAR_MCP_BIND`; literal `disabled` opts out):
 
@@ -5086,7 +5093,11 @@ Then query: `{"name":"memory_query","arguments":{"query":"color","k":5}}`.
 
 ```rust
 let mcp_server = Arc::new(car_mcp::Server::with_memgine(shared_memgine.clone()));
-match car_server_core::mcp::start_mcp(mcp_server, mcp_addr).await {
+match car_server_core::mcp::start_mcp_with_peer_sessions(
+    mcp_server,
+    mcp_addr,
+    server_state.clone(),
+).await {
     Ok((bound, handle)) => {
         let mcp_url = format!("http://{}/mcp", bound);
         let _ = server_state.install_mcp_url(mcp_url.clone());
@@ -5095,7 +5106,7 @@ match car_server_core::mcp::start_mcp(mcp_server, mcp_addr).await {
 }
 ```
 
-`start_mcp(server, addr) -> Result<(SocketAddr, JoinHandle<()>), String>` returns the *bound* address (may differ from requested when port `0` is supplied) and the axum task handle. Bind failure is reported synchronously so startup can log and continue without MCP. It used to return a third element — the SSE session registry a handler could `push_to_session` on — removed with the car#972 Track B decline: it had no production callers and existed only for the declined push features.
+`start_mcp_with_peer_sessions(server, addr, server_state) -> Result<(SocketAddr, JoinHandle<()>), String>` returns the *bound* address (may differ from requested when port `0` is supplied) and the axum task handle. `start_mcp(server, addr)` remains the sessionless embedder/test form. Bind failure is reported synchronously so startup can log and continue without MCP. The former SSE sink registry remains removed; the daemon state supplies only peer identities and polled inboxes.
 
 > **Behavioral notes.** Malformed JSON returns `-32700` with **HTTP 200** (not 4xx), mirroring stdio. Notifications return **`202 Accepted` with an empty body**. There is **no server→client push**: `listChanged`, `resources/subscribe`, and `logging/setLevel` are declined (car#972 Track B) — the capabilities advertise them false-or-absent and the subscribe/setLevel methods answer `-32601`.
 
@@ -5301,7 +5312,7 @@ default_inference_complexity = "low"
 kind = "external_process"
 # command = "/usr/local/bin/contrib-template"
 # sha256 = "abc123…"
-# binary_url = "https://github.com/parslee/contrib-template/releases/download/v0.1.0/contrib-template-darwin-arm64"
+# binary_url = "https://github.com/yourname/contrib-template/releases/download/v0.1.0/contrib-template-darwin-arm64"
 command = "/absolute/path/to/contrib-template/agent.sh"
 args = []
 env = { CONTRIB_TEMPLATE_MODE = "demo" }
@@ -6026,7 +6037,7 @@ An `A2uiEnvelope` has `version` (default `"v0.9"`) plus **exactly one** of:
 
 #### The 19-component `BASIC_CATALOG_V0_9`
 
-The only supported catalog id is `https://a2ui.org/specification/v0_9/basic_catalog.json`.
+The only supported catalog id is `https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json`.
 
 - **Layout:** Column, Row, Card, Divider, Spacer, Tabs, Modal, List
 - **Content:** Text (variant `title`/`subtitle`/`body`/`caption`), Image, Icon, Video, AudioPlayer, Chart, File, Badge
@@ -7849,7 +7860,7 @@ try p.run()
 **macOS host gotchas:**
 - **Port already in use → no supervision.** If `9100` is occupied (e.g. a manual `cargo run -p car-server`), `BundledDaemon` skips the spawn; `currentAuthToken` is `nil` and clients fall back to the on-disk token of that external daemon.
 - **Force-kill leaks an orphan.** `applicationWillTerminate` (Cmd+Q) fires `stop()`, but a force-kill of `CarHost.app` does not — an orphan `car-server` can survive. The next launch's port-in-use guard then skips re-spawning against the orphan.
-- **Legacy launchd flow conflicts.** The old `car-server install` launchd path (writing `~/Library/LaunchAgents/ai.parslee.car-server.plist`) is incompatible with host supervision — two supervisors fighting over `9100` mint mismatched tokens. The host logs a remediation message when the plist is detected and still spawns its own daemon if the port is free.
+- **Legacy launchd supervisors are retired on launch.** Older installs can leave `~/Library/LaunchAgents/ai.parslee.car-server.plist` or `ai.parslee.car.daemon.plist` competing with CarHost for `9100`. When a loaded legacy job is positively identified as supervising `car-server` on CarHost's port, the host boots it out, renames the plist with a `.retired-<UTC stamp>` suffix, and starts the bundled daemon with stderr capture. An unrelated listener is not killed: the menu and `car-server.stderr.log` identify it as a foreign, unsupervised daemon.
 - **Finder/Dock/Spotlight launch blinds CLI detection.** A `.app` launched from Finder inherits launchd's minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), hiding Homebrew/NVM/`~/.local/bin` CLIs from `car-external-agents` detection. `BundledDaemon.augmentedEnvironment()` prepends existing user-install dirs to restore detection.
 
 ### Building the host apps

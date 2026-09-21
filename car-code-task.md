@@ -79,14 +79,16 @@ car code-task \
 
 ### What governs the model's calls
 
-Every tool call the coder makes — model-proposed **and** outcome-contract check
-— passes through an inspector chain before dispatch. First Deny wins. Two
-sources feed it.
+Every model-proposed tool call and every outcome-contract check passes through
+an inspector chain before dispatch. First Deny wins. Two sources feed it.
 
-**CAR's built-in guardrails**, always on and not configurable: deny git-remote
-mutation, forge publication, history rewrite, privilege escalation, credential
-access, environment repair, destructive commands outside the worktree, and path
-escape. `coder::policy::coder_inspector_chain` is the list.
+**CAR's built-in guardrails:** deny git-remote mutation, forge publication,
+history rewrite, privilege escalation, credential access, environment repair,
+destructive commands outside the worktree, and path escape.
+`coder::policy::coder_inspector_chain` is the model-facing list. All are always
+on for the model. Contract checks keep the same list by default; the explicit
+`allow_credentials` contract field removes only credential access from the
+check chain, as described below.
 
 **The operator's declarative rules**, merged from two directories in this order:
 
@@ -128,13 +130,23 @@ first-Deny-wins decides which reason the model is shown and a built-in's reason
 
 ### What the model is told about the repository
 
-Beyond the tools, each session's system prompt carries what the repository says
-about how to work in it — the rules that get a diff rejected but that no outcome
-contract can express.
+Repository conversations, initial and revised check planning, and native execution
+load the same repository context. Reopening a saved conversation refreshes this
+context while preserving its prior messages. Repository guidance does not expand
+tool permissions. These rules can make a diff unacceptable even when checks pass.
 
-- **Root instructions** — `CLAUDE.md`, else `AGENTS.md`, at the worktree root,
-  read whole up to 64,000 bytes. Truncation is announced in the text rather than
-  silent.
+Constraints distilled from a conversation are saved with new tasks and rechecked
+when checks are revised. If the drafting model leaves one without a check after
+the repair attempts, the proposal discloses it for manual review. This coverage
+assessment uses a model; it is not proof that every constraint is enforced.
+Older saved tasks without recorded constraints retain their previous behavior.
+
+- **Root instructions** — both `AGENTS.md` and `CLAUDE.md` at the worktree
+  root, labelled by source. Both apply; display order does not assign precedence.
+  Explicit delegation between files is followed, and unresolved conflicts require
+  clarification before the affected action. Their combined content budget is
+  64,000 bytes, shared so one large file cannot hide the other. Truncation names
+  the file whose remaining rules must be read before editing.
 - **Directory-scoped instructions** — nested `CLAUDE.md` / `AGENTS.md` files,
   each labelled with the subtree it governs. Where a scoped rule is stricter
   than a root one, the prompt states that the scoped rule wins inside that
@@ -209,9 +221,8 @@ provisioning a scoped read-only token for the coder shell, or moving CI
 observation into host code the way publication already is — both larger changes
 than this one, and neither is done.
 
-**What a contract check may do differs from the model's shell in one narrow
-way, and the two limits it carries are worth stating exactly, because both
-surprise in opposite directions.**
+**A contract check has its own credential policy, while the model's shell
+always keeps the full deny.**
 
 *The environment.* `run_check_shell` passes `ForgeCredentials::Inherit` where
 `run_shell` passes `Withhold`. `Withhold` removes four variables —
@@ -221,8 +232,7 @@ So every other variable, `$DATABASE_URL` and `$STAGING_API_TOKEN` alike, is
 inherited by *both* paths; what a check additionally keeps is the forge
 credential, which is the publication route the model is denied.
 
-*The inspector chain.* This does not differ at all. `run_check_shell` passes the
-same `self.inspectors` as `run_shell`, so a check goes through
+*The inspector chain.* By default a check and the model's shell both go through
 `DenyCredentialAccess`, which matches substrings in the **command text**:
 
 - `_key`, `_token`, `_secret`, `_password`, `openai_`, `anthropic_`,
@@ -237,27 +247,39 @@ same `self.inspectors` as `run_shell`, so a check goes through
   (case-folded)
 - dumping the environment with `printenv`, a bare `env`, or a bare `set`
 
-**Read that as hardening, not as a boundary** — the same distinction the rest of
-this section draws, and `coder::policy`'s own module doc draws. It is a
-substring matcher over a string that is then handed to `/bin/sh`. Two
-consequences follow, and a contract author needs both:
+A caller-supplied or user-edited contract may opt in at contract scope:
 
-- **The obvious authenticated check is refused.** `curl -H "Authorization:
-  Bearer $STAGING_API_TOKEN" …` is denied before it starts on `_token`, as is
-  `cat ~/.aws/credentials` on `/.aws`. Write that check and it fails on policy,
-  not on the system under test.
-- **A differently-spelled one is not.** `$TOKEN`, `$APIKEY` and `$DBURL` carry
-  no marker, and `aws sts get-caller-identity` or `kubectl get pods` name no
-  path — those pass the chain and then read their own config from the inherited
-  environment. So the denial is not a guarantee that a check is offline.
+```json
+{
+  "description": "staging emits the repaired telemetry",
+  "allow_credentials": true,
+  "checks": [
+    { "name": "telemetry", "command": "az monitor app-insights query …" }
+  ]
+}
+```
 
-The chain is unchanged from the model's on purpose: a contract is model-derived
-unless `--contract-file` supplies one, so relaxing it for checks would relax it
-for text the model wrote. Whether a caller-supplied contract should instead
-carry the caller's authority is open in
-[car#1066](https://github.com/Parslee-ai/car/issues/1066); until it is decided,
-the practical advice is to write checks that need no credential, and not to
-rely on the matcher to enforce that.
+`allow_credentials` defaults to `false`. When true, every check in that contract
+uses a frozen twin of the session's inspector chain with only
+`DenyCredentialAccess` removed. Forge publication, history rewrite, privilege
+escalation, destructive commands outside the worktree, path escape, environment
+repair, and every machine/project `.car/policies` rule remain in the same order.
+The model's own `shell` always uses the full chain, regardless of the contract.
+Model-derived contracts are forced back to `false`, so an unattended derivation
+(including self-heal) cannot grant itself this authority; supply a contract with
+`--contract-file`, or edit the proposed daemon contract before confirming it.
+
+Every `CheckResult` records `credentials_allowed`, including baseline results
+and `check_completed` / `contract_evaluated` events. This is the effective
+policy used for that execution, not an inference from the current contract.
+
+Without the opt-in, read `DenyCredentialAccess` as hardening rather than a
+boundary. It is a substring matcher over text handed to `/bin/sh`: the obvious
+`$STAGING_API_TOKEN` or `~/.aws/credentials` spelling is refused, while
+`$TOKEN`, `$APIKEY`, `$DBURL`, `aws sts get-caller-identity`, or `kubectl get
+pods` carries no built-in marker and may reach inherited credentials. The opt-in
+makes the decision explicit and reviewable; the default matcher was never proof
+that a check was offline.
 
 ### What a contract can and cannot assert
 
@@ -289,6 +311,7 @@ output against the named capture — the claim is exactly one of:
 ```jsonc
 {
   "description": "orphan cleanup works and the control tenant is untouched",
+  "allow_credentials": true,
   "checks": [
     { "name": "orphan_rows", "command": "psql -tAc 'select count(*) from orphans'",
       "baseline": true },
@@ -314,9 +337,8 @@ itself the differentials are evaluated against the values captured moments
 before, which gives the red-green story the honest reading: `changed` and a
 moving `delta_within` are red before any work, while `unchanged` — the control
 group — is green and must stay green. The external subject falls out of the
-command being arbitrary, subject to the same policy chain as every check
-(car#1066 above) — what was missing was the before/after structure, not a
-transport.
+command being arbitrary, subject to the contract's effective policy chain —
+what was missing was the before/after structure, not a transport.
 
 What is still missing is an **evaluation point past delivery**. Every
 evaluation is on this side of it: once against the unmodified worktree
@@ -350,7 +372,7 @@ rather than answered.
 |---|---|
 | `--repo <PATH>` | Repository to work in. Resolved to its top level; must be a git repo. |
 | `--intent-file <PATH>` / `--intent <STRING>` | The task. Exactly one. |
-| `--contract-file <PATH>` | JSON `OutcomeContract`. **When present, derivation does not run.** Checks are bound by two limits the contract does not choose: each check's command is capped at `--max-check-timeout-secs`, and it passes `DenyCredentialAccess`, so a command naming a credential in one of the built-in spellings is refused. See [The contract](#the-contract). |
+| `--contract-file <PATH>` | JSON `OutcomeContract`. **When present, derivation does not run.** `allow_credentials` defaults to `false`; set it to `true` only when the runtime-owned checks need credentials. The opt-in removes `DenyCredentialAccess` for those checks only and is recorded in every result. Each check remains capped at `--max-check-timeout-secs`. See [The contract](#the-contract). |
 | `--target-branch <NAME>` | Delivery branch, stable across sessions. Required for `--deliver pr`. |
 | `--pr-base <NAME>` | PR base. Defaults to the repo's default branch. |
 | `--body-prefix <TEXT>` | Trusted caller-supplied text placed verbatim at the start of the generated PR body. The model cannot edit it. Intended for stable orchestrator markers such as `<!-- car-selfheal:key=… -->`; do not pass untrusted model output. |
@@ -651,21 +673,20 @@ JSON and compares the addressed value in the runtime; for example,
 merely text that resembles it.
 
 There is **no maximum check count** — a 95-check contract is legal, and every
-check runs and is reported. Two limits do bind, and neither is expressed in the
-contract, so both are stated here:
+check runs and is reported. Two controls do bind:
 
 - **Duration.** `timeout_secs` is capped at `--max-check-timeout-secs` (600 by
   default), so the 600 in the example above is also the largest value that has
   any effect until that flag is raised. This ceiling **is** caller-set: raise it
   for a gate that legitimately runs longer than ten minutes.
-- **Credentials.** Every `command` passes the built-in inspector chain, so a
-  check naming a credential-looking environment variable, or a credential
-  directory, is refused before it runs. This ceiling is **not** caller-set. It
-  is also a substring matcher rather than a boundary: `$TOKEN` carries no
-  marker and `aws sts get-caller-identity` names no path, so a differently
-  spelled check reaches the shell with the environment intact. Read the
-  refusals as hardening, not as a guarantee the check is offline — both halves
-  are set out under
+- **Credentials.** By default, a check naming a credential-looking environment
+  variable or directory is refused before it runs. A caller-supplied or
+  user-edited contract can set `allow_credentials: true`; that removes only
+  `DenyCredentialAccess` from the check chain and records the choice in each
+  result. The model's shell remains denied. Without the opt-in, the matcher is
+  hardening rather than a boundary: `$TOKEN` carries no marker and `aws sts
+  get-caller-identity` names no path, so a differently spelled check can still
+  reach inherited credentials. See
   [The property that matters](#the-property-that-matters).
 
 Before the loop starts, the contract is evaluated once against the *unmodified*

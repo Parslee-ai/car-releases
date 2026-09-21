@@ -54,6 +54,8 @@ export type AgentOutcomeStatus =
   | 'success' | 'partial_success' | 'done' | 'give_up' | 'timeout' | 'failure';
 
 export interface AgentOutcome {
+  /** Durable trace key, or null when runs.start was unavailable/unacknowledged. */
+  run_id: string | null;
   status: AgentOutcomeStatus;
   summary: string;
   evidence: Array<{ kind: string; description: string; data: unknown }>;
@@ -85,6 +87,17 @@ export interface AgentLoopConfig {
 
 export interface AgentLoopOptions {
   maxTurns?: number;
+}
+
+export interface AgentChatTurnOptions {
+  /** Return `{ text, run_id }` instead of the backward-compatible bare text. */
+  includeRunId?: boolean;
+}
+
+export interface AgentChatTurnResult {
+  text: string;
+  /** Durable trace key, or null when runs.start was unavailable/unacknowledged. */
+  run_id: string | null;
 }
 
 /** Persistent runtime instance with state, memory, tools, and policies. */
@@ -145,6 +158,14 @@ export interface CoderStartOptions {
    * ungrounded run.
    */
   discussionId?: string | undefined | null;
+  /**
+   * Commit-ish to start the worktree at instead of the repository's `HEAD` —
+   * e.g. another developer's published branch. The daemon resolves it to a
+   * full SHA (echoed as `base` in the reply) and fails the start on an unknown
+   * revision, before anything is provisioned. Not valid with a managed
+   * `project`.
+   */
+  base?: string | undefined | null;
 }
 
 export interface DaemonRpcError extends Error {
@@ -714,6 +735,24 @@ export class CarRuntime {
   /** Generated daemon wrapper for `multi.vote` (operator). */
   multiVote(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `multiplayer.get` (operator). */
+  multiplayerGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multiplayer.list` (operator). */
+  multiplayerList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multiplayer.merge_check` (operator). */
+  multiplayerMergeCheck(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multiplayer.publish` (operator). */
+  multiplayerPublish(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multiplayer.start_stage` (operator). */
+  multiplayerStartStage(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `multiplayer.submit_stage` (operator). */
+  multiplayerSubmitStage(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `nlp.extract_entities` (operator). */
   nlpExtractEntities(paramsJson: string): Promise<string>;
 
@@ -806,6 +845,9 @@ export class CarRuntime {
 
   /** Generated daemon wrapper for `runs.unsubscribe` (operator). */
   runsUnsubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `schedule.suggest` (operator). */
+  scheduleSuggest(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `scheduler.create` (operator). */
   schedulerCreate(paramsJson: string): Promise<string>;
@@ -1168,6 +1210,16 @@ export class CarRuntime {
    * byte-identical and can be diffed.
    */
   listTools(): Promise<string>;
+
+  /**
+   * Return the exact machine-readable wire schema embedded in the daemon
+   * release, its SHA-256 digest, and the release version, as JSON:
+   * `{ schema, digest, digest_algorithm, car_version }`. The version is read
+   * at serve time and is not part of the digested document. Within `schema`,
+   * `coverage.rpc_results` and `coverage.journal_event_payloads` partition the
+   * source-derived inventories into exact `covered` and `uncovered` lists.
+   */
+  serverSchema(): Promise<string>;
 
   /**
    * Remove a tool by name. Resolves to how many were removed — `0` means
@@ -2134,7 +2186,8 @@ export class CarRuntime {
   /**
    * `assistant.identity.get` — the name the flagship assistant answers to.
    *
-   * Returns `{ name, spellings, aliases, user_name, brand, updated_at_unix }`.
+   * Returns `{ name, spellings, aliases, user_name, role, focus_areas, apps,
+   * brand, updated_at_unix }`.
    * `aliases` is the derived match set (name and spellings crossed with
    * "hey"/"ok"/…), longest first — hosts match wake phrases against it locally
    * so their matcher works before the daemon answers.
@@ -2152,10 +2205,10 @@ export class CarRuntime {
    * `assistant.identity.set` — name the assistant. Host/local-auth gated on the
    * daemon, because a rename repoints the voice wake word.
    *
-   * `requestJson` is `{ name?, spellings?, user_name? }`. Every field is
-   * optional and unset fields are preserved, so a caller that only knows about
-   * the name cannot wipe spellings another surface wrote. Pass
-   * `user_name: null` to clear it.
+   * `requestJson` is `{ name?, spellings?, user_name?, role?, focus_areas?,
+   * apps? }`. Every field is optional and unset fields are preserved. The focus
+   * vocabulary is calendar/email/files/browser/research/writing/other. Pass
+   * `null` to clear any profile field.
    *
    * Returns the updated identity JSON, in the same shape as
    * `assistantIdentityGet`.
@@ -2246,10 +2299,28 @@ export class CarRuntime {
    *
    * Start a session: provisions an isolated git worktree of `repo` and
    * derives a verifiable outcome contract from `intent`. `engine` is
-   * `"auto" | "native" | "external[:agent_id]"` (default auto). Returns
-   * `{session_id, state, engine, worktree, contract, model}` JSON, where
-   * `model` is the effective native-loop pin (per-session `model`, else
-   * `~/.car/coder.toml`, else `null` = adaptive routing). Set
+   * `"auto" | "native" | "external[:agent_id]"` (default auto). Returns, in
+   * this order, `{session_id, state, engine, requested_engine, engine_ran,
+   * worktree, base, contract, baseline, baseline_gates_nothing, model,
+   * browser, journal_path}` JSON. `base` is the commit the worktree started
+   * at when `options.base` named one, else `null` (the repository's `HEAD`).
+   *
+   * `engine` is the RESOLVED choice; `requested_engine` is what the caller
+   * ASKED for, which resolution can differ from (`"auto"` that picks
+   * claude-code and an explicit `"external:claude-code"` both leave `engine`
+   * reading `"external:claude-code"`). `requested_engine` is ALWAYS recorded
+   * when a session starts on this version — JSON `null` only on a session
+   * persisted by a daemon older than the field. `engine_ran` is the engine
+   * that produced the outcome (`"native"` after an external engine fell
+   * back); it is JSON `null` until one has, so always `null` in THIS reply,
+   * and `null` on an older session too.
+   *
+   * `baseline` is the contract's per-check red-green baseline against the
+   * untouched worktree and `baseline_gates_nothing` says every check already
+   * passed; `model` is the effective native-loop pin (per-session `model`,
+   * else `~/.car/coder.toml`, else `null` = adaptive routing); `browser`
+   * echoes the effective opt-in; `journal_path` is the `car_eventlog` JSONL
+   * this session journals to. Set
    * `options.browser` to opt into the assistant's browser tool surface for this
    * session; it remains absent by default and policy-gated when enabled.
    */
@@ -2268,24 +2339,60 @@ export class CarRuntime {
     contractJson?: string | undefined | null,
   ): Promise<string>;
 
-  /** List coder sessions (live and persisted), newest first. */
+  /**
+   * List coder sessions (live and persisted), newest first. Each row is the
+   * same summary `coderWatch` returns, so it carries `requested_engine` (what
+   * the caller asked for — always recorded on this version, JSON `null` only
+   * for a session persisted by an older daemon) and `engine_ran` (the engine
+   * that produced the outcome, `"native"` after an external engine fell back
+   * — JSON `null` while the session is still running, or if it never reached
+   * an engine, and on older sessions).
+   */
   coderList(): Promise<string>;
 
-  /** Full session detail, including contract and check results. */
+  /**
+   * Full session detail, including contract and check results. Carries the
+   * same summary row as `coderWatch`, so once a session ends `engine_ran`
+   * names the engine that actually produced the outcome — `"native"` when an
+   * external engine fell back — beside the `requested_engine` that was asked
+   * for. This is where `car code` reads its end-of-run engine line.
+   *
+   * Both are nullable (JSON `null`): `requested_engine` is always recorded
+   * when a session starts on this version, so `null` there means a session
+   * persisted by an older daemon; `engine_ran` is `null` until an engine has
+   * produced the outcome — a run still in progress, or one that never reached
+   * an engine — and on older sessions.
+   */
   coderGet(sessionId: string): Promise<string>;
 
   /**
-   * Answer a `user_input_requested` event (reserved — neither engine
-   * requests mid-session input yet).
+   * Answer a `user_input_requested` event, or queue native steering with steer=true.
    */
   coderRespond(sessionId: string, text: string): Promise<string>;
+  coderRespond(sessionId: string, text: string, steer: boolean | null): Promise<string>;
 
   /**
    * Approve (publish the `car/coder/<id>` branch in the repo) or deny
    * (abandon) a session awaiting merge approval. Agent-project approvals
    * return additive `agent_id` and daemon-derived `registry_path` fields.
+   *
+   * A session waiting on a no-change finding (`needs_you: "finding"`) is
+   * accepted only with `acceptFinding: true`: nothing is published and the
+   * reply is `{state: "reported", branch: null}`. A plain `approve: true` on
+   * a finding, or `acceptFinding` on a diff, is refused.
    */
-  coderApproveMerge(sessionId: string, approve: boolean): Promise<string>;
+  coderApproveMerge(
+    sessionId: string,
+    approve: boolean,
+    acceptFinding?: boolean | undefined | null,
+  ): Promise<string>;
+  /** Apply to the checkout without a branch, or explicitly publish a branch. */
+  coderApproveMerge(
+    sessionId: string,
+    approve: boolean,
+    acceptFinding: boolean | undefined | null,
+    delivery: 'checkout' | 'branch',
+  ): Promise<string>;
 
   /**
    * Cancel a session: stop the loop, abandon, remove the worktree. Returns
@@ -2307,7 +2414,13 @@ export class CarRuntime {
    *
    * Each row carries the full summary: the pre-existing
    * `{session_id, state, intent, repo, engine, iterations, updated_at, live,
-   * error}` plus `needs_you` (`"contract" | "question" | "approval" | "auth" |
+   * error}` plus `requested_engine` (the engine the caller asked for; `engine`
+   * is the RESOLVED choice — always recorded when a session starts on this
+   * version, so JSON `null` there means a session persisted by an older
+   * daemon) and `engine_ran` (the engine that produced the outcome, `"native"`
+   * after an external engine fell back — JSON `null` until one has, i.e. a run
+   * still in progress or one that never reached an engine, and on older
+   * sessions) — plus `needs_you` (`"contract" | "question" | "approval" | "auth" |
    * null`), `needs_you_label` (the daemon-owned wording, so every client says
    * the same thing), `question_prompt`, `auth_message`, `auth_wait_secs`,
    * `failure_kind` (`"budget_exhausted" | "auth_required" | "configuration" |
@@ -2347,6 +2460,8 @@ export class CarRuntime {
    * `{discussion_id, repo, repo_summary}`; a non-git path is a clear error.
    */
   coderDiscussStart(repo: string): Promise<string>;
+  coderDiscussStart(repo: string, resumeId: string): Promise<string>;
+  coderDiscussStart(repo: string, resumeId: string | null | undefined, model: string | null): Promise<string>;
 
   /**
    * Send one operator message. Returns `{ok, seq}` where `seq` is the first
@@ -2379,9 +2494,12 @@ export class CarRuntime {
    *
    * Create (or load) a CAR-managed git-backed project under
    * `~/.car/projects/`. `kind` is `"app"` (code) or `"agent"` (an in-daemon
-   * declarative agent). Returns the `CoderProject` JSON.
+   * declarative agent). For an edit, `existingAgentId` identifies the agent to
+   * replace and `builderDraftJson` contains the seven answers plus
+   * `template_id`. Returns the `CoderProject` JSON.
    */
   projectCreate(name: string, kind?: string | undefined | null): Promise<string>;
+  projectCreate(name: string, kind?: string | undefined | null, existingAgentId?: string | undefined | null, builderDraftJson?: string | undefined | null): Promise<string>;
   /** List managed projects, newest first. */
   projectList(): Promise<string>;
   /** One project's metadata by slug. */
@@ -2883,7 +3001,8 @@ export class CarRuntime {
   /**
    * Read message rows, newest first. `queryJson` is a `MessageQuery`:
    * `{account_ids?: string[], mailbox?: string | null, limit?: number,
-   * since?: string, include_body?: boolean}`. Every field defaults, and
+   * since?: string, include_body?: boolean}`. `limit` may not exceed 500.
+   * Every field defaults, and
    * `mailbox: null` means INBOX — so `"{}"` reproduces the pre-existing
    * INBOX-only read.
    *
@@ -2896,7 +3015,10 @@ export class CarRuntime {
    * each row carries a stable opaque `id` accepted by `mailMessageBody`, and
    * a `mailbox` holding the mailbox as the backend RESOLVED it (a query for
    * `"travel"` comes back stamped `"Travel/2026"`), so rows match
-   * `mailMailboxes` output. An unresolvable mailbox or an unmatched
+   * `mailMailboxes` output. Mail.app rows also carry `message_id`, the RFC
+   * 5322 Message-ID header exactly as Mail exposes it; it is `null` if Mail
+   * does not expose the header and on Microsoft Graph rows. An unresolvable
+   * mailbox or an unmatched
    * `account_ids` returns `available: false` with a reason, never an empty
    * list.
    */
@@ -2924,7 +3046,8 @@ export class CarRuntime {
   /**
    * Read Messages.app rows newest first. `queryJson` is
    * `{chat_ids?: string[], since?: string, limit?: number,
-   * include_body?: boolean}`. Returns `{available, backend, reason?, messages}`;
+   * include_body?: boolean}`. `limit` may not exceed 500. Returns
+   * `{available, backend, reason?, messages}`;
    * an unreadable database is unavailable, not an empty conversation.
    */
   messagesRead(queryJson: string): string;
@@ -4989,6 +5112,9 @@ export function listOsSchedules(): string;
  * schedulable. Returns the reconcile report `{ removed, kept, errors }`.
  */
 export function reconcileOsSchedules(): string;
+/** Parse the supported cadence phrase grammar without inference.
+ *  Returns `{ cadence, reason? }`; unsupported input has `cadence: null`. */
+export function suggestSchedule(phrase: string, timezone?: string | null): string;
 /** Schedule a deterministic command on a cadence, hiding the OS backend (#72).
  *  specJson = { name, program, args?, cadence: { intervalSecs? | cron? },
  *  durable?, workingDir?, env?, permissionTier? }.

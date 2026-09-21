@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.54.0 (2026-09-15). Every subcommand the installed binary reports is
+> 0.54.0 (2026-09-19). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 73 top-level commands, 117 nested subcommands
+> 74 top-level commands, 123 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 73 subcommands spanning several different jobs:
+`car` is one binary with 74 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -38,11 +38,21 @@ flag follows below.
 
 ### Code
 
+Run `car code` in a repository to open a conversation. Ask questions or describe
+a change, then use `/build` to draft an editable task and review its checks.
+`/help` shows controls, `/sessions` opens coding session history (`d` returns
+to the conversation), and `/quit` exits. Running tasks survive closing the
+terminal. Resume a saved discussion with `car code --resume <discussion-id>`
+from the same repository; the exit summary prints its id. An explicit
+task or execution flags such as `--engine` select the single-task flow.
+Delivered revisions remain available as the base for follow-up conversation tasks.
+
 - [`car code`](#car-code) — built-in coding agent: state an intent, confirm
   the verifiable outcome contract, and CAR delivers it in an isolated git
-  worktree (natively or via an installed frontier CLI). Results land on a
-  `car/coder/<id>` branch after your approval; your checkout is never
-  touched.
+  worktree (natively or via an installed frontier CLI). Apply reviewed results
+  to your checkout, preserving HEAD and the staged index, or explicitly request
+  `--delivery branch` to publish a result branch — which is also what `--yes`
+  defaults to, so an unattended run never writes into your checkout.
 - [`car code-task`](#car-code-task) — run a coder session headlessly and in
   this process, driving to a green outcome contract and delivering a PR.
 - [`car coder-ab`](#car-coder-ab) — A/B-test CAR's coder against an external
@@ -195,7 +205,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS-only in this release |
 | [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel) |
 | [`car purge`](#car-purge) | Remove this CAR install's own state under `~/.car` (config, logs, managed models, binaries) and reap any OS-level schedules CAR installed — for a clean slate before a reinstall. On macOS this also clears CarHost.app's user-level state and resets its privacy (TCC) permissions, so a reinstall really does re-run permission onboarding. NEVER touches the shared HuggingFace model cache (other tools use it); managed models are symlinks into it, so only the links are removed, not the multi-GB blobs. (To uninstall a single contributed agent instead, use `car uninstall <id>`.) |
-| [`car code`](#car-code) | Built-in coding agent: state an intent, confirm the verifiable outcome contract, and CAR delivers it in an isolated git worktree — natively or via an installed frontier CLI. Results land on a `car/coder/<id>` branch after your approval; your checkout is never touched |
+| [`car code`](#car-code) | Built-in coding agent: state an intent, confirm the verifiable outcome contract, and CAR delivers it in an isolated git worktree — natively or via an installed frontier CLI. Review and apply results to your checkout, or publish a branch with --delivery branch (which is what --yes does by default — an unattended run never edits your checkout) |
 | [`car board`](#car-board) | Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. Closing the board never stops a run |
 | [`car do`](#car-do) | CAR Assistant: a general-purpose agent that works out of the box |
 | [`car policy-check-hook`](#car-policy-check-hook) | Evaluate a host's proposed tool call against `.car/policies/` and answer on stdout with that host's hook decision envelope |
@@ -234,6 +244,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car schedule`](#car-schedule) | Schedule commands to run on a cadence (launchd / cron / schtasks) |
 | [`car registry`](#car-registry) | Registry tooling for the contributed-agents registry (Parslee-ai/car#182 phase 5): `digest` a manifest, or `validate` a registry directory (the CI gate run by Parslee-ai/car-agent-registry) |
 | [`car fleet`](#car-fleet) | What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon |
+| [`car mp`](#car-mp) | Multiplayer development: a work item moves Build → Improve → Polish through different developers before it merges, each stage a coder session on its owner's machine with the engine they choose. Needs a running daemon and a shared git remote |
 | [`car publish`](#car-publish) | Publish a contributed agent to the registry (Parslee-ai/car#182 phase 5). Reads a local agent's `manifest.toml`, signs it for `--audience public` (ed25519 key at `$CAR_PUBLISH_KEY_PATH`), stages it at the versioned `agents/<namespace>/<name>/<version>/` path, updates `index.json` + the README catalog, re-runs the EXACT `car registry validate` CI gate locally, and opens a PR against the registry repo. Aborts (no PR) on a missing signing key or a validation failure |
 | [`car help`](#car-help) | Print this message or the help of the given subcommand(s) |
 
@@ -1573,16 +1584,22 @@ Options:
 
 ```text
 Built-in coding agent: state an intent, confirm the verifiable outcome contract, and CAR delivers it
-in an isolated git worktree — natively or via an installed frontier CLI. Results land on a
-`car/coder/<id>` branch after your approval; your checkout is never touched
+in an isolated git worktree — natively or via an installed frontier CLI. Review and apply results to
+your checkout, or publish a branch with --delivery branch (which is what --yes does by default — an
+unattended run never edits your checkout)
 
 Usage: car code [OPTIONS] [INTENT]...
 
 Arguments:
   [INTENT]...
-          What to build or fix, in plain English
+          What to build or fix. With no task, opens a repository conversation in an interactive
+          terminal. --model also works in this mode; other execution flags select the single-task
+          workflow
 
 Options:
+      --resume <RESUME>
+          Resume a saved repository conversation by its displayed id
+
       --repo <REPO>
           Repository to work on. Relative paths (`.`, `../sibling`) resolve against your current
           directory (default: `.`)
@@ -1605,16 +1622,26 @@ Options:
           Restrict a distributed run to these instances. Repeatable; default is every instance that
           can serve this repository
 
+      --delivery <DELIVERY>
+          Deliver reviewed edits to your checkout (the default when you are there to answer the
+          prompt), or explicitly publish a branch. With `--yes` the default is `branch`: an
+          unattended run never writes into your checkout unless you ask for it with `--delivery
+          checkout`
+
+          [possible values: checkout, branch]
+
   -y, --yes
-          Skip the interactive contract and merge prompts
+          Skip the interactive contract and delivery prompts. Delivery then defaults to publishing a
+          branch; pass `--delivery checkout` to apply the result to your checkout unattended
 
       --max-iterations <MAX_ITERATIONS>
           Max plan→edit→verify iterations before giving up
 
       --model <MODEL>
-          Pin the native loop's inference model for this session (e.g. `parslee/reasoning` for
-          gpt-5.5), overriding `~/.car/coder.toml`. Blank/omitted keeps the config default, then
-          adaptive routing
+          Choose a model (see `car models list`). In a conversation, saves the choice for replies
+          and new native tasks; --resume restores it unless overridden here. Use `auto` to clear a
+          conversation's saved choice. For a single task, pins native planning, check revision, and
+          execution, overriding `~/.car/coder.toml`; omitted keeps the configured default
 
       --browser
           Expose the assistant's browser tools to this coder session. Off by default; calls remain
@@ -1670,7 +1697,13 @@ Options:
           Working directory (default: current directory)
 
       --model <MODEL>
-          Inference model id (default: a tool-capable model chosen for you)
+          Inference model id. The default is `parslee/advisor`: the out-of-the-box agent runs on
+          Parslee inference through your Parslee account (`car auth login`), and that default is
+          never swapped for another model — signed out, a turn asks you to sign in instead of
+          quietly running somewhere else. Naming a model here (or setting CAR_DO_MODEL) is an
+          explicit choice and restores the adaptive behaviour for it, including the on-device last
+          resort — except when the Parslee account has no workspace yet, which ends the chain rather
+          than falling back, because no model on that account can serve
 
       --image <IMAGE>
           Docker image for the sandbox (default: python:3.11, which bundles git/gcc/curl). Ignored
@@ -1735,7 +1768,8 @@ Options:
           a usable tool-capable model when the named one is unavailable here (and says so); with it
           a substitution is a startup error, and the inference layer will not fall back to an
           on-device model on a remote failure either. Off by default: the substitution is the right
-          call for an interactive run
+          call for an interactive run. This flag only affects a model you name — the out-of-the-box
+          default is strict on its own and is never substituted
 
       --context-window <TOKENS>
           Bound the running conversation to this many tokens instead of the model's registry window
@@ -1894,7 +1928,8 @@ Options:
 Describe an agent in plain language; CAR builds, verifies, and registers it to run in-daemon.
 
 CAR uses the complete description to generate the agent's identity, standing goal, and scenarios.
-Long descriptions get a bounded project directory name without truncating that build input.
+Long descriptions get an at-most-64-character project id containing only lowercase ASCII letters,
+digits, and hyphens, without truncating that build input.
 
 The project's agent.json is committed build output. After approval, the daemon runs the separately
 registered copy in declagents.json; editing agent.json alone does not update the active agent.
@@ -2748,7 +2783,7 @@ Options:
       --accounts <ACCOUNTS>
       --mailbox <MAILBOX>    Mailbox selector — a `full_name` from `car mail mailboxes`, or a bare
       leaf name like "Travel". Defaults to INBOX
-      --limit <LIMIT>        [default: 50]
+      --limit <LIMIT>        Number of rows to return (maximum 500) [default: 50]
       --since <SINCE>        Only messages received at or after this RFC3339 instant
       --include-body         Include each message's body inline (bounded per message)
   -h, --help                 Print help
@@ -2830,7 +2865,7 @@ Usage: car messages read [OPTIONS]
 Options:
       --chats <CHATS>  Optional comma-separated chat GUIDs from `car messages chats`
       --since <SINCE>  Only messages at or after this RFC3339 instant
-      --limit <LIMIT>  [default: 50]
+      --limit <LIMIT>  Number of rows to return (maximum 500) [default: 50]
       --include-body   Include decoded message bodies inline (bounded per message)
   -h, --help           Print help
 ```
@@ -3558,6 +3593,138 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+### car mp
+
+```text
+Multiplayer development: a work item moves Build → Improve → Polish through different developers
+before it merges, each stage a coder session on its owner's machine with the engine they choose.
+Needs a running daemon and a shared git remote
+
+Usage: car mp <COMMAND>
+
+Commands:
+  list     Work items on the shared remote, and whether you can take the next stage of each (you may
+  own at most one stage per item)
+  show     One work item's full record
+  take     Start the item's next stage: a coder session at the item's tip. Then confirm the item's
+  locked contract (adding checks later is fine) and work it like any coder session, e.g. in `car
+  board`
+  publish  Publish a finished coder session as a stage: an approved diff, or an accepted no-change
+  finding. Without --item this publishes a Build and creates the work item
+  submit   Submit a stage you did outside CAR (for example in Claude Code or Codex). CAR runs the
+  item's contract on the commit itself, without credentials, before recording it
+  check    Re-verify an item end to end and, if it holds, create `car/mp/<id>-final` for a pull
+  request. Runs the item's contract here
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car mp list
+
+```text
+Work items on the shared remote, and whether you can take the next stage of each (you may own at
+most one stage per item)
+
+Usage: car mp list [OPTIONS]
+
+Options:
+      --repo <REPO>      The repository (a clone of the shared remote) [default: .]
+      --remote <REMOTE>  The shared remote [default: origin]
+      --json
+  -h, --help             Print help
+```
+
+#### car mp show
+
+```text
+One work item's full record
+
+Usage: car mp show [OPTIONS] <ITEM>
+
+Arguments:
+  <ITEM>
+
+Options:
+      --repo <REPO>      [default: .]
+      --remote <REMOTE>  [default: origin]
+  -h, --help             Print help
+```
+
+#### car mp take
+
+```text
+Start the item's next stage: a coder session at the item's tip. Then confirm the item's locked
+contract (adding checks later is fine) and work it like any coder session, e.g. in `car board`
+
+Usage: car mp take [OPTIONS] <ITEM>
+
+Arguments:
+  <ITEM>
+
+Options:
+      --repo <REPO>      [default: .]
+      --remote <REMOTE>  [default: origin]
+      --engine <ENGINE>  `auto`, `native`, `external:<agent>` (e.g. `external:claude-code`), or
+      `foreman:<agent>`
+      --model <MODEL>
+      --yes              Confirm the locked contract without asking
+  -h, --help             Print help
+```
+
+#### car mp publish
+
+```text
+Publish a finished coder session as a stage: an approved diff, or an accepted no-change finding.
+Without --item this publishes a Build and creates the work item
+
+Usage: car mp publish [OPTIONS] <SESSION_ID>
+
+Arguments:
+  <SESSION_ID>
+
+Options:
+      --item <ITEM>
+      --remote <REMOTE>  [default: origin]
+  -h, --help             Print help
+```
+
+#### car mp submit
+
+```text
+Submit a stage you did outside CAR (for example in Claude Code or Codex). CAR runs the item's
+contract on the commit itself, without credentials, before recording it
+
+Usage: car mp submit [OPTIONS] <ITEM>
+
+Arguments:
+  <ITEM>
+
+Options:
+      --commit <COMMIT>  The stage's work: a commit descending from the item's tip [default: HEAD]
+      --repo <REPO>      [default: .]
+      --remote <REMOTE>  [default: origin]
+  -h, --help             Print help
+```
+
+#### car mp check
+
+```text
+Re-verify an item end to end and, if it holds, create `car/mp/<id>-final` for a pull request. Runs
+the item's contract here
+
+Usage: car mp check [OPTIONS] <ITEM>
+
+Arguments:
+  <ITEM>
+
+Options:
+      --repo <REPO>      [default: .]
+      --remote <REMOTE>  [default: origin]
+  -h, --help             Print help
 ```
 
 ### car publish

@@ -1,0 +1,3192 @@
+{
+  "coverage": {
+    "complete": false,
+    "covered": [
+      "cli.car_inspect.result",
+      "journal.event",
+      "rpc.capabilities.list.result",
+      "rpc.infer.result",
+      "rpc.models.catalog_snapshot.result",
+      "rpc.server.handshake.result",
+      "rpc.server.schema.result",
+      "rpc.state.exists.result",
+      "rpc.state.get.result",
+      "rpc.state.keys.result",
+      "rpc.state.set.result",
+      "rpc.state.snapshot.result",
+      "rpc.tools.cancel.result",
+      "rpc.tools.list.result",
+      "rpc.tools.poll.result",
+      "rpc.tools.register.result",
+      "rpc.tools.stream.subscribe.result",
+      "rpc.tools.unregister.result",
+      "type.action_result"
+    ],
+    "follow_up": "car-86cq.1",
+    "journal_event_payloads": {
+      "covered": [],
+      "total": 53,
+      "uncovered": [
+        "action_deduplicated",
+        "action_executing",
+        "action_failed",
+        "action_rejected",
+        "action_retrying",
+        "action_skipped",
+        "action_succeeded",
+        "action_validated",
+        "admission_gate_decision",
+        "alternative_rejected",
+        "approval_recorded",
+        "branch_decision",
+        "candidate_promoted",
+        "candidate_rejected",
+        "consolidated",
+        "evolution_triggered",
+        "gate_accepted",
+        "gate_rejected",
+        "goal_evaluated",
+        "inference_metered",
+        "model_fallback",
+        "permission_decision",
+        "policy_violation",
+        "proactive_memory_intervention",
+        "proactive_memory_maintained",
+        "proposal_completed",
+        "proposal_received",
+        "replan_attempted",
+        "replan_exhausted",
+        "replan_proposal_received",
+        "replan_rejected",
+        "run_cancellation_requested",
+        "run_cancellation_result",
+        "run_completed",
+        "run_started",
+        "session_scope",
+        "skill_deprecated",
+        "skill_distilled",
+        "skill_evolved",
+        "state_changed",
+        "state_committed",
+        "state_rollback",
+        "state_snapshot",
+        "tool_receipt_hallucination",
+        "transaction_conflict",
+        "turn_completed",
+        "voice_bridge_played",
+        "voice_fast_turn_ended",
+        "voice_fast_turn_started",
+        "voice_sidecar_failed",
+        "voice_sidecar_resolved",
+        "voice_sidecar_timed_out",
+        "voice_turn_cancelled"
+      ]
+    },
+    "limitations": [
+      "journal.event covers the exact envelope and closed EventKind enum; coverage.journal_event_payloads.uncovered names every kind whose Event.data remains an open JSON object",
+      "coverage.rpc_results.uncovered is derived from the daemon dispatch inventory and names every result that still emits inline or otherwise lacks a schema from its real Rust type",
+      "the release version is reported at serve time in the server.schema result and is deliberately absent from these digested bytes, so the digest tracks wire shape alone"
+    ],
+    "rpc_results": {
+      "covered": [
+        "capabilities.list",
+        "infer",
+        "models.catalog_snapshot",
+        "server.handshake",
+        "server.schema",
+        "state.exists",
+        "state.get",
+        "state.keys",
+        "state.set",
+        "state.snapshot",
+        "tools.cancel",
+        "tools.list",
+        "tools.poll",
+        "tools.register",
+        "tools.stream.subscribe",
+        "tools.unregister"
+      ],
+      "total": 479,
+      "uncovered": [
+        "CancelTask",
+        "CreateTaskPushNotificationConfig",
+        "DeleteTaskPushNotificationConfig",
+        "GetExtendedAgentCard",
+        "GetTask",
+        "GetTaskPushNotificationConfig",
+        "ListTaskPushNotificationConfigs",
+        "ListTasks",
+        "SendMessage",
+        "SendStreamingMessage",
+        "SubscribeToTask",
+        "a2a.peers.add",
+        "a2a.peers.list",
+        "a2a.peers.remove",
+        "a2a.send",
+        "a2a.start",
+        "a2a.status",
+        "a2a.stop",
+        "a2ui.action",
+        "a2ui.apply",
+        "a2ui.capabilities",
+        "a2ui.get",
+        "a2ui.ingest",
+        "a2ui.reap",
+        "a2ui.render_report",
+        "a2ui.surfaces",
+        "a2ui/replay",
+        "a2ui/subscribe",
+        "a2ui/unsubscribe",
+        "accounts.list",
+        "accounts.open",
+        "admission.status",
+        "agent/getAuthenticatedExtendedCard",
+        "agent_permissions.evaluate",
+        "agent_permissions.evaluate_tool",
+        "agent_permissions.get",
+        "agent_permissions.reset",
+        "agent_permissions.reset_tool",
+        "agent_permissions.set",
+        "agent_permissions.set_default",
+        "agent_permissions.set_tool",
+        "agents.chat",
+        "agents.chat.approve",
+        "agents.chat.cancel",
+        "agents.detect_external",
+        "agents.health",
+        "agents.health_external",
+        "agents.install",
+        "agents.invoke_external",
+        "agents.list",
+        "agents.list_external",
+        "agents.message",
+        "agents.message.approve",
+        "agents.message.pending",
+        "agents.peers",
+        "agents.remove",
+        "agents.restart",
+        "agents.start",
+        "agents.stop",
+        "agents.tail_log",
+        "agents.upsert",
+        "agents.wait",
+        "assistant.identity.get",
+        "assistant.identity.set",
+        "assistants.invoke",
+        "auth.accounts",
+        "auth.authority_hint",
+        "auth.complete",
+        "auth.completion_status",
+        "auth.logout",
+        "auth.remove_account",
+        "auth.snapshot",
+        "auth.start",
+        "auth.status",
+        "auth.switch_account",
+        "auth.switch_org",
+        "automation.run_applescript",
+        "automation.run_powershell",
+        "automation.shortcuts.list",
+        "automation.shortcuts.run",
+        "bookmarks.list",
+        "browser.close",
+        "browser.producer.register",
+        "browser.run",
+        "browser.view.back",
+        "browser.view.click",
+        "browser.view.forward",
+        "browser.view.hand_back",
+        "browser.view.keypress",
+        "browser.view.navigate",
+        "browser.view.paste",
+        "browser.view.reload",
+        "browser.view.scroll",
+        "browser.view.subscribe",
+        "browser.view.tab_close",
+        "browser.view.tab_open",
+        "browser.view.tab_switch",
+        "browser.view.take_control",
+        "browser.view.type",
+        "browser.view.unsubscribe",
+        "builder.build",
+        "calendar.create_event",
+        "calendar.delete_event",
+        "calendar.events",
+        "calendar.list",
+        "calendar.update_event",
+        "cascade.run",
+        "classify",
+        "coder.approve_merge",
+        "coder.cancel",
+        "coder.confirm_contract",
+        "coder.discuss.close",
+        "coder.discuss.list",
+        "coder.discuss.promote",
+        "coder.discuss.send",
+        "coder.discuss.start",
+        "coder.discuss.subscribe",
+        "coder.discuss.unsubscribe",
+        "coder.get",
+        "coder.list",
+        "coder.projects.create",
+        "coder.projects.get",
+        "coder.projects.list",
+        "coder.respond",
+        "coder.revise_contract",
+        "coder.start",
+        "coder.subscribe",
+        "coder.unsubscribe",
+        "coder.unwatch",
+        "coder.watch",
+        "concierge.actions",
+        "concierge.apply",
+        "concierge.ask",
+        "concierge.clear_default",
+        "concierge.defaults",
+        "concierge.dismiss",
+        "concierge.refresh_catalog",
+        "concierge.rollback",
+        "concierge.set_default",
+        "concierge.status",
+        "connectors.add",
+        "connectors.add_stdio",
+        "connectors.authenticate",
+        "connectors.complete_authentication",
+        "connectors.disable_tools",
+        "connectors.enable_tools",
+        "connectors.list",
+        "connectors.refresh",
+        "connectors.remove",
+        "connectors.tools",
+        "contacts.containers",
+        "contacts.find",
+        "declagents.get",
+        "declagents.invoke",
+        "declagents.list",
+        "declagents.remove",
+        "declagents.route",
+        "declagents.route_split",
+        "declagents.routing_stats",
+        "declagents.set_enabled",
+        "detokenize",
+        "diagnostics.secret_store_activity",
+        "discovery.report",
+        "discovery.resolve",
+        "discovery.route_compose",
+        "embed",
+        "events.chain.enable",
+        "events.chain.verify",
+        "events.clear",
+        "events.cost_by_agent",
+        "events.count",
+        "events.query",
+        "events.retention",
+        "events.stats",
+        "events.truncate",
+        "evolution.plan",
+        "evolution.run",
+        "feedback.compose_preview",
+        "feedback.list",
+        "feedback.status",
+        "feedback.submit",
+        "files.locations",
+        "fleet.composite",
+        "fleet.inventory",
+        "fleet.worker.get",
+        "fleet.worker.set",
+        "foreman.plan",
+        "foreman.run",
+        "goal.clear",
+        "goal.set",
+        "goal.status",
+        "goal.suggest",
+        "heal.run",
+        "heal.status",
+        "health.activity",
+        "health.sleep",
+        "health.status",
+        "health.workouts",
+        "host.agents",
+        "host.approvals",
+        "host.devices",
+        "host.events",
+        "host.notify",
+        "host.register_agent",
+        "host.register_device",
+        "host.request_approval",
+        "host.resolve_approval",
+        "host.set_status",
+        "host.subscribe",
+        "host.unregister_agent",
+        "host.update_device",
+        "image.generate",
+        "infer.cancel",
+        "infer.deadline",
+        "infer_stream",
+        "inference.register_runner",
+        "inference.runner.complete",
+        "inference.runner.event",
+        "inference.runner.fail",
+        "keychain.status",
+        "lease.acquire",
+        "lease.release",
+        "lease.renew",
+        "lease.status",
+        "mail.accounts",
+        "mail.inbox",
+        "mail.mailboxes",
+        "mail.message_body",
+        "mail.messages",
+        "mail.send",
+        "meeting.get",
+        "meeting.list",
+        "meeting.start",
+        "meeting.stop",
+        "memory.add_fact",
+        "memory.admission_table",
+        "memory.build_context",
+        "memory.build_context_fast",
+        "memory.consolidate",
+        "memory.delete",
+        "memory.evaluate",
+        "memory.fact_count",
+        "memory.intervene",
+        "memory.load",
+        "memory.maintain",
+        "memory.persist",
+        "memory.query",
+        "memory.save_knowledge",
+        "memory.save_procedural",
+        "memory.set_admission_table",
+        "memory.update_status",
+        "memory.utility_get",
+        "memory.utility_set",
+        "message/send",
+        "message/stream",
+        "messages.chats",
+        "messages.read",
+        "messages.send",
+        "messages.services",
+        "messaging.config.get",
+        "messaging.config.set",
+        "messaging.pairing.start",
+        "messaging.pairing.status",
+        "messaging.status",
+        "messaging.test_send",
+        "metrics.alerts",
+        "metrics.summary",
+        "mobile.runtime",
+        "models.adopt",
+        "models.check_concierge",
+        "models.check_upgrade_nudge",
+        "models.detect_upgrades",
+        "models.dismiss_suggestion",
+        "models.dismiss_upgrade",
+        "models.install",
+        "models.list",
+        "models.list_unified",
+        "models.preflight",
+        "models.pull",
+        "models.recommend",
+        "models.register",
+        "models.remove",
+        "models.resource_policy.get",
+        "models.resource_policy.set",
+        "models.route",
+        "models.route_provenance",
+        "models.search",
+        "models.setup_plan",
+        "models.stats",
+        "models.storage_roots",
+        "models.unregister",
+        "models.update_prefs_get",
+        "models.update_prefs_set",
+        "models.upgrades",
+        "multi.map_reduce",
+        "multi.pipeline",
+        "multi.subtask",
+        "multi.supervisor",
+        "multi.swarm",
+        "multi.tournament",
+        "multi.vote",
+        "multiplayer.get",
+        "multiplayer.list",
+        "multiplayer.merge_check",
+        "multiplayer.publish",
+        "multiplayer.start_stage",
+        "multiplayer.submit_stage",
+        "nlp.extract_entities",
+        "nlp.identify_language",
+        "nlp.tokenize",
+        "notes.accounts",
+        "notes.find",
+        "notifications.local",
+        "openrouter.auth_cancel",
+        "openrouter.auth_start",
+        "openrouter.disconnect",
+        "openrouter.status",
+        "outcomes.resolve_pending",
+        "outcomes.scoreboard",
+        "parslee.auth",
+        "parslee.capabilities",
+        "parslee.m365.generate_document",
+        "permission.approve",
+        "permission.classify",
+        "permission.evaluate",
+        "permission.get_tier",
+        "permission.pending",
+        "permission.reject",
+        "permission.set_tier",
+        "permissions.domains",
+        "permissions.explain",
+        "permissions.request",
+        "permissions.status",
+        "photos.albums",
+        "policy.list",
+        "policy.register",
+        "policy.unregister",
+        "proposal.submit",
+        "registry.heartbeat",
+        "registry.list",
+        "registry.reap",
+        "registry.register",
+        "registry.unregister",
+        "reminders.items",
+        "reminders.lists",
+        "replan.set_config",
+        "rerank",
+        "runs.cancel",
+        "runs.complete",
+        "runs.get_trace",
+        "runs.list",
+        "runs.record_turns",
+        "runs.resume",
+        "runs.start",
+        "runs.subscribe",
+        "runs.unsubscribe",
+        "schedule.suggest",
+        "scheduler.create",
+        "scheduler.os_install",
+        "scheduler.os_list",
+        "scheduler.os_reconcile",
+        "scheduler.os_render",
+        "scheduler.os_uninstall",
+        "scheduler.run",
+        "scheduler.run_loop",
+        "search",
+        "secret.available",
+        "secret.delete",
+        "secret.get",
+        "secret.list",
+        "secret.put",
+        "secret.status",
+        "selfheal.detections",
+        "selfheal.dismiss",
+        "selfheal.fix",
+        "selfheal.run",
+        "selfheal.status",
+        "session.auth",
+        "session.bindSandbox",
+        "session.bindSubstrate",
+        "session.clear_halt",
+        "session.init",
+        "session.policy.close",
+        "session.policy.open",
+        "skill.adopt_pack",
+        "skill.enforce_deployment",
+        "skill.export",
+        "skill.find",
+        "skill.gate_deployment",
+        "skill.import",
+        "skill.ingest",
+        "skill.ingest_governed",
+        "skill.meta",
+        "skill.repair",
+        "skill.report",
+        "skills.distill",
+        "skills.domains_needing_evolution",
+        "skills.evolve",
+        "skills.gate",
+        "skills.ingest_distilled",
+        "skills.ingest_provisional",
+        "skills.list",
+        "speech.prepare",
+        "supervision.decide",
+        "supervision.pending",
+        "supervision.subscribe",
+        "supervision.unsubscribe",
+        "sync.append",
+        "sync.assistant_action.get",
+        "sync.assistant_action.put",
+        "sync.assistant_checkpoint.get",
+        "sync.assistant_checkpoint.put",
+        "sync.checkpoint",
+        "sync.fence_check",
+        "sync.knowledge",
+        "sync.pump",
+        "sync.rebase",
+        "sync.record_intent",
+        "sync.record_turn",
+        "sync.resume",
+        "sync.status",
+        "sync.transcript",
+        "synthesize",
+        "tasks.list",
+        "tasks.schedule",
+        "tasks.unschedule",
+        "tasks/cancel",
+        "tasks/get",
+        "tasks/list",
+        "tasks/pushNotificationConfig/delete",
+        "tasks/pushNotificationConfig/get",
+        "tasks/pushNotificationConfig/list",
+        "tasks/pushNotificationConfig/set",
+        "tasks/resubscribe",
+        "tokenize",
+        "transcribe",
+        "verify",
+        "verify.monte_carlo",
+        "video.generate",
+        "vision.ocr",
+        "voice.cancel_turn",
+        "voice.dispatch_turn",
+        "voice.enroll_speaker",
+        "voice.list_enrollments",
+        "voice.prepare_diarizer",
+        "voice.prepare_parakeet",
+        "voice.prewarm_turn",
+        "voice.providers.list",
+        "voice.remove_enrollment",
+        "voice.sessions.list",
+        "voice.transcribe_stream.push",
+        "voice.transcribe_stream.start",
+        "voice.transcribe_stream.stop",
+        "voice.tts_stream.cancel",
+        "voice.tts_stream.list",
+        "voice.tts_stream.start",
+        "web_fetch",
+        "workflow.build_automation",
+        "workflow.chain",
+        "workflow.list_paused",
+        "workflow.resume",
+        "workflow.run",
+        "workflow.verify"
+      ]
+    }
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "scope": "exact UTF-8 bytes of docs/wire-schema.json"
+  },
+  "format": "car.wire-schema.v1",
+  "json_schema_draft": "http://json-schema.org/draft-07/schema#",
+  "schemas": {
+    "cli.car_inspect.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ManagedAgentListRow"
+        },
+        {
+          "$ref": "#/definitions/DeclarativeAgentRow"
+        }
+      ],
+      "definitions": {
+        "AgentStatus": {
+          "description": "Runtime status of a managed agent. Distinct from [`AgentStatus`](crate::AgentStatus) which is the *agent's* self-reported liveness signal — supervisor status describes what *we* know about the child process from this side.",
+          "oneOf": [
+            {
+              "description": "Never started, or stopped after a clean exit / explicit stop.",
+              "enum": [
+                "stopped"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Spawn requested; process not yet visible.",
+              "enum": [
+                "starting"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Process is alive and recent.",
+              "enum": [
+                "running"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Process exited unexpectedly; supervisor is waiting out the backoff before respawning.",
+              "enum": [
+                "backoff"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Process kept failing past `max_restarts`. Supervisor stopped trying. Manual `start` resets this.",
+              "enum": [
+                "errored"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "DeclarativeAgentKind": {
+          "enum": [
+            "declarative"
+          ],
+          "type": "string"
+        },
+        "DeclarativeAgentRow": {
+          "additionalProperties": false,
+          "description": "A declarative (in-daemon) agent rendered as an `agents.list` row. Built and serialized by `coder::rpc::declarative_row`.",
+          "properties": {
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "goal": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DeclarativeGoal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/definitions/DeclarativeAgentKind"
+            },
+            "name": {
+              "type": "string"
+            },
+            "scenarios": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "tools": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "kind",
+            "enabled",
+            "capabilities",
+            "description",
+            "tools",
+            "goal",
+            "scenarios"
+          ],
+          "type": "object"
+        },
+        "DeclarativeGoal": {
+          "additionalProperties": false,
+          "description": "Deterministic completion contract for a declarative agent invocation. The daemon runs `check` in the same scratch worktree after each agent pass and re-drives until it exits 0 or `max_iterations` is exhausted.",
+          "properties": {
+            "check": {
+              "type": "string"
+            },
+            "max_iterations": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "check",
+            "max_iterations"
+          ],
+          "type": "object"
+        },
+        "ManagedAgentListRow": {
+          "additionalProperties": false,
+          "description": "One `agents.list` row: the redacted agent plus the decorations only the daemon holding the connection can supply.",
+          "properties": {
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "attached": {
+              "description": "Whether the supervised process has called `session.auth { agent_id }` and bound a WebSocket connection to this daemon.",
+              "type": "boolean"
+            },
+            "auto_start": {
+              "type": "boolean"
+            },
+            "backoff_secs": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "blocked_by_pid": {
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            },
+            "last_exit_code": {
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "log_path": {
+              "type": "string"
+            },
+            "manifest_path": {
+              "type": "string"
+            },
+            "max_restarts": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "method_allowlist": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "pid": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "restart": {
+              "$ref": "#/definitions/RestartPolicy"
+            },
+            "restart_count": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "session_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "started_at": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "status": {
+              "$ref": "#/definitions/AgentStatus"
+            },
+            "stderr_log_path": {
+              "type": "string"
+            },
+            "tools": {
+              "description": "The attached agent's current model-visible tool names, when it supports the bounded `agent.chat.tools` reverse query. Omitted for detached or older supervised agents rather than guessing from broad capabilities.",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "command",
+            "args",
+            "cwd",
+            "env",
+            "restart",
+            "max_restarts",
+            "backoff_secs",
+            "auto_start",
+            "capabilities",
+            "status",
+            "pid",
+            "last_exit_code",
+            "restart_count",
+            "started_at",
+            "attached",
+            "manifest_path",
+            "log_path",
+            "stderr_log_path"
+          ],
+          "type": "object"
+        },
+        "RestartPolicy": {
+          "description": "What to do when a managed agent exits.",
+          "oneOf": [
+            {
+              "description": "Don't restart. The agent runs once.",
+              "enum": [
+                "never"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Restart only when the process exits non-zero or is killed. Clean exits stop supervision.",
+              "enum": [
+                "on_failure"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Restart unconditionally (also on clean exit).",
+              "enum": [
+                "always"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "`car inspect` and `agents.list` return either kind of row, untagged.",
+      "title": "CarInspectResult"
+    },
+    "journal.event": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "EventKind": {
+          "description": "Event kinds matching the Python EventKind enum.",
+          "oneOf": [
+            {
+              "enum": [
+                "proposal_received",
+                "action_validated",
+                "action_rejected",
+                "action_executing",
+                "action_succeeded",
+                "action_failed",
+                "action_skipped",
+                "action_retrying",
+                "action_deduplicated",
+                "policy_violation",
+                "state_changed",
+                "state_snapshot",
+                "state_rollback",
+                "skill_distilled",
+                "skill_evolved",
+                "skill_deprecated",
+                "evolution_triggered",
+                "consolidated",
+                "proactive_memory_maintained",
+                "proactive_memory_intervention",
+                "replan_attempted",
+                "replan_proposal_received",
+                "replan_rejected",
+                "replan_exhausted",
+                "voice_fast_turn_started",
+                "voice_fast_turn_ended",
+                "voice_sidecar_resolved",
+                "voice_sidecar_failed",
+                "voice_sidecar_timed_out",
+                "voice_turn_cancelled",
+                "voice_bridge_played",
+                "gate_accepted",
+                "gate_rejected",
+                "model_fallback",
+                "session_scope",
+                "permission_decision",
+                "approval_recorded",
+                "branch_decision",
+                "alternative_rejected",
+                "inference_metered",
+                "transaction_conflict",
+                "admission_gate_decision",
+                "tool_receipt_hallucination",
+                "goal_evaluated",
+                "turn_completed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The authenticated `runs.start` bracket reached its durable boundary.",
+              "enum": [
+                "run_started"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A body-free authenticated run cancellation request became durable.",
+              "enum": [
+                "run_cancellation_requested"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A deterministic run cancellation receipt became durable.",
+              "enum": [
+                "run_cancellation_result"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A proposal reached its deterministic terminal result. Emitted by the CAR server after the runtime has emitted every action transition.",
+              "enum": [
+                "proposal_completed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Proposal-level aggregate of observed state mutations that survived the transaction boundary. Distinct from provisional per-action `state_changed` rows and from declared expected effects.",
+              "enum": [
+                "state_committed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A provisional skill candidate passed the validation gate and was promoted to Active, superseding its incumbent (SkillOpt-inspired — see `docs/solutions/gated-skill-optimization.md`).",
+              "enum": [
+                "candidate_promoted"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A provisional skill candidate failed the validation gate and was rejected (recorded in the rejected-edit buffer so it isn't regenerated).",
+              "enum": [
+                "candidate_rejected"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The active `runs.start` bracket reached one terminal state. This is distinct from `ProposalCompleted`: one run can contain many proposals.",
+              "enum": [
+                "run_completed"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "A single event in the log.",
+      "properties": {
+        "action_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "client_id": {
+          "description": "WebSocket client identity that opened `run_id` via `runs.start`. Never reconstructed from the journal filename during replay.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "hash": {
+          "description": "This event's own content hash, computed over its fields plus `prev_hash`. Present only when hash chaining is enabled.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/definitions/EventKind"
+        },
+        "policy_session_id": {
+          "description": "CAR-minted policy-session identity used for this proposal, when the caller selected a live `session.policy.open` session. Unvalidated caller labels are never copied here.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prev_hash": {
+          "description": "Hash of the previous event in the chain (EPIC A / A9 tamper- evidence). `None` when hash chaining is disabled (the default) — the field is skipped in serialization, so logs without chaining are byte-identical to before this was added.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "proposal_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run_id": {
+          "description": "Authenticated active-run identity stamped by CAR at append time. Historical journals omit this field and replay as `None`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "data",
+        "timestamp"
+      ],
+      "title": "Event",
+      "type": "object"
+    },
+    "rpc.capabilities.list.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "CapabilityMethodRow": {
+          "additionalProperties": false,
+          "description": "One source-derived method row in `capabilities.list`.",
+          "properties": {
+            "method": {
+              "type": "string"
+            },
+            "role": {
+              "$ref": "#/definitions/CapabilityRole"
+            }
+          },
+          "required": [
+            "method",
+            "role"
+          ],
+          "type": "object"
+        },
+        "CapabilityRole": {
+          "description": "The closed caller roles emitted by `capabilities.list`.",
+          "enum": [
+            "agent",
+            "owner",
+            "operator",
+            "host"
+          ],
+          "type": "string"
+        }
+      },
+      "description": "The `capabilities.list` result.",
+      "properties": {
+        "caller_role": {
+          "$ref": "#/definitions/CapabilityRole"
+        },
+        "count": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "methods": {
+          "items": {
+            "$ref": "#/definitions/CapabilityMethodRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "caller_role",
+        "count",
+        "methods"
+      ],
+      "title": "CapabilitiesListResult",
+      "type": "object"
+    },
+    "rpc.infer.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "BoundingBox": {
+          "additionalProperties": false,
+          "description": "A single detection emitted by a VL model's grounding head.\n\nCoordinates are in *pixel space of the input image*, following Qwen2.5-VL's **inclusive xyxy** convention — the same as COCO and standard detection reference implementations. Both corners are inclusive: width is `x2 - x1 + 1`, height is `y2 - y1 + 1`. `label` is the model-supplied object reference; may be empty when the prompt already named the subject (\"find the dog\").",
+          "properties": {
+            "confidence": {
+              "description": "Model-reported confidence in `[0.0, 1.0]` when available. Qwen2.5-VL does not currently emit per-box confidences inline; this field exists for forward compat with richer backends.",
+              "format": "float",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "label": {
+              "description": "Object label the model attached to this box. Empty when no `<|object_ref_*|>` span preceded the box.",
+              "type": "string"
+            },
+            "x1": {
+              "description": "Inclusive left pixel.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "x2": {
+              "description": "Inclusive right pixel (width = `x2 - x1 + 1`).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "y1": {
+              "description": "Inclusive top pixel.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "y2": {
+              "description": "Inclusive bottom pixel (height = `y2 - y1 + 1`).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "x1",
+            "y1",
+            "x2",
+            "y2"
+          ],
+          "type": "object"
+        },
+        "FallbackFrom": {
+          "additionalProperties": false,
+          "description": "A candidate the fallback chain moved past, and why.",
+          "properties": {
+            "candidate": {
+              "description": "The candidate's name, as the chain knew it.",
+              "type": "string"
+            },
+            "reason": {
+              "$ref": "#/definitions/FallbackReason"
+            }
+          },
+          "required": [
+            "candidate",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "FallbackReason": {
+          "description": "Why the chain moved past a candidate.\n\nCoarse on purpose. The point is to distinguish causes an operator would ACT on differently — sign in, wait, configure a key, look at the provider — not to reproduce every provider's error taxonomy. Anything unrecognized is [`FallbackReason::Failed`] rather than being forced into a bucket it does not belong in.",
+          "oneOf": [
+            {
+              "description": "A credential exists and was REFUSED — an expired Parslee session, or a provider rejecting an API key (`ProviderAccount` 401/403).\n\nDeliberately broader than [`InferenceResult::auth_fallback_from`]'s predicate, which names only the subset a person clears by signing in. `car auth login` does not fix a bad OpenAI key, so this variant must not be read as \"run that\" — the remedy depends on which credential was refused.",
+              "enum": [
+                "credential_rejected"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "No credential is configured for that lane at all. A different fix from `CredentialRejected`: nothing expired, nothing was ever set.",
+              "enum": [
+                "credential_absent"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The provider rate-limited the call (429 / \"too many requests\"). Clears by waiting.",
+              "enum": [
+                "rate_limited"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The account is out of credits or over quota (402).\n\nSeparate from [`FallbackReason::RateLimited`] because an empty balance does NOT clear by waiting — the remedy is to top up. Folding it in told an operator to wait out a billing problem.",
+              "enum": [
+                "quota_exhausted"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The call exceeded its deadline.\n\nOnly when a deadline is what was actually hit. A transport failure with no status — connection refused, DNS, TLS, a truncated body — is [`FallbackReason::Failed`], because telling someone their call timed out when the endpoint was never up sends them to raise a timeout instead of starting the runtime.",
+              "enum": [
+                "timed_out"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Anything else — a 5xx, a malformed request, a panicked runner, an unreadable credential store. The honest bucket, and it has to STAY honest: a first version of this classifier matched substrings and silently absorbed every `ProviderAccount` rejection here, which is the opposite of what this variant is for.",
+              "enum": [
+                "failed"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ThinkingBlock": {
+          "additionalProperties": false,
+          "description": "A single assistant extended-thinking block, preserved for verbatim replay.\n\nA normal thinking block carries `text` (possibly empty when the provider's display is \"omitted\") plus an opaque `signature` that must be echoed back unchanged. A redacted-thinking block instead carries an opaque `redacted_data` payload. Both are reconstructed to their exact provider wire shape on replay (see the Anthropic handler's `build_messages`), because the API rejects any *modified* thinking block.",
+          "properties": {
+            "redacted_data": {
+              "description": "Opaque payload for a `redacted_thinking` block (replayed as `{type:\"redacted_thinking\", data:...}`); `None` for normal thinking.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "signature": {
+              "description": "Opaque signature Anthropic requires be replayed unchanged (normal blocks).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "description": "Human-readable thinking text (empty when display is omitted).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "type": "object"
+        },
+        "TokenUsage": {
+          "additionalProperties": false,
+          "description": "Token usage statistics from a model response.",
+          "properties": {
+            "cache_creation_input_tokens": {
+              "description": "Prompt-cache write: input tokens written into the cache this request. Billed at ~1.25× (5-minute TTL) or ~2× (1-hour TTL) the base input rate. `0` when caching is off or nothing was written. (Anthropic `usage.cache_creation_input_tokens`.)",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "cache_read_input_tokens": {
+              "description": "Prompt-cache hit: input tokens read from a previously written cache entry. Billed at ~0.1× the base input rate. `0` when the provider has no prompt caching, caching was disabled, or nothing hit. (Anthropic `usage.cache_read_input_tokens`.)",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "completion_tokens": {
+              "description": "Number of tokens in the completion/output.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "context_window": {
+              "description": "Model's maximum context window size.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "prompt_tokens": {
+              "description": "Number of tokens in the prompt/input.\n\nFor providers with prompt caching (Anthropic), this is the *non-cached* prefix only — the tokens after the last cache breakpoint. The cached portion is reported separately in [`Self::cache_read_input_tokens`] / [`Self::cache_creation_input_tokens`], so the true input total is the sum of all three. Pricing those three buckets at the same rate over- or under-counts cost; see [`crate::outcome::ModelProfile::usd_per_success`].",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "total_tokens": {
+              "description": "Total tokens (prompt + completion).",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "context_window",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens"
+          ],
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "A tool call returned by the model.",
+          "properties": {
+            "arguments": {
+              "additionalProperties": true,
+              "description": "Arguments as key-value pairs.",
+              "type": "object"
+            },
+            "id": {
+              "description": "Provider-assigned tool call ID (e.g. OpenAI `call_abc123`, Anthropic `toolu_abc123`). When present, protocol handlers use this for round-trip correlation instead of synthesizing positional IDs like `call_0`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "description": "Tool/function name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result of an inference call, including trace ID for outcome tracking.",
+      "properties": {
+        "auth_fallback_from": {
+          "description": "The candidate that was skipped because its credential was REJECTED (not merely absent), when a later candidate in the fallback chain then succeeded. `None` on the common path.\n\nExists so a caller can ANNOUNCE the degrade instead of silently serving a different model: an operator whose Parslee sign-in lapsed otherwise sees a working run on a fallback backbone with no hint that the lane they configured is dead (Parslee-ai/car#888).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bounding_boxes": {
+          "description": "Structured bounding boxes when the model emitted Qwen2.5-VL grounding spans (`<|box_*|>`, `<|object_ref_*|>`) in its text. Parsed from the same `text` field — the raw span markers remain visible in `text` for callers that need to see them verbatim. Empty vec when the model didn't ground anything (typical for non-VL models or prompts that only ask for description).",
+          "items": {
+            "$ref": "#/definitions/BoundingBox"
+          },
+          "type": "array"
+        },
+        "catalog_revision": {
+          "description": "SHA-256 revision of the exact catalog snapshot captured for this call.",
+          "type": "string"
+        },
+        "fallback_from": {
+          "description": "Every candidate the chain moved past, in order, and WHY. Empty when the first candidate served.\n\nThe general form of [`InferenceResult::auth_fallback_from`], which answers only \"was a credential rejected\". A run whose backbone changed mid-session because of a rate limit, a timeout, or an absent credential had no reason recorded anywhere at all — so a surprising result could be attributed to the code under test when the real cause was that a different model wrote it (Parslee-ai/car#1351).\n\n**Not a superset of `auth_fallback_from`, even though it holds every hop.** [`FallbackReason::CredentialRejected`] is deliberately broader than that field's predicate: it includes a provider refusing an API key (`ProviderAccount` 401), whose remedy is to fix the key. `auth_fallback_from` names only the narrower set a person clears by signing in, because the announcement it drives says `car auth login` — and telling someone to sign in over a bad OpenAI key is the wrong remedy (Parslee-ai/car#888). Recording both keeps the journal general without making the announcement wrong.",
+          "items": {
+            "$ref": "#/definitions/FallbackFrom"
+          },
+          "type": "array"
+        },
+        "latency_ms": {
+          "description": "Wall-clock latency in ms.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "local_last_resort": {
+          "description": "True when this turn was served by the installed on-device model that CAR appended behind an otherwise remote-only fallback chain.\n\nThis is distinct from merely using a local model: an explicitly chosen local primary is ordinary routing. Callers should surface this marker so a resilience fallback cannot masquerade as the preferred remote model.",
+          "type": "boolean"
+        },
+        "model_used": {
+          "description": "Which model was used. Exact catalog-id pins report the immutable resolved id; legacy/adaptive routes retain their display-name behavior.",
+          "type": "string"
+        },
+        "provider_output_items": {
+          "description": "Provider-specific output items the protocol emitted alongside the response — currently used by the OpenAI Responses API to return reasoning blobs, encrypted_content, web-search results, etc. as opaque structured items the next request must include verbatim. Empty for protocols that don't emit them (Chat Completions, Anthropic, Gemini, all local backends).\n\nCallers carry these between turns by emitting them as a [`tasks::generate::Message::ProviderOutputItems`] message in the next request. Builder paths that don't recognize the originating protocol drop the variant — the items are protocol-specific and have no portable rendering.",
+          "items": true,
+          "type": "array"
+        },
+        "requested_model_id": {
+          "description": "Exact immutable model id supplied through the protocol `model_id` pin. `None` for adaptive routing and legacy display-name/alias requests.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolved_model_id": {
+          "description": "Canonical immutable catalog id actually used after routing/fallback.",
+          "type": "string"
+        },
+        "row_digest": {
+          "description": "SHA-256 digest of the resolved immutable `ModelSchema` row.",
+          "type": "string"
+        },
+        "stop_reason": {
+          "description": "Why generation stopped. For remote models this is the raw provider string (OpenAI `finish_reason`, Anthropic `stop_reason`, Google `finishReason`). For local Qwen3 hybrid-thinking models the runtime also sets it for its reasoning-recovery path (car-releases#60): `\"thinking_recovered\"` when reasoning consumed the whole token budget inside an unclosed `<think>` block and the runtime retried with reasoning suppressed to produce a direct answer, or `\"thinking_truncated\"` when even that retry was empty. A model decoded in-process also reports `\"local_decode_timeout\"` ([`LOCAL_DECODE_TIMEOUT_STOP_REASON`]) when the wall-clock ceiling cut the pass short (car#851). `None` for an ordinary local completion or a provider that didn't report one. Always serialized (as `null` when `None`) so the wire contract is stable — see the `inference_result_serializes_*` tests. Use [`InferenceResult::was_truncated`] to detect a cut-short response.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "description": "The generated text (empty if tool_calls are present).",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Extended-thinking blocks the model produced this turn (Anthropic adaptive thinking). Captured verbatim (text + opaque signature) so the caller can attach them to the replayed [`tasks::generate::Message::Assistant`] and preserve them on the next turn — Anthropic 400s if prior thinking blocks aren't sent back unchanged before the tool_use blocks. Empty for providers/models without thinking (Chat Completions, Gemini, all local backends).",
+          "items": {
+            "$ref": "#/definitions/ThinkingBlock"
+          },
+          "type": "array"
+        },
+        "time_to_first_token_ms": {
+          "description": "Time to first token in milliseconds. Populated by the local generate paths (Candle/MLX) which observe the prefill→first-decode transition directly. `None` for paths that can't measure it honestly without streaming — currently the non-streaming remote paths. Callers needing TTFT on remote models should use [`InferenceEngine::generate_tracked_stream`] and time the first `text` event arrival themselves.\n\nAlways serialized (as `null` when `None`) so downstream validation harnesses can distinguish \"wasn't measured\" from \"field doesn't exist on this client's protocol version\".",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tool_calls": {
+          "description": "Tool calls returned by the model (when tools were provided in the request).",
+          "items": {
+            "$ref": "#/definitions/ToolCall"
+          },
+          "type": "array"
+        },
+        "trace_id": {
+          "description": "Trace ID for reporting outcomes back to the tracker.",
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Token usage for the call. Populated by the remote providers from their API response, and by the local backends from their own decode loops — the in-process MLX and candle paths report the post-truncation prompt length and the number of tokens they sampled, and the mlx-vlm CLI path reports the counts the CLI prints (image patches included).\n\n`None` means nobody could report a count, and it is deliberately not a zeroed struct: a consumer summing `total_tokens` cannot tell a fabricated `0` from a real \"this used no tokens\", so an absent count is the honest answer and lets callers fall back to their own estimator (Parslee-ai/car#795). Still `None` on: FoundationModels (Apple's on-device framework exposes no token counts), a delegated runner that emits no `usage` stream event, and an mlx-vlm build whose performance summary doesn't parse.\n\n[`TokenUsage::context_window`] is `0` on the streaming path — the accumulator builds usage from stream events, which carry no model metadata. Non-streaming calls populate it."
+        }
+      },
+      "required": [
+        "text",
+        "tool_calls",
+        "trace_id",
+        "model_used",
+        "requested_model_id",
+        "resolved_model_id",
+        "row_digest",
+        "catalog_revision",
+        "latency_ms",
+        "time_to_first_token_ms",
+        "usage",
+        "stop_reason"
+      ],
+      "title": "InferenceResult",
+      "type": "object"
+    },
+    "rpc.models.catalog_snapshot.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ApiProtocol": {
+          "oneOf": [
+            {
+              "enum": [
+                "open_ai_compat",
+                "anthropic",
+                "google"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "OpenRouter's OpenAI-compatible Chat Completions surface. Distinct so credential precedence and error translation stay provider-specific.",
+              "enum": [
+                "open_router"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "OpenAI Responses API (/v1/responses) — works with all OpenAI models including codex.",
+              "enum": [
+                "open_ai_responses"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Azure OpenAI — uses api-key header and deployment-based URLs. Endpoint format: {base}/openai/deployments/{model}/chat/completions?api-version={version}",
+              "enum": [
+                "azure_open_ai"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Google Vertex AI — the enterprise Gemini surface. Same request/response shape as the AI-Studio `Google` protocol, but a project/location URL and OAuth Bearer auth (a GCP access token from `gcloud auth print-access-token` or a service account) instead of an `?key=` query param. Endpoint format: `{base}/publishers/google/models/{model}:generateContent`, where `base` is `https://{loc}-aiplatform.googleapis.com/v1/projects/{proj}/locations/{loc}`.",
+              "enum": [
+                "vertex_ai"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "AWS Bedrock — the **Converse** API (`bedrock-runtime`), a unified messages surface across Bedrock-hosted models (Claude, Llama, Mistral, Titan, …). Auth is **SigV4** request signing (not a bearer token), with credentials from the standard AWS env vars; the model's `endpoint` is the region (e.g. `us-east-1`) and `name` is the Bedrock model id. Non-stream only for now (Converse streaming uses a separate binary event-stream).",
+              "enum": [
+                "bedrock"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "BenchmarkScore": {
+          "additionalProperties": false,
+          "description": "A score on a public benchmark from a published source (model card, paper, leaderboard). The schema is deliberately permissive — no enum of benchmark names — so the catalog can carry whichever benchmarks the upstream provider chose to publish, and new ones can be added without a code change. Scores are stored on a 0.0–1.0 scale (e.g. 73.5% accuracy → 0.735) so they compare cleanly across benchmarks and so `routing_ext::apply_benchmark_priors` can consume them directly when wired in later.",
+          "properties": {
+            "harness": {
+              "description": "Evaluation harness or setup label (e.g., \"5-shot\", \"0-shot CoT\", \"agentic\", \"pass@1\"). Optional but strongly recommended — the same benchmark name can mean different things under different harnesses.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "measured_at": {
+              "description": "ISO 8601 date of the score snapshot (e.g., \"2025-08-12\"). Lets downstream code judge how stale a number is.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "description": "Benchmark name as published (e.g., \"MMLU-Pro\", \"GPQA-Diamond\", \"SWE-bench-Verified\", \"HumanEval\", \"MATH\").",
+              "type": "string"
+            },
+            "score": {
+              "description": "Score on a 0.0–1.0 scale.",
+              "format": "double",
+              "type": "number"
+            },
+            "source_url": {
+              "description": "Where the score came from (model card URL, paper, leaderboard snapshot). Empty when the source is the upstream provider's announcement and a stable URL is not yet known.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "harness",
+            "measured_at",
+            "name",
+            "score",
+            "source_url"
+          ],
+          "type": "object"
+        },
+        "CatalogModelRow": {
+          "additionalProperties": false,
+          "description": "One immutable catalog row plus its content digest.",
+          "properties": {
+            "model": {
+              "$ref": "#/definitions/ModelSchema"
+            },
+            "row_digest": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "model",
+            "row_digest"
+          ],
+          "type": "object"
+        },
+        "CostModel": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_read_input_per_mtok": {
+              "description": "USD per 1M cache-read input tokens. Unlike protocol-wide cache multipliers, this is model-specific and comes from the provider's published catalog.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "cache_write_input_per_mtok": {
+              "description": "USD per 1M cache-write input tokens, when the provider charges one.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "input_per_mtok": {
+              "description": "USD per 1M input tokens (remote models).",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "output_per_mtok": {
+              "description": "USD per 1M output tokens (remote models).",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "pricing_tiers": {
+              "description": "Prompt-size pricing overrides, sorted by increasing threshold. The highest threshold not greater than the prompt size wins.",
+              "items": {
+                "$ref": "#/definitions/TokenPricingTier"
+              },
+              "type": "array"
+            },
+            "ram_mb": {
+              "description": "RAM required during inference in MB.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "size_mb": {
+              "description": "On-disk size in MB (local models).",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "cache_read_input_per_mtok",
+            "cache_write_input_per_mtok",
+            "input_per_mtok",
+            "output_per_mtok",
+            "pricing_tiers",
+            "ram_mb",
+            "size_mb"
+          ],
+          "type": "object"
+        },
+        "GenerateParam": {
+          "description": "Cost model for routing optimization. Generation parameters that a model may or may not support. Models declare which params they accept. The inference layer strips unsupported params before sending to the API.",
+          "oneOf": [
+            {
+              "enum": [
+                "temperature",
+                "top_p",
+                "top_k",
+                "max_tokens",
+                "stop_sequences",
+                "frequency_penalty",
+                "presence_penalty",
+                "seed",
+                "response_format"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Extended thinking / internal reasoning before responding.",
+              "enum": [
+                "extended_thinking"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ModelCapability": {
+          "description": "What a model can do.",
+          "oneOf": [
+            {
+              "description": "Text completion / chat generation",
+              "enum": [
+                "generate"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Vector embeddings",
+              "enum": [
+                "embed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Cross-encoder relevance scoring (query + document → relevance score). Qwen3-Reranker is the canonical local implementation.",
+              "enum": [
+                "rerank"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Label assignment / classification",
+              "enum": [
+                "classify"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Code generation, repair, refactoring",
+              "enum": [
+                "code"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Chain-of-thought, planning, analysis",
+              "enum": [
+                "reasoning"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Text condensation",
+              "enum": [
+                "summarize"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Function/tool calling",
+              "enum": [
+                "tool_use"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Multiple tool calls in a single response (parallel tool execution)",
+              "enum": [
+                "multi_tool_call"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Vision / image understanding",
+              "enum": [
+                "vision"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Video understanding (multi-frame sampling + temporal tokens). Distinct from `Vision` so routing can prefer video-trained models when the caller attaches a video content block.",
+              "enum": [
+                "video_understanding"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Audio understanding (speech + non-speech audio as an input to a chat/reasoning model). Distinct from `SpeechToText` which is the transcription-only task. Gemma 4 E2B/E4B and Gemini do this; Qwen2.5-VL does not.",
+              "enum": [
+                "audio_understanding"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Visual grounding — structured object-localization output (bounding boxes keyed to object labels) in addition to text.",
+              "enum": [
+                "grounding"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Speech recognition / transcription",
+              "enum": [
+                "speech_to_text"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Speech synthesis / text-to-speech",
+              "enum": [
+                "text_to_speech"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Image generation",
+              "enum": [
+                "image_generation"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Video generation",
+              "enum": [
+                "video_generation"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ModelSchema": {
+          "additionalProperties": false,
+          "description": "The full declarative schema for a model.\n\nAnalogous to `ToolSchema` — describes what a model is, what it can do, and how to access it. The router uses this for constraint-based filtering and cold-start scoring before observed performance data is available.",
+          "properties": {
+            "capabilities": {
+              "description": "What this model can do — ordered by primary capability first.",
+              "items": {
+                "$ref": "#/definitions/ModelCapability"
+              },
+              "type": "array"
+            },
+            "context_length": {
+              "description": "Context window in tokens.",
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "cost": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CostModel"
+                }
+              ],
+              "description": "Cost structure."
+            },
+            "deprecated": {
+              "description": "Superseded models stay listed if installed but are excluded from fresh recommendations. `#[serde(default)]` → not deprecated.",
+              "type": "boolean"
+            },
+            "family": {
+              "description": "Model family for grouping (qwen3, gpt-4, claude-4, llama-3).",
+              "type": "string"
+            },
+            "id": {
+              "description": "Unique identifier: \"provider/model-name:variant\" (e.g., \"qwen/qwen3-4b:q4_k_m\").",
+              "type": "string"
+            },
+            "max_output_tokens": {
+              "description": "Per-model maximum OUTPUT tokens the provider will return in one response. None = unknown; callers fall back to effective_max_output() which derives a fraction of context_length.",
+              "format": "uint",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "description": "Human-readable display name.",
+              "type": "string"
+            },
+            "param_count": {
+              "description": "Parameter count as human-readable string (e.g., \"4B\", \"30B (3B active)\").",
+              "type": "string"
+            },
+            "performance": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/PerformanceEnvelope"
+                }
+              ],
+              "description": "Declared performance envelope (initial estimate, overridden by observed data)."
+            },
+            "provider": {
+              "description": "Provider (qwen, openai, anthropic, google, meta, ollama, custom).",
+              "type": "string"
+            },
+            "public_benchmarks": {
+              "description": "Public benchmark scores as published by the model provider or reproduced on a public leaderboard (MMLU-Pro, GPQA-Diamond, SWE-bench, HumanEval, etc.). The built-in catalog ships this empty — population is a curation step, not a code change. See `BenchmarkScore` for the field shape and the 0.0–1.0 scoring convention.",
+              "items": {
+                "$ref": "#/definitions/BenchmarkScore"
+              },
+              "type": "array"
+            },
+            "quantization": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/QuantizationWireSchema"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "How the weights are quantized, if at all. `None` for remote models and for local ones whose source declared nothing. See [`Quantization`] — this accepts the legacy bare-string form on the wire."
+            },
+            "source": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ModelSource"
+                }
+              ],
+              "description": "How to access this model."
+            },
+            "supported_params": {
+              "description": "Supported generation parameters. The inference layer strips any parameter not in this set before sending to the API. Empty = all supported.",
+              "items": {
+                "$ref": "#/definitions/GenerateParam"
+              },
+              "type": "array"
+            },
+            "tags": {
+              "description": "Free-form tags for filtering (e.g., \"fast\", \"multilingual\", \"moe\").",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "trust_tier": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/TrustTier"
+                }
+              ],
+              "description": "How much the project vouches for this model. The built-in catalog is `Curated`. Deserialization retains the legacy `Curated` default, so every user-controlled ingestion boundary must call [`Self::mark_user_registered`] before persistence or registration. Gates auto-apply (task #8) and this is surfaced in recommendation rationale."
+            },
+            "version": {
+              "description": "Semantic version or checkpoint label.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "capabilities",
+            "context_length",
+            "cost",
+            "deprecated",
+            "family",
+            "id",
+            "max_output_tokens",
+            "name",
+            "param_count",
+            "performance",
+            "provider",
+            "public_benchmarks",
+            "quantization",
+            "source",
+            "supported_params",
+            "tags",
+            "trust_tier",
+            "version"
+          ],
+          "type": "object"
+        },
+        "ModelSource": {
+          "description": "How to access the model.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "description": "Local GGUF file via Candle backend.",
+              "properties": {
+                "hf_filename": {
+                  "type": "string"
+                },
+                "hf_repo": {
+                  "type": "string"
+                },
+                "tokenizer_repo": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "local"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hf_filename",
+                "hf_repo",
+                "tokenizer_repo",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Remote API endpoint (OpenAI-compatible, Anthropic, etc.)",
+              "properties": {
+                "api_key_env": {
+                  "description": "Environment variable name containing the API key (never the key itself). The env var value may contain comma-separated keys for load balancing.",
+                  "type": "string"
+                },
+                "api_key_envs": {
+                  "description": "Additional environment variable names for load balancing across multiple keys. Each env var may also contain comma-separated keys.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "api_version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "protocol": {
+                  "$ref": "#/definitions/ApiProtocol"
+                },
+                "type": {
+                  "enum": [
+                    "remote_api"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "api_key_env",
+                "api_key_envs",
+                "api_version",
+                "endpoint",
+                "protocol",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "One text-generation turn through the locally installed OpenAI Codex CLI.\n\nCodex remains the sole holder of its ChatGPT-subscription credential: CAR neither reads that credential nor accepts an API key for this source. An optional reasoning suffix is part of the model string (for example, `gpt-5.6-sol:high`) and maps to Codex's `model_reasoning_effort` config.",
+              "properties": {
+                "model": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "codex_cli"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "model",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Ollama local server.",
+              "properties": {
+                "host": {
+                  "type": "string"
+                },
+                "model_tag": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "ollama"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "host",
+                "model_tag",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Local MLX model via mlx-rs backend (Apple Silicon, safetensors format). Models from mlx-community on HuggingFace.",
+              "properties": {
+                "hf_repo": {
+                  "description": "HuggingFace repo (e.g., \"mlx-community/Qwen3-4B-4bit\").",
+                  "type": "string"
+                },
+                "hf_weight_file": {
+                  "description": "Optional specific weight filename. If None, auto-discovers safetensors files.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "mlx"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hf_repo",
+                "hf_weight_file",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Local whisper.cpp speech-to-text model — a ggml `.bin` from the `ggerganov/whisper.cpp` HF repo, run in-process via the shared `car-whisper` crate. Cross-platform (Windows/Linux/macOS): this is the on-device STT path where MLX isn't available. Cached at `~/.tokhn/whisper/ggml-<model>.bin`.",
+              "properties": {
+                "model": {
+                  "description": "whisper.cpp model id — the suffix of `ggml-<model>.bin` (e.g. `\"large-v3-turbo-q5_0\"`).",
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "whisper_cpp"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "model",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Windows OS text-to-speech via `Windows.Media.SpeechSynthesis` (WinRT), run in-process. The catalog-side analog of the `car-voice` `TtsProvider::WindowsSpeech` live path and the parity counterpart of Apple's OS synthesizer — free, on-device, no model download, no MLX. Windows-only; availability is `false` on every other target (like `AppleFoundationModels`).",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "windows_speech"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Local vLLM-MLX server (Apple Silicon, OpenAI-compatible API). Routes through RemoteBackend with OpenAI protocol handler.",
+              "properties": {
+                "endpoint": {
+                  "description": "Server endpoint (e.g., \"http://localhost:8000\").",
+                  "type": "string"
+                },
+                "model_name": {
+                  "description": "The model name as known to vLLM-MLX (e.g., \"mlx-community/Qwen3-4B-4bit\").",
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "vllm_mlx"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "endpoint",
+                "model_name",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "CAR-owned supervised vLLM-MLX process backed by a managed HuggingFace artifact. Unlike `VllmMlx`, CAR downloads, admits, spawns, reaps, and accounts this allocation. Dispatch rewrites a clone to `VllmMlx` only after the child reports healthy.",
+              "properties": {
+                "hf_repo": {
+                  "type": "string"
+                },
+                "hf_weight_file": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "managed_vllm_mlx"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hf_repo",
+                "hf_weight_file",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Apple's on-device system model via the FoundationModels framework (macOS 26+, Apple Silicon). Inference happens in-process through a Swift shim — there is no HTTP, no API key, and no model file: the OS owns the weights. Availability is checked at runtime via `@available(macOS 26.0, *)`; on older macOS or non-Apple-Silicon hosts the backend reports `UnsupportedMode` and the router falls through to the next candidate.",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "apple_foundation_models"
+                  ],
+                  "type": "string"
+                },
+                "use_case": {
+                  "description": "Optional Apple use-case hint passed through to `LanguageModelSession`. Apple's framework tunes its prompt and safety scaffolding per use case (e.g. \"general\", \"summarize\"). `None` uses the default.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "use_case"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Proprietary provider with custom auth and protocol.\n\nFor vendor-specific APIs that aren't generic OpenAI-compatible endpoints. Parslee is the first proprietary provider — custom auth (OAuth2), custom response format, multi-provider routing built into the API.",
+              "properties": {
+                "auth": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/ProprietaryAuth"
+                    }
+                  ],
+                  "description": "Auth configuration."
+                },
+                "endpoint": {
+                  "description": "Base URL for the API.",
+                  "type": "string"
+                },
+                "protocol": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/ProprietaryProtocol"
+                    }
+                  ],
+                  "description": "Custom protocol details."
+                },
+                "provider": {
+                  "description": "Provider identifier (e.g., \"parslee\").",
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "proprietary"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "auth",
+                "endpoint",
+                "protocol",
+                "provider",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Inference is delegated to a host-registered runner. CAR does not own the wire format — the runner (typically a JS / Python host) translates the `GenerateRequest` to its provider's API, streams chunks back through the runner's event callback, and returns the final aggregated result.\n\nCloses Parslee-ai/car-releases#24. Use this when the host already has an SDK relationship with a provider (Anthropic, OpenAI, GitHub Models, Vercel AI SDK) and wants CAR to sit in the lifecycle / policy / replay path without learning every provider's wire format.\n\nRouting requires that a runner has been registered via [`crate::set_inference_runner`] (or its FFI equivalent — `registerInferenceRunner` on JS, `register_inference_runner` on Python, the `InferenceRunner` foreign trait on UniFFI, `inference.register_runner` on the WebSocket protocol). Without a runner, dispatch fails with `InferenceFailed`.",
+              "properties": {
+                "hint": {
+                  "description": "Opaque hint passed through to the runner — typically the provider id (`\"anthropic\"`, `\"openai\"`, `\"vercel-ai-sdk\"`) so a multi-provider runner can dispatch internally. CAR does not interpret this string.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "enum": [
+                    "delegated"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hint",
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "PerformanceEnvelope": {
+          "additionalProperties": false,
+          "description": "Declared performance expectations. Overridden by observed data once available.",
+          "properties": {
+            "latency_p50_ms": {
+              "description": "Median latency in milliseconds (declared/estimated).",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "latency_p99_ms": {
+              "description": "99th percentile latency in milliseconds.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "tokens_per_second": {
+              "description": "Tokens per second throughput.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "latency_p50_ms",
+            "latency_p99_ms",
+            "tokens_per_second"
+          ],
+          "type": "object"
+        },
+        "ProprietaryAuth": {
+          "description": "Authentication method for proprietary providers.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "description": "OAuth2 PKCE flow (e.g., Azure AD for Parslee).",
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "client_id": {
+                  "type": "string"
+                },
+                "scopes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "enum": [
+                    "oauth2_pkce"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "client_id",
+                "scopes",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Static API key from environment variable.",
+              "properties": {
+                "env_var": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "api_key_env"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "env_var",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Bearer token from environment variable.",
+              "properties": {
+                "env_var": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "bearer_token_env"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "env_var",
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ProprietaryProtocol": {
+          "additionalProperties": false,
+          "description": "Protocol configuration for proprietary providers.",
+          "properties": {
+            "chat_path": {
+              "description": "Chat/completion endpoint path (appended to base URL).",
+              "type": "string"
+            },
+            "content_type": {
+              "description": "Content type for requests.",
+              "type": "string"
+            },
+            "extra_headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Custom headers to include in every request.",
+              "type": "object"
+            },
+            "streaming": {
+              "description": "Whether the API streams responses via SSE.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "chat_path",
+            "content_type",
+            "extra_headers",
+            "streaming"
+          ],
+          "type": "object"
+        },
+        "QuantScheme": {
+          "description": "The numeric format a checkpoint's weights are stored in.\n\nDeliberately says nothing about *which engine* serves the file — [`ModelSource`] already carries that, and keying this on the container instead of the format produces falsehoods: whisper.cpp's `q5_0` ggml checkpoints use the same round-to-nearest block format as llama.cpp's, and a `Gguf*` variant would assert a GGUF text path that cannot load them.\n\nWhat it does express is the axis neither the bit width nor the source can: an MLX 4-bit affine checkpoint and a `Q4_K_M` are both \"4-bit\", were produced by different algorithms, and do not have the same quality.",
+          "oneOf": [
+            {
+              "description": "Integer weights with a scale and bias shared across `group_size` elements (`4bit`, `6bit`). MLX's default and only affine format.",
+              "enum": [
+                "affine_group_int"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Block-scaled float — MX formats (`mxfp4`, `mxfp8`). A genuinely different loader path from [`QuantScheme::AffineGroupInt`] at the same nominal width; see the microscaling-mode rejection in `backend/mlx.rs`, which currently accepts exactly one of these.",
+              "enum": [
+                "block_scaled_float"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Mixed per-tensor bit allocation, optionally importance-weighted (`Q4_K_M`, `Q5_K_S`, `IQ4_XS`, `TQ1_0`).",
+              "enum": [
+                "k_quant_mixed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Uniform round-to-nearest blocks, no per-tensor mixing and no importance weighting (`Q8_0`, `q5_0`, `Q4_0_4_4`).",
+              "enum": [
+                "rtn_block"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Full-precision weights (`bf16`, `f16`, `f32`). Distinct from `None` at the [`ModelSchema::quantization`] level: a positive claim that the checkpoint is unquantized, not an absence of information.",
+              "enum": [
+                "unquantized"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A format this parser could not identify. The label is still preserved verbatim; only the classification is missing.",
+              "enum": [
+                "unknown"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "QuantizationObjectWireSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "bits": {
+              "format": "uint8",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "group_size": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "scheme": {
+              "$ref": "#/definitions/QuantScheme"
+            }
+          },
+          "required": [
+            "scheme",
+            "label"
+          ],
+          "type": "object"
+        },
+        "QuantizationWireSchema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/QuantizationObjectWireSchema"
+            }
+          ],
+          "description": "Structured quantization descriptor.\n\nThis replaces a free-text string that mixed two vocabularies — MLX's `4bit`/`6bit` and GGUF's `Q4_K_M`/`Q8_0` — under one field, so nothing could tell a group-quantized integer checkpoint from a mixed k-quant one. It also threw away what the ingest paths already had in hand: MLX `config.json` declares `{bits, group_size, mode}` and only `bits` survived.\n\nDeserializes from **either** the legacy bare string or the structured object, so catalogs, user `models.json` files, and `models.register` payloads written before this change keep loading unchanged. The object form requires `label` and rejects unknown fields: a misspelled key is a producer bug, and accepting it silently is how the field it replaced lost information in the first place.\n\n**Writes the bare label back whenever that is lossless**, and the object only when it carries something parsing cannot recover — a `group_size`, or a `scheme` that disambiguates a label the parser reads as `Unknown`. Two reasons, both about blast radius rather than taste. This value is inside `catalog_identity::row_digest`, so an unconditional shape change would move the digest of every quantized row and hard-fail any client that pinned `expected_catalog_revision`. And `registry::load_user_config` fails a `models.json` **whole**, with its only production caller discarding the error — so an older daemon meeting an object it cannot parse boots with zero registered models and says nothing. Emitting the object only where it adds information keeps both costs proportional to what actually changed."
+        },
+        "TokenPricingTier": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_read_input_per_mtok": {
+              "description": "USD per 1M cache-read input tokens.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "cache_write_input_per_mtok": {
+              "description": "USD per 1M cache-write input tokens.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "input_per_mtok": {
+              "description": "USD per 1M uncached input tokens.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "min_prompt_tokens": {
+              "description": "Inclusive prompt-token threshold at which this tier applies.",
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "output_per_mtok": {
+              "description": "USD per 1M output tokens.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "cache_read_input_per_mtok",
+            "cache_write_input_per_mtok",
+            "input_per_mtok",
+            "min_prompt_tokens",
+            "output_per_mtok"
+          ],
+          "type": "object"
+        },
+        "TrustTier": {
+          "description": "How much the project vouches for a model. Gates automatic upgrades and is surfaced in recommendation rationale. Closed enum — a new tier is a deliberate FFI-visible change, never a silent string fallback.",
+          "oneOf": [
+            {
+              "description": "Vetted by the project — the built-in catalog and verified upgrades. Eligible for background auto-apply when the user opts in.",
+              "enum": [
+                "curated"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "User-registered or upstream-discovered, not project-vetted. Always notify-only; never auto-applied regardless of update policy.",
+              "enum": [
+                "community"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "A sorted, content-addressed view of the immutable model catalog.",
+      "properties": {
+        "catalog_revision": {
+          "type": "string"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/definitions/CatalogModelRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "catalog_revision",
+        "models"
+      ],
+      "title": "CatalogSnapshot",
+      "type": "object"
+    },
+    "rpc.server.handshake.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "The `server.handshake` result. Built and serialized by `handler::handle_server_handshake`; nothing else may write that reply.",
+      "properties": {
+        "assistant_aliases": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "assistant_brand": {
+          "type": "string"
+        },
+        "assistant_name": {
+          "type": "string"
+        },
+        "client_protocol_version": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "client_version": {
+          "type": "string"
+        },
+        "negotiated_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "protocol_version": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "server_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "assistant_aliases",
+        "assistant_brand",
+        "assistant_name",
+        "client_protocol_version",
+        "client_version",
+        "negotiated_capabilities",
+        "protocol_version",
+        "server_version"
+      ],
+      "title": "ServerHandshakeResult",
+      "type": "object"
+    },
+    "rpc.server.schema.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "DigestAlgorithm": {
+          "enum": [
+            "sha256"
+          ],
+          "type": "string"
+        }
+      },
+      "description": "The `server.schema` result. Built and serialized by [`committed_payload`].",
+      "properties": {
+        "car_version": {
+          "description": "The release this daemon binary is, read at serve time. Deliberately not part of the digested document — see the module header.",
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "digest_algorithm": {
+          "$ref": "#/definitions/DigestAlgorithm"
+        },
+        "schema": true
+      },
+      "required": [
+        "car_version",
+        "digest",
+        "digest_algorithm",
+        "schema"
+      ],
+      "title": "ServerSchemaResult",
+      "type": "object"
+    },
+    "rpc.state.exists.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Boolean",
+      "type": "boolean"
+    },
+    "rpc.state.get.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AnyValue"
+    },
+    "rpc.state.keys.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "items": {
+        "type": "string"
+      },
+      "title": "Array_of_String",
+      "type": "array"
+    },
+    "rpc.state.set.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "The exact string returned by `state.set`.",
+      "enum": [
+        "ok"
+      ],
+      "title": "StateSetResult",
+      "type": "string"
+    },
+    "rpc.state.snapshot.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    },
+    "rpc.tools.cancel.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "The `tools.cancel` result.",
+      "properties": {
+        "cancelled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cancelled"
+      ],
+      "title": "ToolsCancelResult",
+      "type": "object"
+    },
+    "rpc.tools.list.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ToolRateLimit": {
+          "additionalProperties": false,
+          "description": "Rate limit configuration for a tool.",
+          "properties": {
+            "interval_secs": {
+              "format": "double",
+              "type": "number"
+            },
+            "max_calls": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "interval_secs",
+            "max_calls"
+          ],
+          "type": "object"
+        },
+        "ToolSchema": {
+          "additionalProperties": false,
+          "description": "Rich schema describing a tool's interface and runtime configuration.\n\nCarries everything the runtime needs: parameter validation via JSON Schema, idempotency hints, caching policy, rate limiting, and origin attribution.",
+          "properties": {
+            "cache_ttl_secs": {
+              "description": "If set, results are cached with this TTL in seconds",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "idempotent": {
+              "description": "Whether this tool is idempotent (safe to cache/retry)",
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "parameters": {
+              "description": "JSON Schema for parameters (e.g. `{\"type\": \"object\", \"properties\": {...}, \"required\": [...]}`)"
+            },
+            "rate_limit": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ToolRateLimit"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, rate limited to this many calls per interval"
+            },
+            "returns": {
+              "description": "JSON Schema for return value (optional)"
+            },
+            "source": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ToolSourceKind"
+                }
+              ],
+              "description": "Origin classification surfaced by `tools.list` and execution events. Older serialized schemas default to caller-defined tools."
+            }
+          },
+          "required": [
+            "name",
+            "source",
+            "description",
+            "parameters",
+            "idempotent"
+          ],
+          "type": "object"
+        },
+        "ToolSourceKind": {
+          "description": "Stable, detail-free origin of a registered tool.\n\nRuntime registries may retain richer source metadata (for example, the MCP server name), but this enum is the public IR/wire classification used by tool catalogs and execution events.",
+          "enum": [
+            "builtin",
+            "user_defined",
+            "subprocess",
+            "mcp"
+          ],
+          "type": "string"
+        }
+      },
+      "description": "The `tools.list` result. Built and serialized by `handler::handle_tools_list`.",
+      "properties": {
+        "count": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/definitions/ToolSchema"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "count",
+        "tools"
+      ],
+      "title": "ToolsListResult",
+      "type": "object"
+    },
+    "rpc.tools.poll.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ToolPollResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "definitions": {
+        "ToolPollResult": {
+          "additionalProperties": false,
+          "description": "What `poll` returns: the drained chunks since the last poll plus the invocation's current status and, once terminal, its final result or error extracted from the terminal chunk.",
+          "properties": {
+            "action_id": {
+              "type": "string"
+            },
+            "chunks": {
+              "description": "Chunks produced since the previous poll (oldest first). Terminal chunk included when the stream just finished.",
+              "items": {
+                "$ref": "#/definitions/ToolStreamChunk"
+              },
+              "type": "array"
+            },
+            "dropped_chunks": {
+              "description": "Chunks dropped from the buffer because it hit its cap before this poll drained it (0 for callers that poll promptly). The event broadcast may still have delivered them live.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "error": {
+              "description": "Set once status is `failed` (from the `error` chunk's message).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "handle": {
+              "type": "string"
+            },
+            "result": {
+              "description": "Set once status is `succeeded` (from the `done` chunk's payload)."
+            },
+            "status": {
+              "$ref": "#/definitions/ToolStatus"
+            },
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "handle",
+            "tool",
+            "action_id",
+            "status",
+            "chunks"
+          ],
+          "type": "object"
+        },
+        "ToolStatus": {
+          "description": "The lifecycle state of a streaming/long-running tool invocation.",
+          "oneOf": [
+            {
+              "description": "Still executing; more chunks may arrive.",
+              "enum": [
+                "running"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Finished successfully (a `done` chunk was emitted).",
+              "enum": [
+                "succeeded"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Finished with an error (an `error` chunk was emitted).",
+              "enum": [
+                "failed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Cancellation was requested and honored.",
+              "enum": [
+                "cancelled"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ToolStreamChunk": {
+          "description": "One unit of output from a streaming/long-running tool.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "description": "An incremental text delta (e.g. command output line, token).",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "text"
+                  ],
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "A structured data fragment.",
+              "properties": {
+                "data": true,
+                "kind": {
+                  "enum": [
+                    "data"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "data",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Progress signal: `fraction` in `[0,1]` plus an optional message.",
+              "properties": {
+                "fraction": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "kind": {
+                  "enum": [
+                    "progress"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "fraction",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Terminal success. Carries the final result, if any. After `done` no further chunks are emitted for the handle.",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "done"
+                  ],
+                  "type": "string"
+                },
+                "result": true
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Terminal failure with an error message. Also terminates the stream.",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "error"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "message"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "title": "Nullable_ToolPollResult"
+    },
+    "rpc.tools.register.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "format": "uint",
+      "minimum": 0.0,
+      "title": "uint",
+      "type": "integer"
+    },
+    "rpc.tools.stream.subscribe.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "The `tools.stream.subscribe` result.",
+      "properties": {
+        "subscribed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "subscribed"
+      ],
+      "title": "ToolsStreamSubscribeResult",
+      "type": "object"
+    },
+    "rpc.tools.unregister.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "The `tools.unregister` result.",
+      "properties": {
+        "removed": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "unregistered": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "removed",
+        "unregistered"
+      ],
+      "title": "ToolsUnregisterResult",
+      "type": "object"
+    },
+    "type.action_result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ActionStatus": {
+          "description": "Lifecycle status of an action.",
+          "enum": [
+            "proposed",
+            "validated",
+            "rejected",
+            "executing",
+            "succeeded",
+            "failed",
+            "skipped"
+          ],
+          "type": "string"
+        }
+      },
+      "description": "The outcome of executing a single action.",
+      "properties": {
+        "action_id": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output": true,
+        "rolled_back": {
+          "description": "Whether this action executed successfully but its enclosing proposal's state transaction was subsequently rolled back. The action's [`ActionResult::status`] remains truthful about execution; callers use this independent marker to tell whether its state effects committed. External effects may remain because CAR can restore only its own state.\n\nDefaults to `false` for results written by older CAR versions and is omitted from the serialized form when false.",
+          "type": "boolean"
+        },
+        "state_changes": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "status": {
+          "$ref": "#/definitions/ActionStatus"
+        },
+        "terminal": {
+          "description": "True only when the executing tool explicitly returned a typed terminal failure. Missing fields and legacy string errors remain non-terminal.",
+          "type": "boolean"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_id",
+        "status",
+        "state_changes",
+        "timestamp"
+      ],
+      "title": "ActionResult",
+      "type": "object"
+    }
+  }
+}
