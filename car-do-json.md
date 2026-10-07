@@ -26,6 +26,30 @@ document, including on failure.
 Do not discard stderr with `2>/dev/null`. The event stream is the only record
 of what happened during the run.
 
+A checkpointed foreground one-shot run includes a `run_id` in its `started`
+event and final stdout document. CAR checkpoints its exact model-facing
+transcript after each
+completed turn through the daemon's sync oplog. If inference fails after doing
+useful work, continue from the latest checkpoint with:
+
+```bash
+car do --resume <run-id>
+# Repeating the original text is allowed, but it must be byte-for-byte identical:
+car do --resume <run-id> "the original goal"
+```
+
+An omitted goal is restored from the checkpoint. A different goal, a different
+working repository, or a changed model-visible tool set is refused before
+inference. The resumed loop keeps the same run id, prior tool receipts, task list, and
+receipt-journal hash chain, and numbers its next inference turn after the last
+completed checkpointed turn. The restored task list is rendered in the next
+turn's state block and reported as a `todos` event on that turn's first
+successful `todo_write`, not at startup. `--resume` is for one-shot runs and cannot be
+combined with `--serve`, `--until`, or `--infer-until`. A new run remains usable
+when no daemon is available, but human output says it could not checkpoint and
+JSON output omits `run_id`; that run cannot be resumed. Resuming always requires
+the daemon that owns the sync oplog.
+
 Neither Claude Code nor Codex streams a shell call, so in practice you read the
 events after the process exits. They are still what lets you explain a slow run
 and report what was rejected mid-flight, rather than narrating from the final
@@ -43,6 +67,7 @@ failure as the run's answer.
 {
   "schema": "car.do/1",
   "status": "success",
+  "run_id": "run-…",          // pass to car do --resume after an interrupted run
   "summary": "…",              // the assistant's final text
   "turns": 7,                  // the parent loop's own turns — a delegate's are not counted
   "delegations": 1,            // `delegate` calls issued (0 when none)
@@ -64,6 +89,7 @@ failure as the run's answer.
 {
   "schema": "car.do/1",
   "status": "error",
+  "run_id": "run-…",          // resume handle; prior receipts remain in this run
   "error": "AssistantLoopFailed",
   "message": "…",              // NOT `summary`
   "turns": 9,                   // attempts consumed, including the failed turn
@@ -86,6 +112,7 @@ failure as the run's answer.
 {
   "schema": "car.do/1",
   "status": "auth_required",
+  "run_id": "run-…",
   "error": "AuthRequired",     // a string, like every other `error` value
   "reason": "signed_out",      // "signed_out" | "expired" | "no_workspace"
   "message": "…",              // NOT `summary` — the remedy, in plain language
@@ -176,6 +203,10 @@ with no matching write.
 This is the mechanical half of the assistant's receipts-decide-completion rule.
 It is a field rather than a note appended to the summary precisely so a
 relaying agent cannot quietly drop it — surface every entry.
+
+Negated file-operation statements such as "No files were edited" or "I have not
+read the files" do not assert completed work. Separate affirmative clauses still
+require receipts: "No files were edited, but I read the source" claims a read.
 
 Two limits, and both matter:
 
@@ -290,6 +321,7 @@ Each stderr line is `{"type", "phase", "message", "data"}`.
 | `tool_called` | A tool is about to run. `data.call_id` is CAR-generated, `data.sequence` is its one-based position in the turn, plus `data.tool` and `data.brief` (the goal, for `delegate`). |
 | `tool_result` | A tool succeeded. `data.call_id` and `data.sequence` match its `tool_called` event. |
 | `tool_failed` | A tool failed, was denied, or was cancelled. `data.call_id` and `data.sequence` still close the matching request. |
+| `todos` | The run's whole task list after a successful `todo_write`. `data.items` is `[{id, text, status}]`, where `status` is `open`, `done`, or `dropped`. Not emitted for a rejected write. |
 | `goal_evaluated` | One goal-loop verdict. `data.iteration`, `data.met`, `data.grounded`. |
 | `completed` | Run finished. `data.models_served` matches the terminal receipt. |
 | `failed` | Run failed. `data.error`; completed calls remain in `data.models_served`. Mid-loop failures also carry `data.turns_completed` and the typed `data.failure` when known. |

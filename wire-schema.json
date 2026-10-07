@@ -106,7 +106,7 @@
         "tools.stream.subscribe",
         "tools.unregister"
       ],
-      "total": 479,
+      "total": 519,
       "uncovered": [
         "CancelTask",
         "CreateTaskPushNotificationConfig",
@@ -144,8 +144,10 @@
         "agent_permissions.evaluate",
         "agent_permissions.evaluate_tool",
         "agent_permissions.get",
+        "agent_permissions.list_grants",
         "agent_permissions.reset",
         "agent_permissions.reset_tool",
+        "agent_permissions.revoke_grant",
         "agent_permissions.set",
         "agent_permissions.set_default",
         "agent_permissions.set_tool",
@@ -177,8 +179,13 @@
         "auth.authority_hint",
         "auth.complete",
         "auth.completion_status",
+        "auth.default_context.clear",
+        "auth.default_context.get",
+        "auth.default_context.set",
         "auth.logout",
+        "auth.organizations",
         "auth.remove_account",
+        "auth.resolve_context",
         "auth.snapshot",
         "auth.start",
         "auth.status",
@@ -231,6 +238,7 @@
         "coder.projects.create",
         "coder.projects.get",
         "coder.projects.list",
+        "coder.refresh_review",
         "coder.respond",
         "coder.revise_contract",
         "coder.start",
@@ -244,6 +252,8 @@
         "concierge.clear_default",
         "concierge.defaults",
         "concierge.dismiss",
+        "concierge.maintain",
+        "concierge.portfolio",
         "concierge.refresh_catalog",
         "concierge.rollback",
         "concierge.set_default",
@@ -264,9 +274,11 @@
         "declagents.invoke",
         "declagents.list",
         "declagents.remove",
+        "declagents.revert",
         "declagents.route",
         "declagents.route_split",
         "declagents.routing_stats",
+        "declagents.run_scenarios",
         "declagents.set_enabled",
         "detokenize",
         "diagnostics.secret_store_activity",
@@ -328,6 +340,31 @@
         "inference.runner.event",
         "inference.runner.fail",
         "keychain.status",
+        "lattice.claim",
+        "lattice.claims",
+        "lattice.connect.accept",
+        "lattice.connect.confirm",
+        "lattice.connect.inspect",
+        "lattice.connect.invite",
+        "lattice.connect.share",
+        "lattice.connections",
+        "lattice.directory",
+        "lattice.disconnect",
+        "lattice.find",
+        "lattice.join",
+        "lattice.leave",
+        "lattice.nodes",
+        "lattice.org.attest",
+        "lattice.org.policy",
+        "lattice.org.revoke",
+        "lattice.org.rule.add",
+        "lattice.org.rule.remove",
+        "lattice.org.rules",
+        "lattice.org.status",
+        "lattice.release",
+        "lattice.requests",
+        "lattice.respond",
+        "lattice.wait",
         "lease.acquire",
         "lease.release",
         "lease.renew",
@@ -392,6 +429,7 @@
         "models.remove",
         "models.resource_policy.get",
         "models.resource_policy.set",
+        "models.retire",
         "models.route",
         "models.route_provenance",
         "models.search",
@@ -409,6 +447,7 @@
         "multi.swarm",
         "multi.tournament",
         "multi.vote",
+        "multiplayer.abandon",
         "multiplayer.get",
         "multiplayer.list",
         "multiplayer.merge_check",
@@ -459,6 +498,7 @@
         "runs.complete",
         "runs.get_trace",
         "runs.list",
+        "runs.record_model_turn",
         "runs.record_turns",
         "runs.resume",
         "runs.start",
@@ -592,6 +632,27 @@
         }
       ],
       "definitions": {
+        "AgentInference": {
+          "additionalProperties": false,
+          "description": "A declarative agent's persisted inference selection.\n\nThe whole block is optional so legacy agents retain adaptive routing. When present, `model` is a strict model pin; `provider` disambiguates a bare model name, and `reasoning_effort` controls the provider's reasoning budget.",
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "reasoning_effort": {
+              "$ref": "#/definitions/ReasoningEffort"
+            }
+          },
+          "required": [
+            "model",
+            "provider",
+            "reasoning_effort"
+          ],
+          "type": "object"
+        },
         "AgentStatus": {
           "description": "Runtime status of a managed agent. Distinct from [`AgentStatus`](crate::AgentStatus) which is the *agent's* self-reported liveness signal — supervisor status describes what *we* know about the child process from this side.",
           "oneOf": [
@@ -666,6 +727,16 @@
             },
             "id": {
               "type": "string"
+            },
+            "inference": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/AgentInference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "kind": {
               "$ref": "#/definitions/DeclarativeAgentKind"
@@ -869,6 +940,15 @@
             "stderr_log_path"
           ],
           "type": "object"
+        },
+        "ReasoningEffort": {
+          "description": "Portable coarse reasoning controls supported by declarative-agent specs.",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "type": "string"
         },
         "RestartPolicy": {
           "description": "What to do when a managed agent exits.",
@@ -1421,7 +1501,7 @@
           ]
         },
         "resolved_model_id": {
-          "description": "Canonical immutable catalog id actually used after routing/fallback.",
+          "description": "Canonical immutable catalog id actually used after routing/fallback.\n\nContract: the value is exactly the `id` of the catalog row that served, never rewritten at serve time, so an exact `model_id` pin that was honored comes back byte-for-byte equal. Compare it for equality; do not parse it. Built-in catalog ids have the form `provider/name[:tag]`, each part `[A-Za-z0-9][A-Za-z0-9._-]*` (so no `/` inside `name` and at most one `:`); `name` may carry the provider's own version or date (`openai/gpt-5.5-2026-04-23`) and the tag is optional (`anthropic/claude-opus-4-8` has none, `qwen/qwen3-4b:q4_k_m` has one). Ids of discovered, signed-catalog, gateway or operator-registered rows (`parslee/openrouter/open-fast`) are passed through verbatim and need not follow that form.",
           "type": "string"
         },
         "row_digest": {
@@ -1568,6 +1648,15 @@
               "description": "Benchmark name as published (e.g., \"MMLU-Pro\", \"GPQA-Diamond\", \"SWE-bench-Verified\", \"HumanEval\", \"MATH\").",
               "type": "string"
             },
+            "runs": {
+              "description": "How many independent runs the score pools, when CAR measured it. `None` for a published score, whose sample is not ours to know.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "score": {
               "description": "Score on a 0.0–1.0 scale.",
               "format": "double",
@@ -1579,14 +1668,24 @@
                 "string",
                 "null"
               ]
+            },
+            "spread": {
+              "description": "Highest minus lowest score across those runs; present only with two or more. A difference smaller than this is not a measured difference.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
             }
           },
           "required": [
             "harness",
             "measured_at",
             "name",
+            "runs",
             "score",
-            "source_url"
+            "source_url",
+            "spread"
           ],
           "type": "object"
         },
@@ -2413,6 +2512,22 @@
                 "type"
               ],
               "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "ChatGPT subscription OAuth read from the car-auth Codex record; admitted only for provider `openai-codex`.",
+              "properties": {
+                "type": {
+                  "enum": [
+                    "chatgpt_subscription"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -2438,15 +2553,43 @@
             "streaming": {
               "description": "Whether the API streams responses via SSE.",
               "type": "boolean"
+            },
+            "wire": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ProprietaryWire"
+                }
+              ],
+              "description": "The wire format the endpoint speaks. A row names it rather than CAR inferring it from the path, so the model decides the backend."
             }
           },
           "required": [
             "chat_path",
             "content_type",
             "extra_headers",
-            "streaming"
+            "streaming",
+            "wire"
           ],
           "type": "object"
+        },
+        "ProprietaryWire": {
+          "description": "What a proprietary endpoint speaks.",
+          "oneOf": [
+            {
+              "description": "OpenAI Responses-style chat (Parslee's `/inference/responses`).",
+              "enum": [
+                "responses"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "TypeSafe System One (Parslee's `/inference/typesafe/v1/systemone`): typed decisions with a probability per option, no text generation. Such a row serves `classify` only.",
+              "enum": [
+                "system_one"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "QuantScheme": {
           "description": "The numeric format a checkpoint's weights are stored in.\n\nDeliberately says nothing about *which engine* serves the file — [`ModelSource`] already carries that, and keying this on the container instead of the format produces falsehoods: whisper.cpp's `q5_0` ggml checkpoints use the same round-to-nearest block format as llama.cpp's, and a `Gguf*` variant would assert a GGUF text path that cannot load them.\n\nWhat it does express is the axis neither the bit width nor the source can: an MLX 4-bit affine checkpoint and a `Q4_K_M` are both \"4-bit\", were produced by different algorithms, and do not have the same quality.",
@@ -2459,7 +2602,7 @@
               "type": "string"
             },
             {
-              "description": "Block-scaled float — MX formats (`mxfp4`, `mxfp8`). A genuinely different loader path from [`QuantScheme::AffineGroupInt`] at the same nominal width; see the microscaling-mode rejection in `backend/mlx.rs`, which currently accepts exactly one of these.",
+              "description": "Block-scaled float — MLX's `mxfp4`, `mxfp8` and NVIDIA's `nvfp4`. A genuinely different loader path from [`QuantScheme::AffineGroupInt`] at the same nominal width, which is why the width alone cannot classify a checkpoint; see `backend::local::quantization_is_decodable`.",
               "enum": [
                 "block_scaled_float"
               ],

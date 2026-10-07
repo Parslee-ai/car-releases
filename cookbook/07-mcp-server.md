@@ -107,7 +107,7 @@ see the call — the daemon is not launched by you, so it cannot infer it.
 ### Peer identity and inbox
 
 The daemon's `initialize` response carries `MCP-Session-Id`. Echo it on later
-POSTs. That session's peer address is `mcp:<session-id>`; `peer_message` uses it
+POSTs. That session's peer address is `mcp:<peer-id>` — derived from an id CAR mints alongside the session, not from the `MCP-Session-Id` credential itself; `peer_message` uses it
 as the server-derived sender, and `peer_list` returns it as `self` alongside the
 other reachable sessions and CAR agents. Do not invent or pass a `from` field.
 

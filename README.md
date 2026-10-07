@@ -42,8 +42,10 @@ public copy.)
 
 A single signed binary with:
 
-- **Verify before execute** — prove plan properties (`verify`, `simulate`,
-  `equivalent`, `optimize`) before anything side-effecting runs.
+- **Verify before execute** — check plan properties (`verify`, `simulate`,
+  `equivalent`, `optimize`) before anything side-effecting runs. This is static
+  verification, not formal verification: some checks are decision procedures,
+  some are heuristics, and `equivalent` only samples.
 - **Policies in Rust** — enforced on every action before a tool fires
   (`deny_tool`, `deny_tool_param`, `require_state`), plus risk tiers with
   human-in-the-loop approval and per-agent permissions.
@@ -118,7 +120,7 @@ package is in **[DISTRIBUTION.md](./DISTRIBUTION.md)**.
 # macOS + Linux convenience installer (Windows: use CAR-setup-x64.exe or Scoop above;
 # inspect-then-run guidance in SECURITY.md):
 curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/install.sh | sh
-# pin a version with CAR_VERSION=v0.55.0
+# pin a version with CAR_VERSION=v0.56.1
 ```
 
 macOS is Apple Silicon only (15+). Linux x86_64/aarch64 and Windows x86_64 are

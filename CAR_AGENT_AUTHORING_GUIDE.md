@@ -102,7 +102,7 @@ car-server --port 8080
 
 The binding **lazy-connects to `ws://127.0.0.1:9100/` on the first call**. The default port is **9100 with auth on**; the README quickstart elsewhere shows **8080** — the port is not fixed, so match the binding's connect URL. Default ports for the full daemon: **WS 9100, UI HTTP 9101, MCP 9102** (A2A is opt-in).
 
-**Auth tokens.** On macOS, `CAR Host.app` (an `LSUIElement` menu-bar app) supervises `car-server` and mints a **per-launch auth token** passed via `--auth-token`. FFI clients read the token file at:
+**Auth tokens.** On macOS, `CAR Host.app` (an `LSUIElement` menu-bar app) supervises `car-server` and mints a **per-launch auth token** passed through a 0600 one-time `--auth-token-file`. FFI clients read the token file at:
 
 - macOS: `~/.car/auth-token`
 - Windows: `%LOCALAPPDATA%\ai.parslee.car\auth-token`
@@ -223,11 +223,12 @@ for level in &levels {
 **Run-trace lifecycle (the harness brackets every run).** The canonical packaged Node harness (`car-runtime/agent-loop`, imported by agents from the create-car-agent skill) wraps each `runAgent` invocation in a **run** so CarHost can trace it end-to-end — the intent it was given, every turn's prompt/CLI-outcome/verifier-verdict, and the final `AgentOutcome`. Capture is daemon-side and generic (no per-agent code); the harness only marks the run's boundaries:
 
 - **Open.** Before the first proposal, the harness calls `rt.runsStart(JSON.stringify({ intent, agent_id, agent_name, outcome_description }))` and **awaits** the ack to obtain `{ run_id }`. The daemon mints a durable `run_id` and tags it as the session's current run *before replying*, so the per-turn recorder reads the right id. `intent` is the goal the agent was given; `agent_id` resolves from `CAR_AGENT_ID` (injected by the supervisor) when supervised, else falls back to `config.agentName` for the unsupervised one-shot / `run_scenarios.py` path; `outcome_description` comes from `config.targetOutcome` when present, else `''`.
+- **Record each model decision.** After every inference and before submitting its requested actions, the harness best-effort calls `rt.runsRecordModelTurn(...)` with the one-based turn index, assistant text, normalized tool-call IDs and arguments, exact model id, provider token usage, and duration. The daemon appends this as `model_turn` through the same index/persistence/fanout path as action `turn` records, so `runs.get_trace` explains why each following action ran.
 - **Close and return the key.** After the terminal `AgentOutcome` is assembled and **before `runAgent` returns**, the harness calls `rt.runsComplete(JSON.stringify({ run_id, outcome }))` and awaits the ack (the connection may close right after), then adds the acknowledged id as return-only `outcome.run_id`. This keeps the daemon's `car-ir` outcome wire shape unchanged while giving a host the key to pass directly to `runs.get_trace`.
-- **Graceful degradation.** Both calls are wrapped in `try/catch` exactly like `registerAgentBasics` — a daemon **without** the `runs.*` methods (an older build) makes them throw, the harness swallows it, and the run proceeds unchanged except for the additive `run_id: null`. Neither call ever writes to stdout, so the **last** stdout line in `--json` mode stays the `AgentOutcome` JSON (`run_scenarios.py` depends on this contract).
+- **Graceful degradation.** Lifecycle and per-inference trace calls are wrapped in `try/catch` exactly like `registerAgentBasics` — a daemon **without** the newer `runs.*` methods makes them throw, the harness swallows it, and the run proceeds. An unacknowledged start yields the additive `run_id: null`; a missing model-turn method only omits those records. No trace call writes to stdout, so the **last** stdout line in `--json` mode stays the `AgentOutcome` JSON (`run_scenarios.py` depends on this contract).
 - **One run per `runAgent`.** In `--serve` mode each iteration is its own run on its own fresh `CarRuntime`/connection — its own `runsStart`/`runsComplete` bracket. Two sequential standing-goal runs produce two distinct `run_id`s.
 
-This is a deliberate evolution of the packaged helper, not a per-agent fork: edit `car-rs/crates/car-ffi-napi/npm/agent-loop.js`, never a generated `agent.mjs` — generated agents import the package implementation. See `runsStart` / `runsComplete` in `car-ffi-napi/npm/index.d.ts` for the exact request/response shapes.
+This is a deliberate evolution of the packaged helper, not a per-agent fork: edit `car-rs/crates/car-ffi-napi/npm/agent-loop.js`, never a generated `agent.mjs` — generated agents import the package implementation. See `runsStart` / `runsRecordModelTurn` / `runsComplete` in `car-ffi-napi/npm/index.d.ts` for the exact request/response shapes.
 
 ### Anchor 3 — The four safety layers (deny wins, first-Deny short-circuits)
 
@@ -378,7 +379,15 @@ seven guided answers in the spec's `builder_draft`. An edit creates its managed
 project with `existing_agent_id`; approval then replaces that exact registry id
 instead of deriving a new one from the project slug. The prior registered spec
 is retained one level deep as `previous`, so a host can offer one-step revert
-without maintaining a second history store.
+without maintaining a second history store. CarHost's Agents screen exposes
+that lifecycle directly: **Edit agent** reloads the stored Builder answers,
+shows changed answers before rebuilding, and keeps the same registered id.
+**Run scenarios** executes the stored cases with the build-time evaluator and
+shows each expected substring, actual output, and pass/fail result. **Keep
+current version** leaves the registry untouched; **Revert to previous version**
+uses `declagents.revert` to restore `previous` atomically without another model
+build. Programmatic clients use `declagents.run_scenarios` and
+`declagents.revert` for the same operations.
 
 
 | Agent kind | Durable definition | Runtime output | Locate it |
@@ -435,6 +444,36 @@ registry and the next agent registration writes that emptiness back, so a strict
 parser would let one typo in a hand-edited file unregister every agent on the
 machine. Strict validation returns once the registry loader surfaces read errors
 instead of swallowing them (tracked separately).
+
+#### Pinning inference for one agent
+
+Leave `inference` absent to keep adaptive routing. To make every Work, routed,
+chat, or direct invocation use one backend, persist the selection on the agent:
+
+```jsonc
+{
+  "inference": {
+    "model": "gpt-5.6-sol",
+    "provider": "openai",
+    "reasoning_effort": "high"
+  }
+}
+```
+
+A bare model is resolved as `<provider>/<model>`; an already-qualified model id
+must have the same provider prefix. The supported effort values are `low`,
+`medium`, and `high`, mapped to each serving provider's coarse reasoning
+control. A persisted selection is strict: a failure is reported rather than
+silently replacing the requested model with a local fallback, and a per-call
+model parameter cannot replace the saved choice. Host availability and policy
+may still refuse or narrow it. `declagents.invoke` returns `model_served`, and CarHost records it
+in the Work receipt, so the journal reports what actually answered rather than
+what the spec merely requested. Specs written before this field continue to
+load with `inference` absent.
+
+The Agent Builder review explicitly shows that a new wizard-built agent keeps
+adaptive routing. Its existing execution recommendation remains advisory; it
+does not pretend a recommended coding setup is a native model id.
 
 **Local models:** the window is read from the catalog — for a pinned model up
 front, and after every call from the model that actually served it, so a run
@@ -498,7 +537,7 @@ Highest-frequency authoring gotchas:
 
 - **Daemon required (v0.8+).** Start `car-server` once per host before any Node/Python call, or it fails.
 - **Direct `.tar.gz` downloads get quarantined** by Gatekeeper; npm/pip strip it automatically. Clear with `xattr -d com.apple.quarantine ./car-server ./car ./car-host ./car-memgine-eval`.
-- **API-key resolution priority:** process env var **wins** over `~/.car/env` over the OS keychain. An already-exported shell var silences `~/.car/env`. `car-server` auto-loads `~/.car/env` (dotenv: `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`GOOGLE_API_KEY`). Keychain via `car secrets put OPENAI_API_KEY` / `car secrets list` / `car secrets migrate-from-env --dry-run`.
+- **API-key resolution priority:** process env var **wins** over `$CAR_HOME/env` (otherwise `~/.car/env`) over the OS keychain. An already-exported shell var silences the file value. `car-server` loads the file at startup; terminal inference reads it on demand without exporting it into the CLI process. `car keys list` uses the same source order and names the winner. Keychain via `car secrets put OPENAI_API_KEY` / `car secrets list` / `car secrets migrate-from-env --dry-run`.
 - **Headless Linux has no Secret Service** — `car secrets available` returns false and the keychain is silently skipped; use `~/.car/env`.
 - **MLX from a code-signed Python** needs the `com.apple.security.cs.allow-jit` entitlement or `mlx-rs` panics on first inference — use unsigned Python, add the entitlement, or run inference through the daemon (its release binary ships the entitlement).
 - **No cargo feature flags in `car-*` crates** — downstream manifests with `features = [...]` now fail.
@@ -527,7 +566,7 @@ Practically, this changes four things for an author:
 
 So the FFI surface and the WebSocket surface are not identical: the binding exposes the in-process methods plus daemon-routed ones, and the daemon-only ones fail loudly when the server isn't up. The first thing any setup must guarantee is **"is car-server running and am I authenticated to it?"** — every troubleshooting path, cross-host scenario, and FFI-vs-WS divergence traces back to this.
 
-> On macOS the easiest answer is "yes, always": **CAR Host.app embeds and supervises `car-server`**, mints a per-launch auth token (passed to the server via `--auth-token`), and you never start a daemon by hand.
+> On macOS the easiest answer is "yes, always": **CAR Host.app embeds and supervises `car-server`**, mints a per-launch auth token (passed through a 0600 one-time `--auth-token-file`), and you never start a daemon by hand.
 
 ### Choosing an install route
 
@@ -660,7 +699,7 @@ Because the binding is a WebSocket client, it must know where the daemon is and 
 | `CAR_DAEMON_URL` | WebSocket URL of the running `car-server` |
 | `CAR_AUTH_TOKEN` | Per-server auth token the client presents on connect |
 
-On macOS, CAR Host.app supervises `car-server` and mints a per-launch token internally (passed to the server with `--auth-token`), so a binding running under the app's umbrella connects without you wiring these manually. When you run `car-server` yourself (Route 4), you set these so the binding can reach it.
+On macOS, CAR Host.app supervises `car-server` and mints a per-launch token internally (passed through a 0600 one-time `--auth-token-file`), so a binding running under the app's umbrella connects without you wiring these manually. When you run `car-server` yourself (Route 4), you set these so the binding can reach it.
 
 Remember the FFI-vs-daemon divergence: callback-bearing streams are WebSocket-only. In particular, the direct Python `infer_stream` method always raises; use the daemon's `infer_stream` JSON-RPC method. Connection and authentication checks apply to that WebSocket flow, not to the compatibility stub.
 
@@ -835,6 +874,7 @@ car secrets put OPENAI_API_KEY                      # stdin prompt if --value om
 echo sk-... | car secrets put OPENAI_API_KEY
 car secrets put OPENAI_API_KEY --value 'sk-a,sk-b,sk-c'   # comma list = load-balanced multi-key pool
 car secrets get OPENAI_API_KEY                      # exit 1 if missing
+car secrets get OPENAI_API_KEY --check-credential   # store, then $CAR_HOME/env
 car secrets status OPENAI_API_KEY                   # {"service":"car","key":...,"exists":true}
 car secrets delete OPENAI_API_KEY                   # idempotent
 car secrets available                               # {"available": true}
@@ -858,11 +898,14 @@ car keys remove openrouter
 }
 ```
 
-**Key resolution priority** (single source of truth, `resolve_env_or_keychain`):
+**Key resolution priority** (one shared source list drives `resolve_env_or_keychain` and `car keys list`):
 
-1. **Process env var** — non-empty wins (covers containers/CI/K8s/systemd; `~/.car/env` is loaded into process env at server startup so it flows through here).
-2. **OS keychain** under service `"car"`, account = env-var name (silently skipped if the store is unavailable).
-3. **None.**
+1. **Process env var** — non-empty wins (covers containers/CI/K8s/systemd).
+2. **State-root env file** — `$CAR_HOME/env`, otherwise `~/.car/env`; terminal inference reads it on demand and the daemon loads it at startup.
+3. **OS keychain** under service `"car"`, account = env-var name (silently skipped if the store is unavailable).
+4. **None.**
+
+`car keys list` names `env`, `car env`, or `keychain` from that same order. A file-only key is therefore both listed and usable by `car do --model`; the CLI does not load unrelated working-directory `.env` files.
 
 OpenRouter adds one lower-priority, separately removable slot: environment
 `OPENROUTER_API_KEY` → pasted keychain `OPENROUTER_API_KEY` → OAuth keychain
@@ -908,7 +951,7 @@ without rebuilding the registry or restarting CAR.
 **Keychain gotchas:**
 
 - Default service is **`"car"`**. Pre-v0.5.2 it was `"car-runtime"`; older entries must be re-`put` or migrated — readers only look at `"car"`.
-- **Env var always wins over the keychain.** A stale-but-set (non-empty) env var masks a keychain value entirely.
+- **Process env, then the state-root env file, win over the keychain.** A stale-but-set (non-empty) process variable masks both later sources; a non-empty `$CAR_HOME/env` assignment masks the keychain.
 - **No silent plaintext fallback.** On headless Linux with no Secret Service daemon, `put/get/delete` return `SecretError::Unavailable`, and `migrate-from-env` refuses entirely rather than no-op'ing.
 - macOS writes go through `/usr/bin/security` with a best-effort pre-delete then `add-generic-password -U -A` to get a fresh any-app ACL — this fixes the repeated-keychain-prompt bug where a legacy ACL was bound to the caller binary's CDHash (which changes on every rebuild). The secret value transits `argv` briefly (acceptable single-user-dev threat model only).
 - To drop the keychain dependency for a container build: `cargo build --no-default-features --features ast -p car-inference` removes `car-secrets` from the dependency graph; use env vars / mounted secrets instead.
@@ -1573,7 +1616,7 @@ Implementation facts to internalize: `agent_basics::execute(substrate, tool, par
 Read/edit semantics (H1/F4-remainder, audit 2026-07-06):
 
 - **Guarded `read_file` returns line-numbered content** — `agent_basics::execute_with_ledger` produces `cat -n` style output, each line prefixed `%6d\t` (1-based; when `offset` is set, numbering starts at `offset + 1`). `size_bytes`/`total_lines` still describe the full file. Those prefixes are display-only; a model must strip them before reusing a line in `edit_file`/`write_file`. The plain `agent_basics::execute` keeps its historic raw `read_file` result for direct callers. Guarded reads are intentionally **not** result-cached, so a re-read after an edit never serves stale content.
-- **Read-before-edit + staleness guard** — use `agent_basics::execute_with_ledger(substrate, &ReadLedger, tool, params)` (the opt-in sibling of `execute`) to enforce it: `edit_file`, and `write_file` over an *existing* file, require the session to have read that path first and its content to still match; a successful read/write/edit records the current content (so write→edit needs no intervening read). A paged read can license one unique targeted edit, but replace-all edits and writes or appends to an existing file require a fresh unpaged read. Creating a new file is ungated; an existing file that cannot be read as UTF-8 is rejected rather than treated as a new file. The plain `execute` runs ungated (unchanged stable API). Every in-repo executor (coder, assistant, bench, raw Runtime) threads session-isolated `ReadLedger` observations with same-path mutation serialization.
+- **Read-before-edit + staleness guard** — use `agent_basics::execute_with_ledger(substrate, &ReadLedger, tool, params)` (the opt-in sibling of `execute`) to enforce it: `edit_file`, and `write_file` over an *existing* file, require the session to have read that path first and its content to still match; a successful read/write/edit records the current content (so write→edit needs no intervening read). A paged read can license one unique targeted edit, but replace-all edits and writes or appends to an existing file require every line of the current content to have been read — in one read, or in pages of unchanged content that add up (`ReadLedger::record_lines`). A caller that shows reads through a fixed budget can pass `max_output_bytes` to `read_file`, which then stops at the budget, records only the lines it returned, and names the offset to continue from in `truncated`. Creating a new file is ungated; an existing file that cannot be read as UTF-8 is rejected rather than treated as a new file. The plain `execute` runs ungated (unchanged stable API). Every in-repo executor (coder, assistant, bench, raw Runtime) threads session-isolated `ReadLedger` observations with same-path mutation serialization.
 - **`edit_file`** replaces `old_text` with `new_text`; by default `old_text` must match **exactly once** (else it errors and names `replace_all`), or pass `replace_all: true` to replace every occurrence (`replacements` count returned).
 
 ### Tool identity: ToolEntry, permission, source
@@ -3609,7 +3652,7 @@ println!("{} (model={}, {}ms)", result.text, result.model_used, result.latency_m
 Local generation runs GGUF **Qwen3 / Qwen3-MoE** models. Backend selection is **compile-time via cfg-target gating** (the repo has a hard rule: no cargo feature flags — platform variance is `cfg`, never a runtime feature).
 
 - **Non-Apple targets — Candle.** `CandleBackend::load(model_dir, device)` reads `model.gguf` + `tokenizer.json`, auto-detects `general.architecture` from GGUF metadata, and loads either standard Qwen3 (`quantized_qwen3::ModelWeights`) or `qwen3moe` (`Qwen3MoeModel`). Runs on `Device::{Cpu, Metal, Cuda(ordinal)}` via `Device::auto()`.
-- **Apple Silicon (`target_os=macos`, `target_arch=aarch64`, not `car_skip_mlx`) — MLX.** The Candle path (`candle.rs`) is **cfg'd out entirely**; `generate`/`classify`/`embed` route through the `MlxBackend` instead.
+- **Apple Silicon (`target_os=macos`, `target_arch=aarch64`, not `car_skip_mlx`) — MLX through Swift.** The Candle path (`candle.rs`) is **cfg'd out entirely**; `generate`/`classify` route through `SwiftLmBackend`, which links Apple's `mlx-swift-lm` behind a C ABI. Which architectures that covers is whatever the linked package registers — CAR keeps no list.
 - **Apple FoundationModels** is an additional on-device source (`ModelSource::AppleFoundationModels`).
 
 > **Gotcha — TTFT.** `time_to_first_token_ms` on `InferenceResult` is populated **only** by local Candle/MLX generate paths. It is `null` for non-streaming remote calls. To time first-token on remote models, use `generate_tracked_stream` and time the first `text` event yourself.
@@ -4531,7 +4574,7 @@ The dispatcher routes ~188 method literals across 50+ namespaces (`session.*`, `
 | `-32601` | Method not found |
 | `-32602` | Invalid params |
 | `-32603` | Internal error |
-| `-32004` | Handler deadline exceeded; the operation may have committed, so consult the method's authoritative read before retrying |
+| `-32004` | Handler deadline or coder session-liveness response bound exceeded; consult the method's authoritative read before retrying. Coder liveness messages name the already-terminal session and its recorded failure reason |
 | `-32000` | Tool error (used when a client rejects a `tools.execute` callback) |
 | `-32001` | Auth required (also closes the connection) |
 | `-32003` | Approval denied / timeout |
@@ -4569,7 +4612,7 @@ request dispatch is concurrent, never pipeline the protocol request behind
 `session.auth`: await auth success first, then await handshake success, then
 subscribe or start a browser sign-in.
 
-The daemon mints a fresh 32-byte token (43-char base64url) at startup, writes it `0600` to a per-platform well-known path, and removes it on graceful shutdown. Comparison is **constant-time** (`constant_time_eq`). CarHost.app mints the token and passes `--auth-token` to the daemon.
+The daemon mints a fresh 32-byte token (43-char base64url) at startup and writes it `0600` to a per-platform well-known path. Comparison is **constant-time** (`constant_time_eq`). CarHost.app mints the token and passes it through a 0600 one-time `--auth-token-file`; the daemon deletes that launch file immediately after reading it.
 
 | Platform | Token path |
 |---|---|
@@ -4794,7 +4837,8 @@ while True:
 car-server --port 9100                         # start WS daemon (default 127.0.0.1:9100, auth ON)
 car-server --port 9100 --journal-dir ~/.car/journals   # event-journal dir (default ~/.car/journals)
 car-server --no-auth                           # disable auth handshake (also CAR_NO_AUTH=1)
-car-server --auth-token <token>                # install a pre-minted token (also CAR_AUTH_TOKEN; used by CarHost.app)
+car-server --auth-token <token>                # install a pre-minted token (also CAR_AUTH_TOKEN; warns when exposed in argv)
+car-server --auth-token-file <path>             # read, trim, and delete a one-time token file (also CAR_AUTH_TOKEN_FILE)
 car-server --no-approvals                      # disable high-risk approval gate (also CAR_NO_APPROVALS=1)
 car-server --agents-manifest <path>            # lifecycle-agent manifest (also CAR_AGENTS_MANIFEST; default ~/.car/agents.json)
 car-server --mcp-bind <host:port>              # override/disable MCP endpoint (also CAR_MCP_BIND; default 127.0.0.1:9102, 'disabled' to skip)
@@ -4833,7 +4877,11 @@ CAR speaks the **Model Context Protocol (MCP)** in *both* directions, and a sing
 | **CAR as MCP server** | An MCP-aware model (Claude Desktop, Cursor, Claude Code, a custom GPT) calls CAR's stateless capabilities — graph-memory facts, skills, proposal verification, four-layer context — as MCP tools/resources/prompts. | `car-mcp` (dispatcher) + `car-mcp-server` (stdio binary) + `car-server-core/src/mcp.rs` (HTTP-streamable on the daemon) |
 | **CAR as MCP client** | Your CAR agent consumes an *external* MCP server's tools, registered as native `mcp_{server}_{tool}` tools that route through CAR's capability/policy flow. | `car-engine/src/mcp.rs` (`McpServer` + `McpToolExecutor`) |
 
-As a server, CAR prefers **`2025-06-18`** (`car-mcp` `PROTOCOL_VERSION`) and still serves **`2024-11-05`**: `initialize` *negotiates* rather than announcing, answering with the `protocolVersion` the client requested when it appears in `car-mcp` `SUPPORTED_VERSIONS` (`["2024-11-05","2025-06-18"]`), and with `PROTOCOL_VERSION` otherwise — including when the client sends no version at all. The list is what made the bump safe to make: an old client keeps getting the revision it asked for. `2025-03-26` was skipped deliberately — it makes receiving JSON-RPC batches a MUST, which CAR does not implement, while `2025-06-18` removed batching again. Of the `2025-06-18` delta CAR implements `outputSchema`/`structuredContent` (below); elicitation is a *client* capability CAR-as-server never initiates, and `resources/templates/list` stays unimplemented by decision because every URI CAR exposes is fully enumerable. The engine's own stdio MCP *client* (`car-engine/src/mcp.rs`) still sends `2024-11-05`, and the remote-connectors client (`car-connectors`) sends `2025-06-18` and echoes whatever the server negotiates.
+As a server, CAR prefers **`2025-11-25`** (`car-mcp` `PROTOCOL_VERSION`) and still serves **`2025-06-18`** and **`2024-11-05`**: `initialize` *negotiates* rather than announcing, answering with the `protocolVersion` the client requested when it appears in `car-mcp` `SUPPORTED_VERSIONS` (`["2024-11-05","2025-06-18","2025-11-25"]`), and with `PROTOCOL_VERSION` otherwise — including when the client sends no version at all. The list is what makes each bump safe: an old client keeps getting the revision it asked for, and an entry is never dropped. `2025-03-26` was skipped deliberately — it makes receiving JSON-RPC batches a MUST, which CAR does not implement, while `2025-06-18` removed batching again. Of the `2025-06-18` delta CAR implements `outputSchema`/`structuredContent` (below); elicitation is a *client* capability CAR-as-server never initiates, and `resources/templates/list` stays unimplemented by decision because every URI CAR exposes is fully enumerable.
+
+`2025-11-25` was claimable because its only normative server requirement — answer `403` to an invalid `Origin` on Streamable HTTP — was already implemented, and the rest of the delta is capabilities a server may decline: `tasks` is experimental and undeclared, icon metadata is unemitted, the OAuth/OIDC discovery work does not apply to this transport, and the elicitation and sampling additions extend client capabilities CAR never invokes. It carries one behavioural change, and it is the only part of the revision an *older* client also sees: minor change #5 says input validation errors should come back as tool execution errors, so on `tools/call` `ToolError::InvalidParams` is now an `isError: true` result rather than a JSON-RPC `-32602`. The envelope did not move — a request failing the `CallToolRequest` schema itself is `ToolError::MalformedRequest` and stays `-32602`, as does `UnknownTool`. Applying it uniformly is sound rather than merely convenient: dispatch is stateless and does not record which revision a caller negotiated, `isError` has existed since `2024-11-05` so the shape is legal in every revision CAR speaks, and the item is a clarification of intent rather than a new wire feature. Details under "Tool failures vs protocol failures".
+
+The engine's own stdio MCP *client* (`car-engine/src/mcp.rs`) still sends `2024-11-05`, and the remote-connectors client (`car-connectors`) sends `2025-06-18` and echoes whatever the server negotiates. The client constants move independently of the server's: a client asking for a revision it has no use for would be claiming capabilities it does not implement.
 
 Tools whose result is a JSON object declare an `outputSchema` in `tools/list` and return `structuredContent` alongside the text block — the same serialization twice, so an old client reads identical data from `content[0].text`. Array- and prose-valued tools (`memory_query`, `skill_find`, `skill_list`, `memory_add_fact`, `skill_ingest`) declare no `outputSchema` and never emit `structuredContent` (the spec requires it to be an object).
 
@@ -4846,7 +4894,7 @@ The **stdio** binary exposes only CAR's stateless capabilities. Anything needing
 - **Exposed over stdio MCP:** graph-memory facts, skills, proposal verification (no execution), policy checks, four-layer context assembly.
 - **NOT exposed over MCP at all (use WebSocket):** proposal execution (tool callbacks), multi-agent (swarm/pipeline/supervisor), streaming inference, voice, browser, meeting capture.
 
-**The daemon's HTTP endpoint is the exception, and it is deliberate.** It adds `assistant_start` / `assistant_poll` / `assistant_cancel` (car#972 §6) — the flagship agent behind `car do`, driven through a **run handle** rather than a blocking call — plus peer tools. `initialize` mints an `MCP-Session-Id`; later requests use it to derive a distinct `mcp:<session-id>` sender, and long-lived sessions poll `peer_inbox`. The `run_id` remains separate application state the client carries between calls. "MCP is the stateless half of CAR" is true of the stdio binary, not the daemon endpoint.
+**The daemon's HTTP endpoint is the exception, and it is deliberate.** It adds `assistant_start` / `assistant_poll` / `assistant_cancel` (car#972 §6) — the flagship agent behind `car do`, driven through a **run handle** rather than a blocking call — plus peer tools. `initialize` mints an `MCP-Session-Id` — a bearer credential, never published — plus a separate unforgeable peer id; later requests use the header to authenticate and CAR derives a distinct `mcp:<peer-id>` sender from the latter, and long-lived sessions poll `peer_inbox`. The `run_id` remains separate application state the client carries between calls. "MCP is the stateless half of CAR" is true of the stdio binary, not the daemon endpoint.
 
 The split is one of *capability ownership*, not protocol taste: the daemon holds a live `Runtime`, an inference engine, and daemon state; `car-mcp-server` is `car-mcp` + `car-telemetry` and holds none of them. The tool list is per-`Server`, so the stdio binary never advertises a tool it could not run. Full contract in `docs/websocket-protocol.md`; the envelope is `docs/car-do-json.md`.
 
@@ -4945,7 +4993,7 @@ The `initialize` response shape (`SERVER_NAME = "car-mcp"`):
 
 ```rust
 json!({
-    // the client's version when supported, else "2025-06-18"
+    // the client's version when supported, else "2025-11-25"
     "protocolVersion": negotiate_version(&req.params),
     "capabilities": {
         "tools": {},
@@ -4966,7 +5014,7 @@ json!({
 
 The empty-vs-error split is deliberate. A **malformed** request — no `ref`, no `argument`, an `argument` with no `name`, a non-object in either slot — never named anything to complete and is `-32602`. A **well-formed** request naming something the server does not know — an unknown prompt, an unknown argument, an unfamiliar or absent `ref.type` — gets an empty completion, not an error: a host's argument picker should not raise an error dialog because the user tabbed into an unfamiliar field. `values` is capped at 100 per the spec; `total` is the honest pre-truncation match count and `hasMore` is `total > values.len()`, so a client that sees 100 values can tell whether that is all of them.
 
-**Error codes** (mirrored across both transports): `PARSE -32700`, `INVALID_REQUEST -32600`, `METHOD_NOT_FOUND -32601`, `INVALID_PARAMS -32602`, `INTERNAL -32603`. The `ToolError` enum maps `InvalidParams → -32602`, `Internal → -32603`, `UnknownTool → -32601`.
+**Error codes** (mirrored across both transports): `PARSE -32700`, `INVALID_REQUEST -32600`, `METHOD_NOT_FOUND -32601`, `INVALID_PARAMS -32602`, `INTERNAL -32603`. The `ToolError` enum maps `MalformedRequest → -32602`, `InvalidParams → -32602`, `Internal → -32603`, `UnknownTool → -32601` — but on `tools/call` the *code* is only half the story, because `InvalidParams` and `Internal` travel back as `isError: true` results rather than JSON-RPC errors (see "Tool failures vs protocol failures" below). The code applies when those variants are raised by the non-tool methods, which have no `isError` channel.
 
 #### Transport 1 — stdio (`car-mcp-server`)
 
@@ -5027,11 +5075,11 @@ tail -f ~/Library/Logs/Claude/mcp-server-car.log
 | `POST /mcp` | One JSON-RPC request → reply. A notification (no `id`) has no reply, so it returns `202 Accepted` with an empty body — don't parse it. A successful `initialize` returns `MCP-Session-Id`; later peer-tool calls require that header. |
 | `DELETE /mcp` | With `MCP-Session-Id`, closes that peer address and discards its unread inbox. Unknown sessions return 404. |
 | `GET /mcp` | **`405 Method Not Allowed`** (with `Allow: POST, DELETE`) — the streamable-HTTP spec's branch for a server that offers no SSE stream. The old SSE sink registry and `push_to_session` primitive remain removed; the identity/inbox record is polling-only. |
-| `GET /mcp/health` | Liveness: `{"status":"ok","protocol_version":"2025-06-18", server_name}` (interpolates `car_mcp::PROTOCOL_VERSION`). Not `Origin`-guarded and not `MCP-Protocol-Version`-guarded — no side effect, no secrets, the uptime `curl` below has to keep working, and it is how a client whose version was rejected finds out what the server speaks. |
+| `GET /mcp/health` | Liveness: `{"status":"ok","protocol_version":"2025-11-25", server_name}` (interpolates `car_mcp::PROTOCOL_VERSION`). Not `Origin`-guarded and not `MCP-Protocol-Version`-guarded — no side effect, no secrets, the uptime `curl` below has to keep working, and it is how a client whose version was rejected finds out what the server speaks. |
 
 **`Origin` validation** guards `POST /mcp` and `DELETE /mcp` (DNS-rebinding protection; `GET /mcp` is a constant `405` with no side effect, so it needs no guard). Absent `Origin` → allowed, which is what every real MCP client sends; an `Origin` naming loopback (`localhost`, `127.0.0.0/8`, `::1`, any port, `http` or `https`) → allowed; anything else, including the literal `null`, → `403 {"error":"origin not allowed"}`. The rule does **not** widen for a non-loopback `--mcp-bind` — a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin`, and wider exposure makes the guard matter more. Put a reverse proxy with its own CORS policy in front if you need browser traffic from another origin.
 
-**`MCP-Protocol-Version` validation** guards `POST /mcp` and `DELETE /mcp` too, with the same absent-permissive, present-strict shape. Absent → allowed — the 2025-06-18 delta on this surface is additive result keys an older client ignores, so a silent client is answered correctly whichever revision it negotiated; a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05` or `2025-06-18` today) → allowed; anything else, including an empty or non-UTF-8 value, → `400 {"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18"]}`. The `400` carries the supported list because a client that guessed wrong has no other way to learn what to send. A foreign value is rejected rather than silently downshifted: the header states which dialect the client will read the reply in, so answering in a revision it never agreed to would mean something different than intended. Rejection happens before the JSON-RPC parse, so no tool runs.
+**`MCP-Protocol-Version` validation** guards `POST /mcp` and `DELETE /mcp` too, with the same absent-permissive, present-strict shape. Absent → allowed — the 2025-06-18 delta on this surface is additive result keys an older client ignores, so a silent client is answered correctly whichever revision it negotiated; a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05`, `2025-06-18` or `2025-11-25` today) → allowed; anything else, including an empty or non-UTF-8 value, → `400 {"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18","2025-11-25"]}`. The `400` carries the supported list because a client that guessed wrong has no other way to learn what to send. A foreign value is rejected rather than silently downshifted: the header states which dialect the client will read the reply in, so answering in a revision it never agreed to would mean something different than intended. Rejection happens before the JSON-RPC parse, so no tool runs.
 
 It binds **`127.0.0.1:9102` by default** (CLI flag `--mcp-bind host:port`, env `CAR_MCP_BIND`; literal `disabled` opts out):
 
@@ -5040,7 +5088,7 @@ car-server --mcp-bind 127.0.0.1:9102      # bind MCP HTTP endpoint (default)
 CAR_MCP_BIND=0.0.0.0:9102 car-server      # env equivalent
 car-server --mcp-bind disabled            # opt out
 
-curl http://127.0.0.1:9102/mcp/health     # -> {status:ok, protocol_version:2025-06-18, ...}
+curl http://127.0.0.1:9102/mcp/health     # -> {status:ok, protocol_version:2025-11-25, ...}
 
 # Origin rule on /mcp itself (health is exempt):
 curl -X POST http://127.0.0.1:9102/mcp -H 'content-type: application/json' \
@@ -5073,19 +5121,38 @@ curl http://127.0.0.1:9102/mcp/health -H 'MCP-Protocol-Version: 1999-01-01' # 20
 ```
 
 **Tool failures vs protocol failures.** MCP reports these two differently, and the
-difference is who finds out. A *protocol* error — an unknown tool, or arguments that do
-not typecheck — is a JSON-RPC `error`; the tool never ran, the client handles it, and the
-model is typically never told. A *tool execution* error — the tool ran and failed — comes
-back as a normal result with `isError: true`, so the failure text lands in the
-conversation where the model can read it and correct itself.
+difference is who finds out. A *protocol* error is a JSON-RPC `error`: the client handles
+it and the model is typically never told. A *tool execution* error comes back as a normal
+result with `isError: true`, so the failure text lands in the conversation where the model
+can read it and correct itself.
+
+**`2025-11-25` moved the line**, and CAR moved with it. That revision's minor change #5 —
+*"input validation errors should be returned as Tool Execution Errors rather than Protocol
+Errors to enable model self-correction"* — puts anything a tool's own input schema rejects
+on the execution side. So today:
+
+| Failure | Channel |
+|---|---|
+| The tool ran and failed (store write, API call, business logic) | `isError: true` |
+| An argument the tool's schema rejects — missing field, wrong type, value out of range, a lookup that found nothing | `isError: true` |
+| The `tools/call` request itself is malformed — no `name`, or an `arguments` that is not an object | `-32602` |
+| Unknown tool | `-32601` |
 
 ```json
 {"content":[{"type":"text","text":"fact not remembered — could not write the memory store: …"}],"isError":true}
 ```
 
-So `memory_add_fact` failing to reach disk is an `isError:true` result, while
-`memory_add_fact` called without `body` is `-32602`. Do not treat a non-null `result` as
-success: check `isError`.
+So `memory_add_fact` failing to reach disk **and** `memory_add_fact` called without `body`
+are both `isError:true` results — the model is the one that has to supply the missing
+field, and it cannot do that from an error channel it never sees. What stays `-32602` is
+the envelope: a call naming no tool at all, or handing `arguments` something that is not an
+object, names nothing a model could correct.
+
+This applies whatever revision a client negotiated, including `2024-11-05`: dispatch is
+stateless and does not record the negotiated revision, and `isError` has existed since
+`2024-11-05`, so the shape is legal in every revision CAR speaks. **Do not treat a non-null
+`result` as success: check `isError`.** A client that does was already mishandling every
+execution failure; after this revision it will also mis-read a bad argument as a success.
 
 Then query: `{"name":"memory_query","arguments":{"query":"color","k":5}}`.
 
@@ -5775,7 +5842,10 @@ Per-invocation options ride on `AgentSpec.metadata` (read by `extract_invoke_opt
 #### External-agent gotchas
 
 - **`allowed_tools = Some(vec![])` (empty list) DENIES every tool** (passes an empty `--allowed-tools` arg); `allowed_tools = None` uses the binary's default policy. These are **not** the same.
-- `timeout_secs` defaults to **300s** (`DEFAULT_TIMEOUT_SECS`), clamped to a **3600s** max (`MAX_TIMEOUT_SECS`) and a 1s min.
+- Public external-agent entry points default `timeout_secs` to **300s** and
+  clamp it to **[1, 3600]**. The underlying runner imposes no timeout when
+  passed `None`; coder sessions deliberately use that mode because their
+  silence watchdog and no-progress rule provide the bound.
 - **Cost discipline:** every live `claude-code` invocation burns subscription quota (~30K cache-creation tokens per cold call). `total_cost_usd` is the **would-be** API cost for transparency only — subscription users don't actually pay it. Do **not** regenerate the `protocol.rs` fixtures against live `claude`; real-CLI integration tests are env-gated behind `--ignored`.
 - **Gemini is the weakest adapter:** 0.1.x has no JSON-stream output (text-only), ignores `mcp_endpoint` with a tracing warning, and has no safe headless auth-status command, so its health falls back to credential-file shape.
 - On macOS, `TMPDIR` resolves to `/var/folders/...` (outside the scratch denylist by design), so the scratch-rejection test self-skips there.
@@ -7207,7 +7277,7 @@ car browse schema     # prints browse_schema.md
 | Command | Flags | Effect |
 |---|---|---|
 | `car secrets put <key>` | `--service <s>`, `--value <v>` (else stdin) | store a secret |
-| `car secrets get <key>` | `--service <s>` | prints value **verbatim** on stdout (pipeable) |
+| `car secrets get <key>` | `--service <s>` or `--check-credential` | prints value **verbatim** on stdout; check mode uses the fixed CAR store, then `$CAR_HOME/env`, and reports only the source label on stderr |
 | `car secrets delete <key>` | `--service <s>` | idempotent |
 | `car secrets status <key>` | `--service <s>` | status JSON |
 | `car secrets available` | — | probes OS secret store |
@@ -7216,6 +7286,9 @@ car browse schema     # prints browse_schema.md
 `migrate-from-env` migrates built-in vars `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY` (plus any `--include`d extras) into the OS keychain; it refuses if the OS secret store is unavailable. After migration you can `unset` the env vars — car-inference reads from the keychain at runtime.
 
 > Gotcha: `car secrets get` prints the raw value to stdout; all other secret subcommands print status JSON. `put` reads the value from stdin if `--value` is omitted and stdin is not a TTY; on a TTY with no `--value` it errors and tells you to pipe.
+`get --check-credential` conflicts with `--service` and never reads the
+current process environment; recorded contract-check rerun lines use it so a
+daemon evaluation and a CLI re-score resolve from the same sources.
 
 ### OS permissions: `car permissions`
 
@@ -7272,7 +7345,7 @@ The same capability has two spellings across surfaces: `state_get` (Rust/Python)
 CAR_DAEMON_URL=ws://127.0.0.1:9100   # default; override to point at a non-default daemon
 ```
 
-`car-server` ships as a binary inside the `car-runtime` npm and PyPI packages (`bin/car-server`) and **MUST be running before any binding call**. On macOS the SwiftUI menubar app (`CarHost.app`) auto-launches it and mints a per-launch auth token passed via `--auth-token`; on Linux you start it manually or via systemd.
+`car-server` ships as a binary inside the `car-runtime` npm and PyPI packages (`bin/car-server`) and **MUST be running before any binding call**. On macOS the SwiftUI menubar app (`CarHost.app`) auto-launches it and mints a per-launch auth token passed through a 0600 one-time `--auth-token-file`; on Linux you start it manually or via systemd.
 
 What this changes for an author:
 
@@ -7544,7 +7617,10 @@ These manage **contributed agents** declared in `~/.car/agents.json` (a differen
 
 The daemon discovers and invokes installed CLIs — the third kind of agent. `agentsListExternal(includeHealth?)` / `agentsDetectExternal(includeHealth?)` discover `claude-code`, `codex`, `gemini`; `agentsHealthExternal(id?, force?)` runs ground-truth auth-status checks (`claude auth status`, `codex login status`) with a 30s TTL cache; `agentsInvokeExternal(id, task, optionsJson?)` runs a per-task invocation.
 
-- `InvokeOptions`: `cwd`, `allowed_tools` (`[]` denies all), `max_turns`, `timeout_secs` (default 300), `mcp_endpoint`.
+- `InvokeOptions`: `cwd`, `allowed_tools` (`[]` denies all), `max_turns`,
+  `timeout_secs` (public default 300, clamped to 1–3600), `mcp_endpoint`.
+  Only coder sessions pass `None` through to the runner; their silence
+  watchdog and no-progress rule bound the otherwise unbounded invocation.
 - `InvokeResult`: `{answer, session_id?, turns, tool_calls, duration_ms, total_cost_usd?, is_error, error?}`.
 
 #### 3.8 A2A and A2UI
@@ -7742,6 +7818,7 @@ unsupported mandatory capability returns `-32008`.
 | `--port <u16>` | `9100` | Listen port |
 | `--host <string>` | `127.0.0.1` | Bind address — use `0.0.0.0` for cross-host |
 | `--auth-token <string>` (`CAR_AUTH_TOKEN`) | minted | Pre-minted token to install instead of generating; ignored when `--no-auth` set |
+| `--auth-token-file <path>` (`CAR_AUTH_TOKEN_FILE`) | — | Read a pre-minted token from the normal platform format, trim it, and delete the one-time file; mutually exclusive with `--auth-token` |
 | `--no-auth` (`CAR_NO_AUTH`) | off | Disable the per-launch WS auth handshake ("any local caller wins" legacy mode) |
 | `--require-auth` (`CAR_REQUIRE_AUTH`) | — | Deprecated no-op; auth is on by default |
 | `--journal-dir <string>` | `~/.car/journals` | Event journal directory |
@@ -7834,7 +7911,7 @@ speech.speak(result.result)
 
 ### The macOS host: `CarHost.app` supervises a `car-server` child
 
-`CarHost.app` uses an **in-process** runtime (`CarBridge`) for App Intents, *and* spawns a real `car-server` child on port `9100` so the dashboard, FFI consumers, and MCP clients have a WebSocket endpoint. `BundledDaemon.shared` (`apps/host-macos/Sources/CarHost/BundledDaemon.swift`) mints the token in-process, passes it via `--auth-token` (no disk-roundtrip race), and terminates the daemon on exit:
+`CarHost.app` uses an **in-process** runtime (`CarBridge`) for App Intents, *and* spawns a real `car-server` child on port `9100` so the dashboard, FFI consumers, and MCP clients have a WebSocket endpoint. `BundledDaemon.shared` (`apps/host-macos/Sources/CarHost/BundledDaemon.swift`) mints the token in-process, writes a 0600 one-time file in the auth-token directory, passes its path via `--auth-token-file`, and terminates the daemon on exit:
 
 ```swift
 let token = Self.mintAuthToken()   // 32 random bytes, base64url-no-pad, 43 chars
@@ -7843,7 +7920,7 @@ let p = Process()
 p.executableURL = binary
 p.arguments = [
     "--port", String(defaultPort),   // 9100
-    "--auth-token", token,
+    "--auth-token-file", launchTokenFile.path,
 ]
 p.environment = augmentedEnvironment()
 try p.run()
@@ -7960,7 +8037,7 @@ python -m car_runtime.server
 | MCP HTTP-streamable | `9102` | `--mcp-bind 127.0.0.1:9102` (env `CAR_MCP_BIND`); `disabled` to skip. |
 | A2A | opt-in | `--a2a-bind <ADDR>` (env `CAR_A2A_BIND`); off unless set. |
 
-**Auth token resolution.** CarHost mints a per-launch token and passes it via `--auth-token`. FFI clients read the token file at `~/.car/auth-token` (macOS) or `%LOCALAPPDATA%\ai.parslee.car\auth-token` (Windows). The relevant env vars are `CAR_DAEMON_URL` and `CAR_AUTH_TOKEN`.
+**Auth token resolution.** CarHost mints a per-launch token and passes it through a protected one-time `--auth-token-file`. FFI clients read the daemon's normal token file at `~/Library/Application Support/ai.parslee.car/auth-token` (macOS) or `%LOCALAPPDATA%\ai.parslee.car\auth-token` (Windows). The relevant env vars are `CAR_DAEMON_URL`, `CAR_AUTH_TOKEN`, and the server-only launch input `CAR_AUTH_TOKEN_FILE`.
 
 **FFI-vs-WS method divergence (memorize this).** Three capabilities are daemon-only and do *not* exist on the Python FFI in v0.8 — you must connect to the WebSocket directly and use `proposal.submit` + a `tools.execute` handler:
 
@@ -8165,7 +8242,8 @@ let runner: Arc<dyn AgentRunner> =
 car setup --use-case coding --tier balanced --yes   # detect HW, recommend, install
 car models recommend --for assistant                # read-only preview
 car models doctor                                   # nudges car setup if no local model
-car models pull qwen/qwen3-1.7b:q8_0                 # CPU-only local model
+car models pull mlx/qwen3-1.7b:3bit                  # small local model (Apple Silicon: MLX)
+car models pull qwen/qwen3-1.7b:q8_0                 # the same model elsewhere (GGUF; never runs on Apple Silicon)
 car models upgrades / car models upgrade --apply
 car info                                            # RAM / max model size / recommended
 
@@ -8233,7 +8311,7 @@ car-server --a2a-bind <ADDR>
 
 ### Apple frameworks, MCP, A2A, A2UI (cfg-target gated, each with `is_available()`)
 
-- **MCP:** `POST /mcp` (JSON-RPC 2.0), `GET /mcp/health` (`{"status":"ok","protocol_version":"2025-06-18","server_name":"car-mcp"}`). stdio variant is stateless (memory/skill/verification tools only, no proposal execution). Sixteen tools exposed incl. `memory_add_fact` plus proactive `memory_intervene` / `memory_evaluate` and the four verification tools `verify` / `simulate` / `equivalent` / `optimize`; facts land in the shared memgine and appear in WS `memory.query`.
+- **MCP:** `POST /mcp` (JSON-RPC 2.0), `GET /mcp/health` (`{"status":"ok","protocol_version":"2025-11-25","server_name":"car-mcp"}`). stdio variant is stateless (memory/skill/verification tools only, no proposal execution). Sixteen tools exposed incl. `memory_add_fact` plus proactive `memory_intervene` / `memory_evaluate` and the four verification tools `verify` / `simulate` / `equivalent` / `optimize`; facts land in the shared memgine and appear in WS `memory.query`.
 - **A2A v1.0:** `message/send`, `tasks/get|list|cancel`, `tasks/pushNotificationConfig/{set,get,list,delete}`, `agent/getAuthenticatedExtendedCard`; `message/stream` + `tasks/resubscribe` via SSE. HTTP: `GET /.well-known/agent.json`, `POST /` (JSON-RPC), `GET /a2a/stream/:task_id`. Mount via `car_a2a::serve(dispatcher, addr)` / `build_router(dispatcher)`.
 - **A2UI:** `a2ui_*` in-process (FFI parity added v0.15.x) + WS `a2ui.*`. Renderers: HTML (`car-server/static`), SwiftUI (`apps/host-macos`).
 
@@ -8248,7 +8326,7 @@ car-server --a2a-bind <ADDR>
 - **No cargo feature flags** in `car-*` crates — downstream manifests with `features=[...]` (e.g. browser `chromium`, desktop `macos`) now fail; chromium is unconditional, macOS desktop is cfg-target.
 - **`verify` is existence-only**; only `verify_with_schemas` validates parameter types/presence.
 - Python package is `car-runtime` but the import is `import car_runtime` (underscore).
-- MLX GPU paths (v0.16.1+) need `mlx.metallib` colocated with the binary; otherwise a clean `DeviceError` (set `MLX_METAL_PATH` or `CAR_MLX_DEVICE=cpu`). Pre-1.0: breaking changes possible between minor versions — pin exact versions.
+- MLX GPU paths need the Metal shader library next to the running binary, as `mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib`; a build or package step that moves the executable without it fails at load. Pre-1.0: breaking changes possible between minor versions — pin exact versions.
 
 ---
 

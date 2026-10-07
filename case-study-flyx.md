@@ -81,7 +81,7 @@ Per-agent policies (enforced in Rust, not in the prompt) prevent Sally Sales fro
 |--------|------------|----------|
 | Tokens/day (7 agents, 12hrs) | ~80,000 | ~20,000 |
 | Monthly API cost | ~$1,200 | ~$300 |
-| Reduction | — | **75%** |
+| Reduction (projected, never measured) | — | **75%** |
 
 The savings compound over time as the skill library grows. Early in a deployment, most tasks go through the LLM. After a week, the hit rate on skills is high enough that the LLM is only called for genuinely novel situations.
 

@@ -339,7 +339,9 @@ A request that passes peer authentication carries an `Identity` whose subject is
 `car-peer:<fingerprint>` and whose claims include `car_peer_key` — the caller's
 **full** base64 public key. The fingerprint is four bytes, right for a human
 comparing two values on screen and far too short to key a durable per-peer
-record on, so both travel.
+record on, so both travel. Anything keyed on the caller uses the full key:
+A2A task ownership and `RuntimeScope.caller_id` (so the `SessionScope` event)
+carry `peer:<full key>`, while `a2a_caller_verified.subject` keeps the label.
 
 Note where the full key ends up, because it is a deliberate trade and not an
 obvious one. `Identity.claims` is copied into `proposal.context`'s

@@ -79,6 +79,51 @@ class TerminalToolError(Exception):
 # policies. Each instance carries its own memgine + inference engine.
 # ---------------------------------------------------------------------------
 
+class ScopedInferenceRuntime:
+    """Receipt-bound inference facade; no local host integrations or constructor."""
+
+    def close(self) -> None: ...
+
+    def disconnect(self) -> None: ...
+
+    def daemon_call(self, method: str, params_json: str) -> str: ...
+
+    def daemon_call_host_management(self, method: str, params_json: str) -> str: ...
+
+    def infer(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        intent_json: Optional[str] = None,
+    ) -> str: ...
+
+    def infer_tracked_with_request(self, request_json: str) -> str: ...
+
+    def infer_tracked(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        context: Optional[str] = None,
+        tools_json: Optional[str] = None,
+        messages_json: Optional[str] = None,
+        tool_choice: Optional[str] = None,
+        parallel_tool_calls: Optional[bool] = None,
+        intent_json: Optional[str] = None,
+        images_json: Optional[str] = None,
+    ) -> str: ...
+
+    def classify(
+        self,
+        text: str,
+        labels: List[str],
+        model: Optional[str] = None,
+    ) -> str: ...
+
+    def route_model(self, prompt: str, intent_json: Optional[str] = None) -> str: ...
+
+
 class CarRuntime:
     """Persistent CAR runtime instance.
 
@@ -89,6 +134,30 @@ class CarRuntime:
     """
 
     def __init__(self) -> None: ...
+
+    @staticmethod
+    def with_scoped_consumer(
+        daemon_url: str,
+        issuance_receipt_json: str,
+        expected_parent_agent_id: str,
+        expected_resource_key: str,
+        expected_work_context_json: str,
+    ) -> ScopedInferenceRuntime:
+        """Authenticate a daemon-issued inference child without taking an inbox.
+
+        Pass the issued receipt and original launcher ownership explicitly.
+        Expiry, revocation or restart requires a newly issued grant; reconnect
+        preserves the original receipt and never uses ambient credentials.
+        Only granted inference RPCs are available. PyO3 streaming remains
+        unimplemented. Receipt JSON contains a secret; do not log or persist it.
+        """
+
+
+    def close(self) -> None:
+        """Release the daemon socket and browser session; a later call reconnects."""
+
+    def disconnect(self) -> None:
+        """Transport-named alias for :meth:`close`."""
 
     def daemon_call(self, method: str, params_json: str) -> str:
         """Invoke any daemon JSON-RPC method and return result JSON.
@@ -102,6 +171,12 @@ class CarRuntime:
     def daemon_call_host_management(self, method: str, params_json: str) -> str:
         """Host-management-token twin of :meth:`daemon_call`."""
 
+    def agent_permissions_list_grants(self, params_json: str) -> str:
+        """List durable permission grants using host-management authority."""
+
+    def agent_permissions_revoke_grant(self, params_json: str) -> str:
+        """Revoke one durable permission grant using host-management authority."""
+
     def register_daemon_handler(
         self, method: str, handler: Callable[[str], str]
     ) -> None:
@@ -111,6 +186,9 @@ class CarRuntime:
         self, method: str, handler: Callable[[str], None]
     ) -> None:
         """Register a server-initiated notification handler."""
+
+    def runs_record_model_turn(self, params_json: str) -> str:
+        """Record a model inference using the native daemon-backed implementation."""
 
     # BEGIN GENERATED daemon wrappers: CarRuntime
     def cancel_task(self, params_json: str) -> str: ...
@@ -365,6 +443,9 @@ class CarRuntime:
     def concierge_dismiss(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `concierge.dismiss` (operator).
 
+    def concierge_portfolio(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `concierge.portfolio` (operator).
+
     def concierge_refresh_catalog(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `concierge.refresh_catalog` (operator).
 
@@ -424,6 +505,9 @@ class CarRuntime:
 
     def declagents_routing_stats(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `declagents.routing_stats` (operator).
+
+    def declagents_run_scenarios(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `declagents.run_scenarios` (operator).
 
     def events_chain_enable(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `events.chain.enable` (operator).
@@ -505,6 +589,30 @@ class CarRuntime:
 
     def inference_runner_fail(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `inference.runner.fail` (operator).
+
+    def lattice_claim(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.claim` (operator).
+
+    def lattice_claims(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.claims` (operator).
+
+    def lattice_find(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.find` (operator).
+
+    def lattice_join(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.join` (operator).
+
+    def lattice_leave(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.leave` (operator).
+
+    def lattice_nodes(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.nodes` (operator).
+
+    def lattice_release(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.release` (operator).
+
+    def lattice_wait(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.wait` (operator).
 
     def meeting_get(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `meeting.get` (operator).
@@ -640,6 +748,9 @@ class CarRuntime:
 
     def multi_vote(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `multi.vote` (operator).
+
+    def multiplayer_abandon(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `multiplayer.abandon` (operator).
 
     def multiplayer_get(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `multiplayer.get` (operator).
@@ -1325,7 +1436,10 @@ class CarRuntime:
 
     def sync_record_turn(self, request_json: str) -> str:
         """``sync.record_turn`` (B6) — route a conversation turn through the oplog
-        so ``sync_resume`` is a real, provider-valid transcript replay."""
+        so ``sync_resume`` is a real, provider-valid transcript replay. A tool
+        turn may carry ``provenance: "external"`` and ``ok`` (the call's
+        recorded outcome); both come back from ``sync_transcript`` /
+        ``sync_resume``."""
 
     def sync_record_intent(self, request_json: str) -> str:
         """``sync.record_intent`` (B6) — write the leased-execution intent ledger
@@ -1536,19 +1650,18 @@ class CarRuntime:
         """
 
     def adopt_skill_pack(self, request_json: str) -> str:
-        """Adopt an installed skill pack on the daemon through the gate.
+        """Adopt a skill pack through the daemon deployment gate.
 
-        arXiv 2602.12430 "Agent Skills" — the daemon call-site for governed pack
-        adoption. ``request_json`` carries ``pack`` (an ``ApprovedSkillPack``),
-        ``requested_tier?`` (default ``read_only``), and either ``manifest?`` —
-        the signed bundle, whose signature trust is derived against the
-        operator's ``.car/config.toml`` ``trusted_skill_signers`` keyring — or
-        ``provenance?`` (caller-assembled), plus optional
-        ``scanned?``/``vulnerabilities?``/``source?``. Governance is
-        unconditional: a denied skill never enters the graph. Returns ``{ loaded,
-        pending, refused, requested_tier, provenance, trusted_signers }``; a
-        pending deny is resolved via ``permission.approve``/``permission.reject``
-        by the returned ``fingerprint``, then re-adopted.
+        `request_json` carries `pack` and optional `requested_tier` (default
+        `read_only`). Original-recipient-bound engines treat supplied publisher
+        signature, scan and provenance claims as untrusted candidate metadata.
+        Legacy unbound local operator engines retain their manifest/provenance
+        contract. The JSON receipt reports `loaded`, `pending`, `refused`,
+        `requested_tier`, `provenance` and `trusted_signers`. Receiver-bound pending
+        reviews include the original `recipient`, `candidate_digest`, requested tier
+        and exact `fingerprint`. Resolve that fingerprint through the receiver's
+        approval authority, then re-adopt. Unchanged admitted skills retain their
+        receiver-owned outcomes and health during partial-pack replay.
         """
 
     def persist_memory(self, path: str) -> int:
@@ -2221,7 +2334,18 @@ class CarRuntime:
         labels: List[str],
         model: Optional[str] = None,
     ) -> str:
-        """Classify ``text`` against candidate ``labels``. Returns JSON."""
+        """Classify ``text`` against candidate ``labels``.
+
+        Returns a JSON array of ``{label, score}``, best first. With
+        ``model="parslee/jev"`` (TypeSafe's Jev through Parslee; also the
+        default when ``model`` is omitted, none is configured, and you are
+        signed in to Parslee) ``score`` is the model's probability for the
+        label. On a generative model
+        ``score`` is a normalized match strength between the model's reply
+        and the label, not a probability; labels match case-insensitively
+        with ``_``/``-``/punctuation read as spaces. Raises when the reply names
+        none of the labels.
+        """
 
     def tokenize(self, model: str, text: str) -> str:
         """Encode ``text`` via the named local model's tokenizer.
@@ -2483,27 +2607,60 @@ class CarRuntime:
         repo: str,
         intent: str,
         *,
+        contract_json: str | None = None,
+        contract_source: str | None = None,
+        subscribe: bool | None = None,
+        headless: bool | None = None,
         engine: str | None = None,
         max_iterations: int | None = None,
         model: str | None = None,
         repair_invokes: int | None = None,
         transient_retries: int | None = None,
         browser: bool | None = None,
+        lattice_json: str | None = None,
+        isolate_external_network: bool | None = None,
         distributed: bool | None = None,
         workers: list[str] | None = None,
         discussion_id: str | None = None,
         base: str | None = None,
+        trust_source_repo: str | None = None,
+        organization_id: str | None = None,
+        personal: bool | None = None,
     ) -> str:
         """Start a coder session (built-in coding agent): provisions an
         isolated git worktree of ``repo`` and derives a verifiable outcome
-        contract from ``intent``. ``engine`` is ``"auto" | "native" |
+        contract from ``intent``. ``contract_json`` supplies caller-owned
+        OutcomeContract JSON instead: the daemon validates it, skips model
+        derivation, and runs it verbatim; it is invalid for Agent projects.
+        ``contract_source`` is ``"supplied"`` by default; ``"derived"``
+        preserves model-derived network and credential restrictions while the
+        provided contract is evaluated on another tree.
+        ``headless=True`` declares that nobody is attached to answer approval
+        or ``ask_user`` prompts; approval-required actions fail closed
+        immediately while policy-allowed actions remain allowed.
+        ``engine`` is ``"auto" | "native" |
         "external[:agent_id]"`` (default auto). ``model`` pins the native
         loop's inference model for this session (e.g. ``"parslee/reasoning"``),
         overriding ``~/.car/coder.toml``; blank/omitted = the config default,
-        then adaptive routing. Returns, in this order,
+        then adaptive routing. ``max_iterations`` is an explicit cap; ``None``
+        or ``0`` means unlimited. Contract checks carry optional
+        ``timeout_secs``; absent means run until exit, subject to the silence
+        watchdog. Live events use optional
+        ``tool_result.worktree_changed``, positional
+        ``check_started.index``/``total``, and additive
+        ``check_completed.result`` keys ``command``, ``started_at``,
+        ``network_isolation`` (``"sandboxed"``, ``"unwrapped_approved"``, or
+        ``"unavailable"``), ``secret_isolation`` (``"sandboxed"`` or
+        ``"unavailable"``, default unavailable for old records),
+        ``evidence_dir``, ``evidence_files``, runtime-injected ``env``, and
+        ``cwd``; ``output_tail`` keeps its type and size bound but is redacted
+        with the evidence scrub.
+        ``iteration_started.max == 0`` means unlimited. Returns, in this order,
         ``{"session_id", "state", "engine", "requested_engine", "engine_ran",
-        "worktree", "base", "contract", "baseline", "baseline_gates_nothing",
-        "model", "browser", "journal_path"}`` JSON. ``engine`` is the RESOLVED
+        "worktree", "base", "contract", "outcomes_path", "outcome_groups",
+        "outcome_count", "dropped_outcomes", "baseline",
+        "baseline_gates_nothing", "model", "browser", "journal_path"}`` JSON.
+        ``engine`` is the RESOLVED
         choice; ``requested_engine`` is what the caller ASKED for, which
         resolution can differ from (``"auto"`` that picks claude-code and an
         explicit ``"external:claude-code"`` both leave ``engine`` reading
@@ -2518,6 +2675,24 @@ class CarRuntime:
         (``null`` = adaptive); ``browser`` echoes the effective opt-in; and
         ``journal_path`` is the ``car_eventlog`` JSONL this session journals
         to.
+        ``outcomes_path`` names the
+        ``<state_dir>/<session_id>.outcomes.md`` review artifact;
+        Contract checks may carry ``credentials: list[str]``. Declaration
+        grants nothing; a supplied contract approves its own declarations,
+        while model-derived outcomes keep ``approved_credentials`` empty.
+        Check results expose only value-free ``credential_sources`` labels and
+        ``credentials_withheld``. ``outcome_groups`` is ``[{group,
+        outcomes:[{id,text,check,network_approved,approved_credentials?}]}]``;
+        each ``id`` is stable after confirmation and is never renumbered,
+        ``outcome_count`` is its
+        total, and ``dropped_outcomes`` is
+        ``[{kept,dropped,group,reason}]``. The WebSocket-only event stream adds
+        ``outcomes_step {step,group?,phase,outcomes?,detail?}``,
+        ``outcome_dropped {kept,dropped,group,reason}``, and
+        ``outcomes_written {path,groups:[{group,outcomes}]}``,
+        ``verification_started {round}``,
+        ``outcome_verdict {outcome_id,verdict,probes}``, and
+        ``audit_completed {provider,model_served,family,findings,unresolved}``.
         ``distributed`` farms a **foreman** session's subtasks across every
         reachable CAR instance that can serve the repository instead of this
         machine alone; the merge-verify gate and delivery stay on the
@@ -2533,7 +2708,14 @@ class CarRuntime:
         hypothesis and the other buys a retry. ``browser=True`` explicitly
         exposes the assistant's browser tools for this session; they remain
         absent by default, policy-gated, and recorded in coder events.
-        ``discussion_id`` names a
+        ``lattice_json`` (``'{"project": ..., "capabilities": [...]}'``) joins
+        the run to the CAR Lattice, so Claude Code, Codex and CAR
+        agents can find this coder by capability, and gives the native loop
+        peer and work-claim tools; it selects the native engine.
+        ``isolate_external_network=True`` runs an external engine with no route
+        off the machine (no web search or fetch, browser, app connectors or MCP
+        servers; shell without network); an engine that cannot guarantee it
+        refuses. ``discussion_id`` names a
         ``coder.discuss`` conversation this run was distilled from: its agreed
         constraints ride into contract derivation, so a rule stated once in the
         discussion need not be restated in the intent, and the session records
@@ -2549,19 +2731,57 @@ class CarRuntime:
         .. versionchanged:: 0.44.0
            The options are keyword-only. They were five consecutive positional
            optionals a caller could silently mis-order; passing them
-           positionally now raises ``TypeError``."""
+           positionally now raises ``TypeError``.
+
+        ``organization_id`` runs the session in one organization a signed-in
+        login holds; a repository declaring ``[organization] id`` accepts only
+        its own org. ``personal=True`` runs org-less work even where a default
+        org applies. Omitted: the repository's org, else your default org (a
+        distributed run is refused), else personal.
+        """
 
     def coder_confirm_contract(
         self, session_id: str, contract_json: str | None = None
     ) -> str:
         """Confirm the proposed outcome contract (optionally replacing it
-        with the edited ``contract_json``) and start the work loop."""
+        with the edited ``contract_json``) and start the work loop. A check in
+        the edited JSON may carry ``network_approved: true`` and
+        ``approved_credentials: list[str]``. Credential approval is limited to
+        names declared by that exact check; changing its name, command, or
+        declarations drops carried approval."""
 
     def coder_list(self) -> str:
-        """List coder sessions (live and persisted), newest first."""
+        """List coder sessions (live and persisted), newest first.
+
+        Rows carry ``excluded_artifacts`` as ``{path, reason, size_bytes}``
+        records when review staging withheld generated files. They may report
+        ``state == "verifying"`` and ``failure_kind == "verification"``."""
 
     def coder_get(self, session_id: str) -> str:
-        """Full coder session detail, including contract and check results."""
+        """Full coder session detail, including contract and check results.
+
+        If restart adoption found a check in flight, ``interrupted_checks``
+        contains ``{"name", "completed": False, "rerun_required": True}``
+        entries with no verdict. ``evidence_dir`` names the durable session
+        evidence root and ``evidence_bytes`` reports its recursive size.
+        Each ``last_check_results`` entry carries ``network_isolation`` and
+        ``secret_isolation`` plus
+        optional value-free ``credential_sources`` and
+        ``credentials_withheld`` fields. Credential values never appear in the
+        result or its ``env`` map.
+        ``excluded_artifacts`` lists ``{path, reason, size_bytes}`` records
+        withheld from the current review and delivery staging pass.
+        The response also carries ``outcomes_path``,
+        the full ``outcomes {source,groups,not_verified,not_in_this_version,
+        dropped,missing_groups,critic_ran}`` record, where
+        ``not_verified[].check`` is the full held ``ContractCheck`` object
+        rather than only its name, and
+        ``contract_derivation {calls,prompt_tokens,completion_tokens,cost_usd,
+        billing,models}`` where billing is ``"metered" | "subscription" |
+        "unknown" | None``; derivation usage is separate from execution-loop usage.
+        After independent verification starts, ``verification`` carries
+        ``{round,grades,probes,isolation,audit?}``; delivery requires every
+        grade to be ``PASS`` and a clean different-family audit attestation."""
 
     @overload
     def coder_respond(self, session_id: str, text: str) -> str: ...
@@ -2580,7 +2800,9 @@ class CarRuntime:
         A session waiting on a no-change finding (``needs_you == "finding"``)
         is accepted only with ``accept_finding=True``: nothing is published
         and the reply is ``{"state": "reported", "branch": None}``. A plain
-        approve on a finding, or ``accept_finding`` on a diff, is refused."""
+        approve on a finding, or ``accept_finding`` on a diff, is refused.
+        Successful delivery replies include ``excluded_artifacts`` from the
+        exact staging pass used by the commit."""
 
     @overload
     def coder_approve_merge(
@@ -2589,9 +2811,13 @@ class CarRuntime:
     ) -> str:
         """Choose checkout or branch delivery; checkout support is preflighted."""
 
-    def coder_cancel(self, session_id: str) -> str:
-        """Cancel a coder session: stop the loop, abandon, remove the
-        worktree. Returns ``{"state", "already_terminal", "message"}``.
+    def coder_cancel(self, session_id: str, reason: str | None = None) -> str:
+        """Cancel a coder session: stop the loop and abandon. ``reason`` names a
+        non-operator cause and is recorded as ``cancelled: <reason>``; omit it
+        only when a person cancelled. During standalone
+        contract drafting it removes the unpublished worktree; later
+        cancellation preserves unfinished work for recovery. Returns
+        ``{"state", "already_terminal", "message", "worktree", "recoverable"}``.
 
         An already-finished session **succeeds** rather than raising: ``state``
         keeps its pre-existing name and type, ``already_terminal`` is ``True``,
@@ -2617,8 +2843,10 @@ class CarRuntime:
         ``needs_you`` (``"contract" | "question" | "approval" | "auth" |
         None``), ``needs_you_label`` (daemon-owned wording so every client says
         the same thing), ``question_prompt``, ``auth_message``,
-        ``auth_wait_secs``, ``failure_kind`` (``"budget_exhausted" |
-        "auth_required" | "configuration" | "infrastructure" | "error"``
+        ``auth_wait_secs``; ``state`` may be ``"verifying"``; and
+        ``failure_kind`` (``"budget_exhausted" |
+        "stalled" | "no_progress" |
+        "auth_required" | "configuration" | "infrastructure" | "verification" | "error"``
         when failed),
         ``worktree`` (only when it still exists on disk), ``project``,
         ``result_branch``, ``model``, ``discussion_id`` and ``next_seq`` (live
@@ -2632,6 +2860,16 @@ class CarRuntime:
 
     def coder_unwatch(self) -> str:
         """Stop receiving ``coder.session_changed`` on this connection."""
+
+    def coder_refresh_review(self, session_id: str) -> str:
+        """Rerun a pending native review's accepted checks against the task's
+        current files and restage the diff — no inference, no replanning.
+        Available when ``coder_get`` reports ``review_refresh_available``.
+
+        Returns ``{"state": "running", "review_refresh": true}``; the outcome
+        arrives on the event stream. Passing checks return the session to
+        ``needs_approval`` with a new diff; failing checks fail it and keep the
+        worktree. Delivery still needs a separate ``coder_approve_merge``."""
 
     def coder_revise_contract(self, session_id: str, request: str) -> str:
         """Redraft a PROPOSED outcome contract from a plain-English request
@@ -2669,12 +2907,14 @@ class CarRuntime:
         Callable repeatedly."""
 
     def coder_discuss_close(self, discussion_id: str) -> str:
-        """Free an in-memory discussion. Discussions do not survive a daemon
-        restart."""
+        """Close a live discussion now, cancelling any turn in flight. A
+        discussion otherwise outlives the connection that opened it; it stays
+        saved and reopens with ``coder_discuss_start(repo, resume_id=...)``."""
 
     def coder_discuss_list(self) -> str:
-        """Open discussions: ``{"discussions": [{"discussion_id", "repo",
-        "created_at", "turns"}]}``. Also the capability probe — a daemon
+        """The caller's principal's discussions: ``{"discussions":
+        [{"discussion_id", "repo", "created_at", "turns", "answering"}],
+        "saved": [{"discussion_id", "repo", "created_at"}]}``. Also the capability probe — a daemon
         predating this surface answers JSON-RPC ``-32601``."""
 
     def project_create(
@@ -2724,9 +2964,16 @@ class CarRuntime:
     def declagent_set_enabled(self, id: str, enabled: bool) -> str:
         """Enable or disable a declarative agent."""
 
+    def declagent_revert(self, id: str) -> str:
+        """Restore the immediately preceding registered spec under the same id."""
+
+    def declagent_run_scenarios(self, id: str) -> str:
+        """Re-run all stored acceptance scenarios through the build evaluator."""
+
     def declagent_invoke(self, id: str, input: str) -> str:
-        """Run a declarative agent on an input, in-daemon (no external
-        process). Returns ``{output, turns, tool_calls, error?}`` JSON."""
+        """Run a declarative agent on an input with its saved inference
+        selection. Returns ``{output, turns, tool_calls, model_served?, error?}``
+        JSON."""
 
     def declagent_route(self, need: str, invoke: bool) -> str:
         """Route a need to the best-matching declarative agent by capability
@@ -3182,7 +3429,11 @@ class CarRuntime:
         ``{"utterance": str, "session_id"?: str, "config_overlay"?: str,
         "sidecar_timeout_ms"?: int}``.
 
-        Returns ``{"turn_id": N}`` JSON synchronously. Fast deltas, bridge
+        Returns ``{"turn_id": N}`` JSON synchronously, once the utterance is
+        routed: where the OS's on-device model is available it classifies the
+        utterance first (~0.4 s, at most ~2 s). A dispatch superseded while it
+        is being classified, by a newer dispatch or ``cancel_voice_turn``,
+        raises instead of returning a turn id. Fast deltas, bridge
         phrases, sidecar results, errors, and cancellations are pushed
         through the Python callback registered via
         ``register_voice_event_handler`` as JSON ``voice.turn.*`` events.
@@ -3215,11 +3466,17 @@ class HostClient:
     def agent_permissions_evaluate_tool(self, params_json: str) -> str: ...
     # Generated host wrapper for `agent_permissions.evaluate_tool`.
 
+    def agent_permissions_list_grants(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.list_grants`.
+
     def agent_permissions_reset(self, params_json: str) -> str: ...
     # Generated host wrapper for `agent_permissions.reset`.
 
     def agent_permissions_reset_tool(self, params_json: str) -> str: ...
     # Generated host wrapper for `agent_permissions.reset_tool`.
+
+    def agent_permissions_revoke_grant(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.revoke_grant`.
 
     def agent_permissions_set(self, params_json: str) -> str: ...
     # Generated host wrapper for `agent_permissions.set`.
@@ -3232,6 +3489,12 @@ class HostClient:
 
     def agents_install(self, params_json: str) -> str: ...
     # Generated host wrapper for `agents.install`.
+
+    def agents_message_approve(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agents.message.approve`.
+
+    def agents_message_pending(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agents.message.pending`.
 
     def agents_remove(self, params_json: str) -> str: ...
     # Generated host wrapper for `agents.remove`.
@@ -3254,11 +3517,26 @@ class HostClient:
     def auth_completion_status(self, params_json: str) -> str: ...
     # Generated host wrapper for `auth.completion_status`.
 
+    def auth_default_context_clear(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.default_context.clear`.
+
+    def auth_default_context_get(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.default_context.get`.
+
+    def auth_default_context_set(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.default_context.set`.
+
     def auth_logout(self, params_json: str) -> str: ...
     # Generated host wrapper for `auth.logout`.
 
+    def auth_organizations(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.organizations`.
+
     def auth_remove_account(self, params_json: str) -> str: ...
     # Generated host wrapper for `auth.remove_account`.
+
+    def auth_resolve_context(self, params_json: str) -> str: ...
+    # Generated host wrapper for `auth.resolve_context`.
 
     def auth_snapshot(self, params_json: str) -> str: ...
     # Generated host wrapper for `auth.snapshot`.
@@ -3275,14 +3553,71 @@ class HostClient:
     def auth_switch_org(self, params_json: str) -> str: ...
     # Generated host wrapper for `auth.switch_org`.
 
+    def concierge_maintain(self, params_json: str) -> str: ...
+    # Generated host wrapper for `concierge.maintain`.
+
     def declagents_remove(self, params_json: str) -> str: ...
     # Generated host wrapper for `declagents.remove`.
+
+    def declagents_revert(self, params_json: str) -> str: ...
+    # Generated host wrapper for `declagents.revert`.
 
     def declagents_set_enabled(self, params_json: str) -> str: ...
     # Generated host wrapper for `declagents.set_enabled`.
 
     def diagnostics_secret_store_activity(self, params_json: str) -> str: ...
     # Generated host wrapper for `diagnostics.secret_store_activity`.
+
+    def lattice_connect_accept(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.connect.accept`.
+
+    def lattice_connect_confirm(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.connect.confirm`.
+
+    def lattice_connect_inspect(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.connect.inspect`.
+
+    def lattice_connect_invite(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.connect.invite`.
+
+    def lattice_connect_share(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.connect.share`.
+
+    def lattice_connections(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.connections`.
+
+    def lattice_directory(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.directory`.
+
+    def lattice_disconnect(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.disconnect`.
+
+    def lattice_org_attest(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.org.attest`.
+
+    def lattice_org_policy(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.org.policy`.
+
+    def lattice_org_revoke(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.org.revoke`.
+
+    def lattice_org_rule_add(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.org.rule.add`.
+
+    def lattice_org_rule_remove(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.org.rule.remove`.
+
+    def lattice_org_rules(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.org.rules`.
+
+    def lattice_org_status(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.org.status`.
+
+    def lattice_requests(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.requests`.
+
+    def lattice_respond(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.respond`.
 
     def messaging_config_get(self, params_json: str) -> str: ...
     # Generated host wrapper for `messaging.config.get`.
@@ -3316,6 +3651,9 @@ class HostClient:
 
     def models_resource_policy_set(self, params_json: str) -> str: ...
     # Generated host wrapper for `models.resource_policy.set`.
+
+    def models_retire(self, params_json: str) -> str: ...
+    # Generated host wrapper for `models.retire`.
 
     def models_storage_roots(self, params_json: str) -> str: ...
     # Generated host wrapper for `models.storage_roots`.
@@ -4050,8 +4388,11 @@ def evolution_apply(
     Survey §3.5/§5.2.3. ``human_approved=True`` applies under the HITL path
     (the only path that may land a safety-affecting mutation); otherwise
     ``decision_json`` (a ``PromotionDecision``) must be ``promote`` and the
-    mutation non-safety. Returns ``{config, rollback}`` (the updated config
-    and the inverse patch that restores it), or raises when refused.
+    mutation non-safety — which means both a non-safety-affecting component
+    AND a patch that leaves model-facing text (``prompt_overlay``,
+    ``tool_description_overlay``) alone. Returns ``{config, rollback}`` (the
+    updated config and the inverse patch that restores it), or raises when
+    refused.
     """
 
 
@@ -5235,6 +5576,7 @@ def agents_invoke_external(
         "cwd": str | None,
         "allowed_tools": list[str] | None,  # [] denies all
         "max_turns": int | None,
+        "isolate_network": bool | None,  # no web, browser, connectors, MCP; shell offline
         "timeout_secs": int | None,  # default 300s
         "mcp_endpoint": str | None,  # MCP server URL passed via
                                      # --mcp-config; daemon callers

@@ -3,11 +3,11 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.54.0 (2026-09-19). Every subcommand the installed binary reports is
+> 0.55.0 (2026-09-24). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 74 top-level commands, 123 nested subcommands
+> 74 top-level commands, 124 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
@@ -51,8 +51,7 @@ Delivered revisions remain available as the base for follow-up conversation task
   the verifiable outcome contract, and CAR delivers it in an isolated git
   worktree (natively or via an installed frontier CLI). Apply reviewed results
   to your checkout, preserving HEAD and the staged index, or explicitly request
-  `--delivery branch` to publish a result branch — which is also what `--yes`
-  defaults to, so an unattended run never writes into your checkout.
+  `--delivery branch` to publish a result branch.
 - [`car code-task`](#car-code-task) — run a coder session headlessly and in
   this process, driving to a green outcome contract and delivering a PR.
 - [`car coder-ab`](#car-coder-ab) — A/B-test CAR's coder against an external
@@ -185,7 +184,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car tools`](#car-tools) | Invoke CAR's built-in runtime tools directly, in-process and without a daemon |
 | [`car code-task`](#car-code-task) | Run a coder session headlessly and IN THIS PROCESS: derive or accept an outcome contract, work in a git worktree until the runtime's own re-run of that contract is green, then deliver the result as a pull request |
 | [`car coder-ab`](#car-coder-ab) | A/B-test CAR's coder against an external agent (Codex / Claude Code) over a corpus, and grow that corpus from git history — the productionized dogfooding loop (docs/proposals/coder-ab-dogfood.md) |
-| [`car keys`](#car-keys) | Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). The key is read env-first, keychain-fallback by the runtime |
+| [`car keys`](#car-keys) | Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then `$CAR_HOME/env`, then keychain |
 | [`car heal`](#car-heal) | Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges |
 | [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
@@ -202,10 +201,10 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car identity`](#car-identity) | Show or change the name your assistant answers to — in conversation, in the host apps, and as its voice wake word |
 | [`car init`](#car-init) | Initialize a .car/ project directory for team-shared configuration |
 | [`car doctor`](#car-doctor) | Diagnose (and optionally repair) a CAR install: corrupt model weights, unparseable `~/.car` state files, version skew, and leftover files from a previous install. Runs entirely against the local filesystem — no daemon required, so it works even when `car-server` won't start |
-| [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS-only in this release |
+| [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first |
 | [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel) |
 | [`car purge`](#car-purge) | Remove this CAR install's own state under `~/.car` (config, logs, managed models, binaries) and reap any OS-level schedules CAR installed — for a clean slate before a reinstall. On macOS this also clears CarHost.app's user-level state and resets its privacy (TCC) permissions, so a reinstall really does re-run permission onboarding. NEVER touches the shared HuggingFace model cache (other tools use it); managed models are symlinks into it, so only the links are removed, not the multi-GB blobs. (To uninstall a single contributed agent instead, use `car uninstall <id>`.) |
-| [`car code`](#car-code) | Built-in coding agent: state an intent, confirm the verifiable outcome contract, and CAR delivers it in an isolated git worktree — natively or via an installed frontier CLI. Review and apply results to your checkout, or publish a branch with --delivery branch (which is what --yes does by default — an unattended run never edits your checkout) |
+| [`car code`](#car-code) | Built-in coding agent: state an intent, review a one-screen outcome summary, then start, inspect the full list, revise checks in plain English, approve held network checks, or cancel. CAR works in an isolated git worktree — natively or via an installed frontier CLI. Review and apply results to your checkout, or publish a branch with --delivery branch (which is what --yes does by default — an unattended run never edits your checkout) |
 | [`car board`](#car-board) | Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. Closing the board never stops a run |
 | [`car do`](#car-do) | CAR Assistant: a general-purpose agent that works out of the box |
 | [`car policy-check-hook`](#car-policy-check-hook) | Evaluate a host's proposed tool call against `.car/policies/` and answer on stdout with that host's hook decision envelope |
@@ -472,19 +471,27 @@ Options:
           Pin the inference model for this session
 
       --max-iterations <MAX_ITERATIONS>
-          Override the coder config's iteration ceiling (default 8)
+          Set an explicit operator iteration cap. The default is unbounded; 0 is unbounded. A capped
+          run ends `budget_exhausted`, naming usage and cap
 
       --browser
           Expose the assistant's browser tools for this run. Off by default; calls remain
           policy-gated and appear in the JSONL event stream
 
       --max-session-wall-secs <MAX_SESSION_WALL_SECS>
-          Override the coder config's session wall clock (default 3600). 0 = unlimited
+          Set an explicit operator session wall-clock cap. The default is unbounded; 0 is unbounded.
+          A capped run ends `budget_exhausted`, naming elapsed time and cap
 
       --max-check-timeout-secs <MAX_CHECK_TIMEOUT_SECS>
-          Ceiling for ONE contract check's command (default 600). Raise it for a verification gate
-          that legitimately runs longer than ten minutes; the model's own `shell` tool keeps the
-          600s ceiling regardless
+          Set an explicit operator cap for one contract check. The default is unbounded. A check
+          that reaches the cap is killed and judged red; the model's own `shell` tool keeps its
+          separate ceiling regardless
+
+      --silence-window-secs <SILENCE_WINDOW_SECS>
+          Stop the run when nothing makes progress for this many seconds (default 900; 0 disables).
+          This is the only time-based stop: a check that prints nothing for this long is killed and
+          judged red, and a session silent this long ends `failed` with `failure_kind: "stalled"`,
+          naming what it was waiting on
 
       --workspace-dir <WORKSPACE_DIR>
           Explicit workspace location. Reused when it is already a valid worktree
@@ -553,13 +560,11 @@ Options:
           diagonal name different tiers (--model openai/gpt-5.4 --external-model gpt-5.5). Differing
           pins are reported as DIFFERENT PINS and are NOT a harness delta
       --iters <ITERS>
-          Native arm's repair-iteration cap per task. Defaults to the coder's OWN shipping default,
-          so the A/B measures the coder users actually get — it used to hardcode 4, i.e. half of it.
-          Raise it when the cap binds: a weaker backbone needs more rounds, and a run whose losses
-          all end at `iteration N/N` is measuring this number, not the harness (at gpt-5.4, 4 → 45%
-          and 20 → 75%, every loss cap-bound at both). The external arm is not capped by this — it
-          gets its CLI's own turn budget (`max_turns: 50` per invocation), so setting this low is a
-          silent handicap [default: 8]
+          Native arm's repair-iteration cap per task. Defaults to the coder's unbounded shipping
+          default (`0`), so the A/B measures the coder users actually get. A positive value is an
+          explicit experiment cap; a run whose losses all end at `iteration N/N` is measuring that
+          cap, not the harness. The external arm is not capped by this — it gets its CLI's own turn
+          budget (`max_turns: 50` per invocation) [default: 0]
       --out-dir <OUT_DIR>
           Directory for the timestamped JSON report [default: bench/results/coder-ab]
       --timeout-secs <TIMEOUT_SECS>
@@ -575,6 +580,11 @@ Options:
           surfaces before continuing
       --fresh
           Ignore any existing checkpoint for this corpus and re-score from scratch
+      --external-clone <EXTERNAL_CLONE>
+          Declare an external clone a corpus row may point into, as key=path (repeatable). Layered
+          over the corpus's `external-clones.toml`; a row names a clone only by its key in
+          `provenance.external_clone`, never by path, and a clone that holds the bench tree is
+          refused
       --report-issues
           File each durable-fix proposal that clears the reporting bar as an issue on --report-repo,
           skipping signatures already open there. Off by default: a measurement run must not open
@@ -646,8 +656,8 @@ Options:
 
 ```text
 Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment
-variable (docs/proposals/native-secrets-no-env.md). The key is read env-first, keychain-fallback by
-the runtime
+variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then
+`$CAR_HOME/env`, then keychain
 
 Usage: car keys <COMMAND>
 
@@ -1520,7 +1530,8 @@ Options:
 Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car
 doctor` report, bounded log tails, and a version stamp) into the local outbox at
 `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can
-reach Parslee. Works with the daemon down, like `car doctor`. macOS-only in this release
+reach Parslee. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own
+leak-path audit first
 
 Usage: car feedback [OPTIONS]
 
@@ -1583,9 +1594,10 @@ Options:
 ### car code
 
 ```text
-Built-in coding agent: state an intent, confirm the verifiable outcome contract, and CAR delivers it
-in an isolated git worktree — natively or via an installed frontier CLI. Review and apply results to
-your checkout, or publish a branch with --delivery branch (which is what --yes does by default — an
+Built-in coding agent: state an intent, review a one-screen outcome summary, then start, inspect the
+full list, revise checks in plain English, approve held network checks, or cancel. CAR works in an
+isolated git worktree — natively or via an installed frontier CLI. Review and apply results to your
+checkout, or publish a branch with --delivery branch (which is what --yes does by default — an
 unattended run never edits your checkout)
 
 Usage: car code [OPTIONS] [INTENT]...
@@ -1631,11 +1643,12 @@ Options:
           [possible values: checkout, branch]
 
   -y, --yes
-          Skip the interactive contract and delivery prompts. Delivery then defaults to publishing a
-          branch; pass `--delivery checkout` to apply the result to your checkout unattended
+          Skip the interactive approval menu and delivery prompts. The one-screen outcome summary
+          and outcomes-file path are still shown. Delivery defaults to publishing a branch; pass
+          `--delivery checkout` to apply the result to your checkout unattended
 
       --max-iterations <MAX_ITERATIONS>
-          Max plan→edit→verify iterations before giving up
+          Max plan→edit→verify iterations before giving up. Default is unbounded; 0 = unbounded
 
       --model <MODEL>
           Choose a model (see `car models list`). In a conversation, saves the choice for replies
@@ -1682,9 +1695,15 @@ Usage: car do [OPTIONS] [GOAL]...
 
 Arguments:
   [GOAL]...
-          What you want done, in plain English. Omit for an interactive REPL
+          What you want done, in plain English. Omit for an interactive REPL, or with --resume to
+          reuse the checkpointed goal
 
 Options:
+      --resume <RUN_ID>
+          Continue a prior one-shot run from its latest durable checkpoint. The original goal may be
+          omitted or repeated exactly; a different goal and a changed model-visible tool set are
+          refused
+
       --local
           Run on the LOCAL host instead of the default Docker sandbox. Writes and shell then require
           --full-access
@@ -2239,9 +2258,10 @@ Parslee account authentication for CAR cloud-backed features
 Usage: car auth <COMMAND>
 
 Commands:
-  login           Sign in with a Parslee account using browser-based OAuth + PKCE
+  login           Sign in to a Parslee account, or with `--provider openai-codex` a ChatGPT
+  subscription, using browser-based OAuth + PKCE
   status          Show whether CAR has a usable Parslee account token
-  logout          Remove stored Parslee account tokens from the OS keychain
+  logout          Remove stored account tokens from the OS keychain
   orgs            List the organizations the signed-in account belongs to (active marked)
   switch-org      Switch the account's active organization by id (e.g. `org_parslee`)
   accounts        List all stored Parslee logins (active marked)
@@ -2255,7 +2275,8 @@ Options:
 #### car auth login
 
 ```text
-Sign in with a Parslee account using browser-based OAuth + PKCE
+Sign in to a Parslee account, or with `--provider openai-codex` a ChatGPT subscription, using
+browser-based OAuth + PKCE
 
 Usage: car auth login [OPTIONS]
 
@@ -2265,8 +2286,10 @@ Options:
       parslee-car]
       --callback-port <CALLBACK_PORT>  Local callback port. The backend must allow this exact
       redirect URI [default: 53682]
-      --provider <PROVIDER>            Provider hint forwarded to Parslee authorize (`microsoft` or
+      --provider <PROVIDER>            Provider (`openai-codex`) or Parslee hint (`microsoft` or
       `google`)
+      --no-browser                     OpenAI Codex only: sign in with a device code on another
+      device instead of opening a browser
       --add                            Add a second Parslee login alongside the current one (forces
       the account chooser) instead of replacing it
   -h, --help                           Print help
@@ -2289,12 +2312,13 @@ Options:
 #### car auth logout
 
 ```text
-Remove stored Parslee account tokens from the OS keychain
+Remove stored account tokens from the OS keychain
 
-Usage: car auth logout
+Usage: car auth logout [OPTIONS]
 
 Options:
-  -h, --help  Print help
+      --provider <PROVIDER>  Credential provider to sign out; accepted value: openai-codex
+  -h, --help                 Print help
 ```
 
 #### car auth orgs
@@ -3617,6 +3641,9 @@ Commands:
   item's contract on the commit itself, without credentials, before recording it
   check    Re-verify an item end to end and, if it holds, create `car/mp/<id>-final` for a pull
   request. Runs the item's contract here
+  abandon  Retire a work item (e.g. its locked contract was wrong). Nothing is deleted: the record
+  is marked abandoned and every later stage and merge check refuses it. Start a new Build to try
+  again
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -3717,6 +3744,25 @@ Re-verify an item end to end and, if it holds, create `car/mp/<id>-final` for a 
 the item's contract here
 
 Usage: car mp check [OPTIONS] <ITEM>
+
+Arguments:
+  <ITEM>
+
+Options:
+      --repo <REPO>      [default: .]
+      --remote <REMOTE>  [default: origin]
+      --push             Also push `car/mp/<id>-final` to the remote (never forced), so the pull
+      request can be opened from it
+  -h, --help             Print help
+```
+
+#### car mp abandon
+
+```text
+Retire a work item (e.g. its locked contract was wrong). Nothing is deleted: the record is marked
+abandoned and every later stage and merge check refuses it. Start a new Build to try again
+
+Usage: car mp abandon [OPTIONS] <ITEM>
 
 Arguments:
   <ITEM>

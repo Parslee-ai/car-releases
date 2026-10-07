@@ -145,16 +145,18 @@ Older saved tasks without recorded constraints retain their previous behavior.
   root, labelled by source. Both apply; display order does not assign precedence.
   Explicit delegation between files is followed, and unresolved conflicts require
   clarification before the affected action. Their combined content budget is
-  64,000 bytes, shared so one large file cannot hide the other. Truncation names
+  96,000 bytes, shared so one large file cannot hide the other. Truncation names
   the file whose remaining rules must be read before editing.
 - **Directory-scoped instructions** — nested `CLAUDE.md` / `AGENTS.md` files,
-  each labelled with the subtree it governs. Where a scoped rule is stricter
-  than a root one, the prompt states that the scoped rule wins inside that
-  subtree. Enumerated with `git ls-files`, so only files a maintainer committed
-  are read: an untracked instruction file is ignored, which matters because a
-  session can write files into its own worktree. Budgeted at 8 files, 6KB each
+  each labelled with the subtree it governs. When directory rules conflict,
+  the deepest applicable directory's rule wins inside its subtree. Sibling
+  directories' rules do not apply elsewhere. Enumerated with `git ls-files`,
+  so only tracked nested instruction files are included; untracked instruction
+  files are ignored. Budgeted at 8 files, 6KB each
   and 12KB combined; past a budget the remainder are listed as paths to read
   rather than silently dropped.
+  Root and nested instruction reads stay inside the repository: symlinks to
+  repository files are supported, while links outside it and non-files are skipped.
 - **Project skills** — `.claude/skills/*/SKILL.md`, indexed by name and
   description only. Bodies are ordinary files the model can `read_file`.
 - **`.car/` knowledge** — identity and recorded team knowledge, up to 8KB.
@@ -198,11 +200,12 @@ describes: a stated boundary the enforcement does not implement.
 
 What the deny-list buys is that publication cannot happen *by accident* or by
 the obvious spelling. The property that does not depend on out-lexing `/bin/sh`
-is **credential separation**, and that is now in place: the model's shell runs
-with `GH_TOKEN`/`GITHUB_TOKEN` (and their enterprise spellings) removed,
-`GH_CONFIG_DIR` pointed at an empty directory so `gh` cannot fall back to
-`~/.config/gh/hosts.yml`, and git's `credential.helper` overridden to empty for
-that child so `git push` over HTTPS cannot ask the keychain either.
+is **credential separation** of the environment, and that is now in place:
+the model's shell removes every name from `$CAR_HOME/env`, every provider credential name CAR
+declares, CAR's auth-token names, and every inherited credential-shaped name.
+It also removes `GH_TOKEN`/`GITHUB_TOKEN` (and their enterprise spellings),
+points `GH_CONFIG_DIR` at an empty directory, and overrides git's
+`credential.helper` to empty for that child.
 
 Every publication route then fails on **authentication** rather than on being
 recognised — `gh pr create`, `curl` to `api.github.com`, `\gh`, `sh -c '…'`,
@@ -221,16 +224,34 @@ provisioning a scoped read-only token for the coder shell, or moving CI
 observation into host code the way publication already is — both larger changes
 than this one, and neither is done.
 
-**A contract check has its own credential policy, while the model's shell
-always keeps the full deny.**
+**A contract check inherits no credential from the daemon's environment and
+receives only declared, operator-approved environment credentials. The model
+shell inherits none and has no injection path.**
 
-*The environment.* `run_check_shell` passes `ForgeCredentials::Inherit` where
-`run_shell` passes `Withhold`. `Withhold` removes four variables —
-`GH_TOKEN`, `GITHUB_TOKEN`, and their enterprise spellings — and neutralizes the
-`gh`, `git` and `ssh` credential helpers. It does **not** clear the environment.
-So every other variable, `$DATABASE_URL` and `$STAGING_API_TOKEN` alike, is
-inherited by *both* paths; what a check additionally keeps is the forge
-credential, which is the publication route the model is denied.
+The scrub is paired with the secret sandbox described below. On macOS,
+Seatbelt still cannot mediate `sysctl(KERN_PROCARGS2)`: a same-user process can
+read a sibling's argv and environment through that API even though `ps`,
+`proc_pidinfo`, and `lsof` are blocked. CAR therefore keeps tokens out of daemon
+argv and denies the daemon's sockets and TCP ports so a token recovered through
+that macOS gap is unusable from inside the sandbox. Do not claim macOS blocks
+all peer-process argv or environment reads.
+
+**Delivery refuses an approved value.** Before a branch is committed, the
+staged tree is searched (`git grep --cached`, value passed on stdin) for every
+credential value resolved for an approved check in this daemon process. A match
+fails the session with a delivery failure that names the credential and files,
+never the value. `car coder-ab` applies the same check to `delivered.patch` and
+fails the attempt without writing the patch.
+
+At each local spawn, CAR removes the union of names from `$CAR_HOME/env`,
+built-in model/provider declarations, explicit CAR secret and auth-token
+constants, and inherited names ending in a credential suffix such as
+`_API_KEY`, `_TOKEN`, `_PASSWORD`, or `_PRIVATE_KEY`. PATH, HOME, locale,
+terminal, shell, temporary-directory, and toolchain variables remain. The
+`car do` assistant is a separate caller and keeps its existing inherited
+environment behavior.
+
+A check asks for an environment credential with `credentials`:
 
 *The inspector chain.* By default a check and the model's shell both go through
 `DenyCredentialAccess`, which matches substrings in the **command text**:
@@ -254,32 +275,192 @@ A caller-supplied or user-edited contract may opt in at contract scope:
   "description": "staging emits the repaired telemetry",
   "allow_credentials": true,
   "checks": [
-    { "name": "telemetry", "command": "az monitor app-insights query …" }
+    {
+      "name": "telemetry",
+      "command": "az monitor app-insights query …",
+      "credentials": ["AZURE_CLIENT_SECRET"]
+    }
   ]
 }
 ```
 
-`allow_credentials` defaults to `false`. When true, every check in that contract
-uses a frozen twin of the session's inspector chain with only
+`credentials` declares need; it never grants access. A caller-supplied
+contract (including `--contract-file`) approves its declarations because the
+contract itself is operator-authored. For a proposed daemon contract,
+`coder.confirm` may add `approved_credentials: ["AZURE_CLIENT_SECRET"]` to
+that exact payload check. Approval is keyed by check name and command, is
+intersected with the declaration, and is lost when the name, command, or
+declaration changes. Model-derived and model-revised checks never approve
+themselves.
+
+An unapproved declaration fails without executing and records
+`credentials_withheld`. An approved name resolves from the CAR secret store
+first, then `$CAR_HOME/env`; the daemon process environment is never a source.
+An unresolved approval also fails without executing. Resolved values are
+injected only after scrubbing, into that child only. Exact occurrences printed
+by a check are replaced with `[REDACTED:NAME]` before output, events, session
+snapshots, journals, or evidence files persist.
+
+`allow_credentials` remains a separate command-policy switch. It defaults to
+`false`; when true, every check in that contract uses a frozen twin of the
+session's inspector chain with only
 `DenyCredentialAccess` removed. Forge publication, history rewrite, privilege
 escalation, destructive commands outside the worktree, path escape, environment
 repair, and every machine/project `.car/policies` rule remain in the same order.
-The model's own `shell` always uses the full chain, regardless of the contract.
-Model-derived contracts are forced back to `false`, so an unattended derivation
-(including self-heal) cannot grant itself this authority; supply a contract with
-`--contract-file`, or edit the proposed daemon contract before confirming it.
+It does not approve or inject a credential. The model's own `shell` always
+uses the full chain and has no credential-injection path.
 
-Every `CheckResult` records `credentials_allowed`, including baseline results
-and `check_completed` / `contract_evaluated` events. This is the effective
-policy used for that execution, not an inference from the current contract.
+Every `CheckResult` records `credentials_allowed`, `credential_sources`
+(name to value-free source label), `credentials_withheld`, and
+`network_isolation` plus `secret_isolation` and `keychain_access`,
+including baseline results and `check_completed` / `contract_evaluated`
+events. These are the effective policies used for that execution, not an
+inference from the current contract.
+Its human rerun line resolves each approved value at execution time as
+`NAME="$(car secrets get NAME --check-credential)"`; no credential value is
+embedded in the result.
+It also records `cwd` and an `env` map containing only non-secret values CAR
+injected for the check, including `CAR_CHECK_EVIDENCE_DIR`,
+`CAR_CHECK_TMPDIR=<CAR_CHECK_EVIDENCE_DIR>/tmp`,
+`CAR_HOME=<CAR_CHECK_EVIDENCE_DIR>/car-home`, the session's
+`INTERCEPTOR_GROUP=cc-<session-id-prefix>`, and the effective `PATH` resolved
+after the login-shell profile and CAR's inherited-PATH prepend. CAR creates the
+per-check scratch and CAR home directories before dispatch. The operator's
+`TMPDIR` remains inherited so tools can discover host services whose socket and
+lock files live there. On macOS, sandboxed checks prepend a write-protected
+`mktemp` shim to `PATH`. Bare calls, `-d`, `-q`, `-u`, and `-t prefix` gain
+`-p "$CAR_CHECK_TMPDIR"`; calls with an explicit template or `-p` pass through
+unchanged. The shim reaches nested scripts and execs root-owned
+`/usr/bin/mktemp` directly, so a builder-planted `mktemp` later on `PATH` cannot
+run. It uses `-p` because macOS `mktemp` ignores `TMPDIR` for an implicit
+template and uses the per-user Darwin temp directory. Other POSIX platforms
+retain the top-level shell prelude; Windows `cmd /C` receives neither mechanism.
+A bare executor with no evidence directory
+receives neither isolated variable. The result does not snapshot any other
+inherited process environment.
 
-Without the opt-in, read `DenyCredentialAccess` as hardening rather than a
-boundary. It is a substring matcher over text handed to `/bin/sh`: the obvious
-`$STAGING_API_TOKEN` or `~/.aws/credentials` spelling is refused, while
-`$TOKEN`, `$APIKEY`, `$DBURL`, `aws sts get-caller-identity`, or `kubectl get
-pods` carries no built-in marker and may reach inherited credentials. The opt-in
-makes the decision explicit and reviewable; the default matcher was never proof
-that a check was offline.
+The isolated `CAR_HOME` moves CAR's coder state, auth-token directory, and
+`run/` socket and lock beneath the check evidence. CAR also removes inherited
+narrower CAR state, profile, project, socket, daemon-endpoint, and daemon-token
+overrides that would point back at operator state; `HOME` remains inherited for
+toolchains. A check that needs a CAR daemon must start its own. That daemon and
+clients in the same check share the isolated `CAR_HOME`; the operator daemon's
+token is not available to the check.
+
+CAR applies one composed OS sandbox to every coder-model shell and local
+contract check. Builder children in trusted and untrusted repositories also
+receive a write allowlist: the worktree; Git's object, ref, reflog,
+`packed-refs`, and current linked-worktree administrative paths; the session's
+private Cargo home and target; private temporary, SwiftPM, Clang module, npm,
+pip, XDG, and Bun caches; and that session's shell/check evidence directories.
+The Git common directory remains closed, so builder writes cannot reach its
+`config`, `hooks`, or `info`. `TMPDIR`, `CAR_CHECK_TMPDIR`,
+`CARGO_TARGET_DIR`, `CLANG_MODULE_CACHE_PATH`, and the package-manager cache
+variables point into the session-private state. SwiftPM's PATH shims pass its
+supported `--cache-path`, `--config-path`, and `--security-path` flags; plain
+`swift --version`, `swift -frontend`, and `swiftc` receive none of them.
+Swift Build also creates Foundation atomic-save directories under the Darwin
+user temporary directory instead of `TMPDIR`. On macOS CAR therefore admits
+only `TemporaryItems` and randomized `TemporaryDirectory.*` descendants there.
+Those directories are exclusively created and consumed by one build; shared
+lookup caches such as `xcrun_db*` remain write-denied, so `xcrun` may print a
+cache-write warning on a cold lookup without widening the boundary.
+
+Protected baseline and verifier checks do not execute tools from the merged
+login PATH directly. CAR puts the trusted Cargo/rustup proxy directory first,
+then keeps merged entries whose canonical path and every ancestor are owned by
+root, are not group- or other-writable, and are not writable by the runner.
+An already-present Homebrew `bin` or `sbin` is appended after those system
+directories only when builder write confinement is enforced and the prefix
+overlaps no builder-, verifier-, or CAR-writable root. Homebrew is
+operator-writable, but no confined builder can write it and no builder spawn
+may run unwrapped; operator processes are inside the trust boundary. This does
+not cover pre-fix builder poisoning or an unconstrained platform, which is why
+CAR checks confinement at run time. Other user-writable, relative, empty, and
+`seats/bin` entries are dropped and recorded in check evidence. Each protected
+Swift run also gets a fresh empty SwiftPM cache/config/security root and Clang
+module cache under that check's private state.
+
+Protected Cargo checks use one stable Cargo-home path per Git repository under
+CAR's runtime-owned state root, next to the repository-keyed trusted baseline
+target store. Builders are write-denied that path. A baseline publisher or
+verifier `run_check` takes its exclusive lock for the whole check, removes the
+previous materialization, and recreates it without credential files from the
+pristine operator Cargo home. Consequently two protected checks never observe
+one another's Cargo-home writes, while Cargo sees the same registry source path
+and can reuse target fingerprints. Protected checks for the same repository
+serialize; inability to obtain the lock within that check's remaining timeout
+is an infrastructure failure, not a red contract result. macOS uses CoW clones
+where supported. Linux hosts without CoW retain the existing cold
+empty/full-copy behavior, but at the stable path.
+
+The protected `CARGO_TARGET_DIR` remains a fresh check-private copy seeded from
+the stable trusted target store; Cargo does not record that target-directory
+path as a registry source identity. `RUSTUP_HOME` is the stable, shared,
+read-only toolchain root. The check tree itself remains fresh, with workspace
+members addressed relative to that root, and CAR injects no variable
+`--remap-path-prefix` into protected checks.
+
+Daemon-owned Git in builder-shared and verifier trees passes
+`-c core.fsmonitor=false -c core.hooksPath=/dev/null`, preventing repository
+configuration from executing builder-controlled programs. CAR does not set
+`protocol.file.allow=never`: freezing a verifier tree legitimately performs a
+local `clone --bare --no-local` from the session repository.
+
+On macOS the composed profile denies read and write access to the daemon's
+`$CAR_HOME/env`, `run/` tree, auth-token directory, configured file-secret
+directory, and the user's Keychains directory; denies Unix-socket connections
+under the run/token directories; denies the daemon's registered TCP listener
+ports; blocks SecurityServer/securityd lookup; and denies `process-info` for
+other processes. Raw and canonical paths are both denied. Checks without
+explicit network approval also deny non-loopback outbound network. The remaining macOS gap is
+`sysctl(KERN_PROCARGS2)`, which Seatbelt does not mediate; see the paragraph
+above.
+
+On Linux the wrapper uses user, mount, and PID namespaces with a private
+`/proc`. It first gives each write-allowed root its own bind mount, then
+remounts every other filesystem mount read-only while preserving `nosuid`,
+`nodev`, and `noexec`; it separately restores the permitted `/dev` devices.
+It also overlays each existing secret directory with a mode-000 tmpfs and
+bind-mounts `/dev/null` over each existing secret file. Any failed setup mount
+exits 125 without running the check. Checks without explicit network approval
+also receive a network namespace. Model shells and network-approved checks run without `--net`, so
+loopback TCP to the operator daemon remains reachable on Linux; the token/run
+files and peer `/proc` state remain hidden. Windows and other platforms have no
+secret sandbox.
+
+Supervised agents remain separate from coder children and continue receiving
+`CAR_AUTH_TOKEN` or `CAR_AGENT_TOKEN` in their environment. A macOS coder child
+may recover a sibling value through the `KERN_PROCARGS2` gap, but its daemon
+endpoint is denied. On Linux the coder child's private PID namespace hides the
+supervised process and its environment.
+
+The exact composed profile is probed once per process/posture. If it cannot run
+(including inside a parent sandbox), macOS and Linux refuse the local command
+instead of spawning it unwrapped; the failed check records
+`secret_isolation: "unavailable"`. A CarCoder builder also refuses a platform
+that cannot enforce its write allowlist; a successfully wrapped check records
+`"sandboxed"`.
+`network_isolation` remains `"sandboxed"`, `"unwrapped_approved"`, or
+`"unavailable"`; `"unwrapped_approved"` means only the network restriction was
+omitted, not the secret sandbox. Network approval is tied to the exact check
+name and command, so editing a command removes it.
+
+The proposal filter is deliberately narrower than the runtime isolation. It
+holds commands whose own command words are recognized network tools or network
+verbs, plus commands containing `http://`, `https://`, `ftp://`, `/dev/tcp`, or
+`/dev/udp`. It still follows nested shell `-c`, `eval`, and AppleScript `do shell
+script` commands. It does not inspect Python, Node, Ruby, Perl, awk, heredoc, or
+redirected interpreter bodies for networking keywords; those checks remain in
+the contract and the OS sandbox enforces their network boundary. A recognized
+network check without approval is moved to `Not verified by this contract`
+before baseline, confirmation, execution, or restart adoption. It is never run
+and never aborts the session merely because approval is absent.
+
+Without the opt-in, read `DenyCredentialAccess` as command-text hardening.
+The environment boundary does not depend on its spelling: inherited
+credential-shaped variables are scrubbed either way, and a declared name is
+injected only after exact operator approval.
 
 ### What a contract can and cannot assert
 
@@ -362,9 +543,9 @@ never from an earlier invocation.
 One caveat on outward-reaching checks: they are still policy-inspected. A check
 runs through the same `.car/policies` inspector chain as the model's own shell,
 so a project `deny_tool` rule can refuse it — the credential differs, the
-governance does not. It is also clamped by `--max-check-timeout-secs` and by the
-session's remaining budget, so a check that polls a real system can be starved
-rather than answered.
+governance does not. Optional operator caps from `--max-check-timeout-secs` and
+`--max-session-wall-secs` also apply when set, so a check that polls a real
+system can be starved rather than answered.
 
 ## Flags
 
@@ -372,33 +553,73 @@ rather than answered.
 |---|---|
 | `--repo <PATH>` | Repository to work in. Resolved to its top level; must be a git repo. |
 | `--intent-file <PATH>` / `--intent <STRING>` | The task. Exactly one. |
-| `--contract-file <PATH>` | JSON `OutcomeContract`. **When present, derivation does not run.** `allow_credentials` defaults to `false`; set it to `true` only when the runtime-owned checks need credentials. The opt-in removes `DenyCredentialAccess` for those checks only and is recorded in every result. Each check remains capped at `--max-check-timeout-secs`. See [The contract](#the-contract). |
+| `--contract-file <PATH>` | JSON `OutcomeContract`. **When present, derivation does not run.** A check may declare `credentials: [ENV_NAME]`; because this file is operator-supplied, those exact declarations are approved. `allow_credentials` separately removes only `DenyCredentialAccess` from check command inspection. Each check remains capped at `--max-check-timeout-secs`. See [The contract](#the-contract). |
 | `--target-branch <NAME>` | Delivery branch, stable across sessions. Required for `--deliver pr`. |
 | `--pr-base <NAME>` | PR base. Defaults to the repo's default branch. |
 | `--body-prefix <TEXT>` | Trusted caller-supplied text placed verbatim at the start of the generated PR body. The model cannot edit it. Intended for stable orchestrator markers such as `<!-- car-selfheal:key=… -->`; do not pass untrusted model output. |
 | `--draft` | Open the pull request as a draft. |
 | `--deliver <MODE>` | `pr` \| `branch` \| `none`. Defaults to `pr` with a target branch, else `branch`. Pull-request delivery selects GitHub for `github.com` origins and Azure DevOps for `dev.azure.com`, `ssh.dev.azure.com`, and `*.visualstudio.com` origins. GitHub requires an authenticated `gh` CLI; Azure DevOps requires the `azure-devops` extension for `az` plus `az login` or `AZURE_DEVOPS_EXT_PAT`. Set `CAR_CODER_FORGE=github` or `CAR_CODER_FORGE=azure-devops` for a self-hosted or otherwise unrecognized origin; an unknown origin fails before the delivery commit or push and names that override. GitLab, Bitbucket, and other forges are not supported. Use `branch` when an external orchestrator will open the review artifact. `branch` publishes a clean worktree whose HEAD is ahead of the base as a re-delivery, the same as `pr`; it fails only when the base already contains HEAD. |
-| `--model <ID>` | Pin the inference model. |
-| `--max-iterations <N>` | Override the coder config's iteration ceiling. |
-| `--max-session-wall-secs <N>` | Override the session wall clock. `0` = unlimited. Bounds the whole run — the baseline contract evaluation, the loop, and the runtime's own re-run — not just the loop: each check's `timeout_secs` is clamped to what is left. |
-| `--max-check-timeout-secs <N>` | Ceiling for **one** check's command. Defaults to 600 (or `max_check_timeout_secs` in `~/.car/coder.toml`). Raise it for a verification gate that legitimately runs longer than ten minutes; the `shell` tool the model itself calls keeps the 600s ceiling regardless. `0` is treated as unset, not unlimited. |
+| `--model <ID>` | Pin the inference model. The pin governs every contract-derivation lane, and an unparseable-reply retry re-asks that model instead of rotating away from it. |
+| `--max-iterations <N>` | Optional explicit operator cap on contract-evaluation rounds. The default is unbounded (`default_max_iterations` unset or `0` in `~/.car/coder.toml`). Exhaustion is persisted as `failure_kind: "budget_exhausted"` and names the used iterations and cap. |
+| `--max-session-wall-secs <N>` | Optional explicit operator cap on the baseline, loop, and runtime re-run. The default is unbounded (`max_session_wall_secs` unset or `0`). Exhaustion is persisted as `failure_kind: "budget_exhausted"` and names elapsed time and cap. |
+| `--max-check-timeout-secs <N>` | Optional explicit operator ceiling for **one** contract check. The default is unbounded (`max_check_timeout_secs` unset). A check that reaches the cap is killed and judged red. The model's own `shell` tool keeps its separate ceiling regardless. |
+| `--silence-window-secs <N>` | Stop the run when nothing makes progress for this many seconds. Default `900`; `0` disables it. A silent check is killed and judged red. A silent session ends `stalled`; an external or foreman CLI that streams output for one window without changing its pinned worktree ends `no_progress`. Streamed lines alone are not progress. |
 | `--workspace-dir <PATH>` | Stable per-goal workspace. Reused when it is already a worktree of this repo. |
-| `--keep-workspace` | Keep the workspace on any non-zero exit, and on a green `--deliver none` run. A deadline-starved post-loop gate is always retained because the loop already verified that tree green. |
+| `--keep-workspace` | Keep the workspace on any non-zero exit, and on a green `--deliver none` run. A deadline-starved post-loop gate is always retained because the loop already verified that tree green; a stalled run is always retained for diagnosis. |
 | `--transcript <PATH>` | Mirror the JSONL stream to a file. A path that cannot be created or opened is a `config_error` refusal before any spend — never a silent downgrade to no transcript. |
 | `--json` | Emit the JSONL stream on stdout, one compact object per line. |
+
+The three cap flags and their config keys are opt-in operator policy; none has a
+finite default. External-agent invocations likewise have no default wall-clock
+stop; the silence watchdog and no-progress rule govern them unless an explicit
+session cap supplies the remaining timeout. An explicit cap remains
+authoritative. Separately,
+`no_progress_turn_limit` defaults to `30`: that many agent turns whose actions
+change nothing ends the run with `failure_kind: "no_progress"`. Set it to `0`
+to disable the native-loop rule. External and foreman engines instead compare
+the worker's Git status-plus-diff fingerprint at most every five seconds. A
+streamed line does not count as progress; a worktree change does. Output inside
+the silence window that just elapsed ends `no_progress`; no output inside that
+window ends `stalled`, even if an older line preceded it. Setting
+`silence_window_secs` to `0` disables both outcomes. A
+non-JSON run prints its terminal label and reason to stderr; `run_end` carries
+the same reason and retained workspace path.
+
+With red checks, a headless native session keeps iterating until it succeeds or
+ends through `NoProgress` (the idle-iteration guard or session no-progress turn
+guard), the silence watchdog, cancellation, or a genuine infrastructure,
+authentication, or configuration failure. A repeated-read trip ends only that
+attempt. If the worker itself reports an execution error, the session records
+`failure_kind: "error"` with that text followed by the final red-check summary.
+
+Output from a command the native builder runs through its own `shell` tool, and
+from the verifier's `shell` probes and `run_check` runs, keeps the session
+alive the same way contract-check output does: each chunk resets the silence
+window, so a fifteen-minute build that prints throughout is never killed as
+silent. A command that stops printing for a full window is still killed and the
+session still ends `stalled`. That output is liveness only. It never counts as
+a worktree change, so a builder that prints on every turn but changes nothing
+still ends `no_progress` at `no_progress_turn_limit`.
 
 ## Exit codes
 
 | Code | Meaning | What an orchestrator should do |
 |---|---|---|
 | `0` | Contract green and delivery succeeded (or `--deliver none`), **or** the session correctly concluded no code should change. | Progress. Read `status` to tell the two apart: `delivered` shipped a diff, `reported` shipped a conclusion. Do not retry either. |
-| `1` | Ran out of iterations or wall-clock without the contract going green. | Read `failure_class`: `contract_not_green` / `task_max_turns` is a real, scorable no-progress round; `session_wall_exhausted` is a run that ran out of time and was never judged — do not score it. |
-| `2` | Retriable infrastructure — transport, a lost push race, or a forge CLI/API blip. | Requeue; **not** a no-progress cycle. |
+| `1` | Work not done: the contract stayed red, an explicit operator cap was exhausted, the session stalled, or the no-progress rule fired. | Read the terminal class and persisted `failure_kind`. A `stalled` run keeps its workspace for diagnosis; `budget_exhausted` names usage and cap; `no_progress` names either the native unchanged-turn limit or the external unchanged-chatter window. |
+| `2` | Retriable infrastructure, **or** an already-satisfied request. | Read `failure_class`: requeue infrastructure; do not retry `already_satisfied`. |
 | `3` | Non-retryable — bad invocation, unusable contract, missing credential, a vacuous contract, **or** a no-change finding that needs a human this command cannot reach. | Park it and quote the failure class. For `finding_needs_review`, a person reads the finding; re-running changes nothing. |
 
 `run_end.failure_class` ∈ `none` · `contract_not_green` · `delivery_failed` ·
-`task_max_turns` · `session_wall_exhausted` · `infra_setup` · `infra_inference` ·
-`config_error` · `car_bug` · `finding_needs_review`.
+`task_max_turns` · `session_wall_exhausted` · `stalled` · `no_progress` · `infra_setup` · `infra_inference` ·
+`config_error` · `already_satisfied` · `car_bug` · `finding_needs_review`.
+
+| Persisted `failure_kind` | Trigger | Exit |
+|---|---|---|
+| `budget_exhausted` | An explicit iteration or session-wall operator cap is exhausted. The reason names elapsed/used and cap. | `1` |
+| `stalled` | No runtime-owned progress for `silence_window_secs`, with no streamed external output during the window; the reason names the check, tool, model call, or runtime step. | `1` |
+| `no_progress` | Native: `no_progress_turn_limit` turns change nothing while work remains red. External/foreman: the silence window that just elapsed contains streamed output but no worktree fingerprint change. | `1` |
+| `already_satisfied` | The repaired derived contract's ordinary checks all pass on untouched code. The session is `abandoned`; every passing check is named in `run_end.error`. | `2` |
 
 ## When the right answer is to change nothing
 
@@ -450,8 +671,8 @@ reaped and the next round redoes the session.
 
 ### A starved gate is not a red contract
 
-The session clock is never allowed to interrupt an iteration mid-flight, so the
-loop routinely finishes *just past* its ceiling: the last round is admitted at
+When an operator sets a session wall-clock cap, that clock is never allowed to
+interrupt an iteration mid-flight, so the loop can finish *just past* its ceiling: the last round is admitted at
 t=3580, returns green at t=3720, and the runtime's own contract re-run then
 starts with zero budget left. Each check's `timeout_secs` is clamped to what
 remains, floored at one second, so a `cargo test` check is killed after a second
@@ -472,20 +693,13 @@ would launder a real failure into a budget excuse. A check that blew its *own*
 `timeout_secs` (`timed_out: true`, `deadline_clamped: false`) is likewise a real
 red: a hang is a defect.
 
-"Its own timeout" means the **effective** ceiling,
-`min(timeout_secs, max_check_timeout_secs)`: every contract command runs through
-the coder shell, which caps any timeout at the per-check ceiling — 600 seconds
-by default. At that default a check declaring `timeout_secs: 900` is killed at
-600 however much session budget is left, and that is reported as
-`deadline_clamped: false` — a hang, not starvation; only a session with **under**
-600 seconds left can clamp such a check.
-
-`--max-check-timeout-secs` moves that ceiling. At `--max-check-timeout-secs 900`
-the same check gets its full 900 seconds, and a session with 700 left now
-*does* clamp it — `deadline_clamped: true`, starvation rather than a hang, which
-is the honest reading once the check was allowed the duration it declared. Raise
-it only for a gate you know is slow: the ceiling is what stops a genuine hang
-from consuming the whole session budget.
+"Its own timeout" means the **effective** ceiling. A check's explicit
+`timeout_secs` is further clamped by `max_check_timeout_secs` only when the
+operator sets that optional flag/config key. With both omitted, the check has no
+total-duration ceiling; the `900`-second silence watchdog is the default guard
+against a genuine hang. A check that declares `timeout_secs: 900` therefore gets
+its full declared duration unless an explicit check or session cap is lower.
+The model's own `shell` tool keeps its separate ceiling regardless.
 
 The reclassification also yields to the loop's own verdict. If the loop itself
 ended on a named machinery or configuration fault — an exhausted inference retry
@@ -493,8 +707,8 @@ chain (`infra_inference`, exit 2) or an expired token (`config_error`, exit 3) �
 that class stands even though the gate that followed it was equally starved.
 Only a loop that reached no verdict of its own, or one purely about the work
 being red, can be reclassified as `session_wall_exhausted`. A missing credential
-must not surface as a budget problem: exit 2 still means requeue and exit 3 still
-means park it.
+must not surface as a budget problem: for these two failure classes, exit 2
+still means requeue and exit 3 still means park it.
 
 The workspace is retained on this path even without `--keep-workspace`, and
 `run_end` reports `workspace_kept: true` plus its `workspace_path`. The loop had
@@ -514,6 +728,103 @@ preflight is not a refusal: only a positive answer parks a run, so the round
 proceeds and delivery reports the listing failure as `stage: "pr", retriable: true`
 if it persists.
 
+## Check evidence
+
+Every contract evaluation writes check output beneath
+`<state dir>/<session-id>/evidence/<evaluation-n>/<check-name>/`: `stdout.txt`,
+`stderr.txt`, `result.json`, and any artifact the check writes through
+`$CAR_CHECK_EVIDENCE_DIR`. Each check also receives a pre-created `tmp/` below
+that directory as `CAR_CHECK_TMPDIR`. On macOS, the runtime's write-protected
+PATH shim redirects implicit-template `mktemp` calls there while leaving host
+`TMPDIR` unchanged for daemon discovery; nested scripts inherit the PATH and
+receive the same behavior. Other POSIX platforms retain the top-level shell
+prelude. Scratch output is retained, capped, and scrubbed
+with the rest of the check evidence. Evaluation numbers cover the
+baseline, each repair round, and the final gate in order. Text evidence uses the feedback-bundle
+redaction scrub up to 64 MiB per file; any larger stream or text artifact is replaced
+with a placeholder instead of being retained unredacted, while a larger binary
+artifact is kept as it always was. `output_tail` keeps
+its type and size bound but is redacted with the same scrub before it is emitted
+or persisted.
+
+Before a contract check runs, CAR lexically checks redirections, `tee`,
+`-o`/`--output`/`--out`/`--output-file`/`--path` values, and `cp`/`mv`/`install`
+destinations. It denies targets outside the worktree (or its baseline copy) and
+the check's evidence directory, then records the denial as the failed check and
+in `stderr.txt`. `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, and paths
+under `$CAR_CHECK_EVIDENCE_DIR`, `$CAR_CHECK_TMPDIR`, or `$CAR_HOME` are
+allowed. A write through `$TMPDIR` is denied because it names the host temp
+directory, outside the worktree and evidence roots. A variable assigned
+directly from `$(mktemp)`, `$(mktemp -d)`, or the equivalent backtick form is
+treated as contained for writes to the variable itself (and descendants for
+`-d`). An explicit outside template such as `mktemp /tmp/x.XXXX`, an explicit
+`/tmp/x`, `$HOME/x`, `../x`, or `/etc/x` remains denied. The same inspector and
+representative baseline/evidence context run during contract admission, so a
+denied model proposal enters repair before review; a still-denied check is kept
+under Not verified and removed before baseline. This checks those recognizable
+shell patterns; it is not a sandbox.
+
+In any coder shell command, whether from the model or a contract check, every
+`interceptor` browser verb must carry exactly one literal
+`--context interceptor-test`. A missing `--context` is denied because
+Interceptor auto-routes it to whichever single profile remains, which may be the
+operator's own. Any other value, and any environment-variable or command
+indirection, is denied too. Checks therefore drive the isolated profile opened
+by Interceptor's `LaunchTestProfile.sh`. `interceptor --version`, `status`,
+`help`, and CarHost `macos` window automation such as
+`interceptor macos trust --no-prompt` remain available without a context. If
+Interceptor is not running, the check fails with Interceptor's own error in
+`stderr.txt`.
+
+The same `INTERCEPTOR_GROUP=cc-<session-id-prefix>` is injected into every
+model-facing `shell` command in the session, not only runtime-owned contract
+checks. Labels keep at most 24 valid session-id characters and hash short or
+otherwise unusable ids, so they remain stable and never exceed Interceptor's
+32-character limit. A bare executor created without session context injects no
+group.
+
+After every baseline, repair-round, and final evaluation pass whose contract
+contains an Interceptor command, `car code-task` starts a detached cleanup task
+that runs
+`interceptor group close cc-<session-id-prefix> --context interceptor-test`.
+The evaluation returns as soon as its results exist; it never awaits cleanup.
+The same detached, 15-second-bounded cleanup starts once more after a daemon or
+`car code-task` session has durably entered merged/delivered, reported, failed,
+abandoned/cancelled, or stalled; restart adoption persists the orphan's failed
+state before starting its one cleanup. Session-end cleanup is skipped only when
+the contract has no Interceptor check and no model shell invoked Interceptor.
+Cleanup never changes an evaluation verdict or terminal state. The JSONL stream records
+`interceptor_group_close {group, success, detail, trigger}` with `trigger` set
+to `contract_pass` or `session_end`; `success: false` carries the redacted
+spawn, timeout, or non-zero-exit failure. At process exit, `car code-task`
+waits at most two seconds total for unfinished cleanup tasks. It then exits
+without killing a still-running Interceptor child and appends a journal-only
+close event with `success: false` and `detail: "not awaited at exit"`; the child
+can finish independently.
+
+If a check's latest output says Cargo is `Blocking waiting for file lock`, or
+says it is `waiting for` or `waiting on` the build lock, CAR appends
+`[runtime] still waiting on the build lock (Ns)` every third of the silence
+window and counts that line as progress. The silence watchdog therefore leaves
+a check queued behind another build running, while the check's own timeout
+still applies.
+
+At every terminal outcome, `car code-task` writes `Evidence: <session evidence
+dir>` to stderr. If the directory exceeds 1 GiB it also writes one
+`warning: evidence directory is <human size> (over 1 GiB): <dir>` line without
+changing state or exit code. It then writes `rerun <check-name>:
+<copy-pasteable shell line>` for every failed check in the latest evaluation.
+Those lines restore the recorded working directory and CAR-injected
+environment, including the check's `CAR_CHECK_TMPDIR`, isolated `CAR_HOME`, and
+exact effective `PATH` before invoking the command, so tool resolution
+matches the original check. A sandboxed result includes the complete
+`sandbox-exec` or `unshare` wrapper, so the copied line reproduces the network
+posture that produced the evidence. Approved and unavailable results print the
+plain shell invocation. They stay on stderr, so `--json` stdout remains a
+JSONL event stream. The board, CarHost, and ledger link the same proof by
+session id at `<state dir>/<session-id>/evidence`, outside the disposable
+worktree so successful cleanup does not remove it.
+
 ## The event stream
 
 One compact JSON object per line on stdout under `--json`, **flushed per line**,
@@ -524,42 +835,173 @@ consumer must tolerate types it does not know.
 {"type":"target_merge","branch":"goalpool/g_1","action":"merged","policy":"merge","commit":"…"}
 {"type":"base_merge","base":"main","action":"already_current","policy":"merge"}
 {"type":"run_start","repo":"…","target_branch":"…","worktree":"…","workspace_reused":false,
- "model":"…","contract_checks":7,"contract_supplied":true,"max_iterations":8,
- "max_session_wall_secs":3600,"max_check_timeout_secs":600,"deliver":"pr",
+ "model":"…","outcomes_path":"…/coder-….outcomes.md","contract_checks":7,"contract_supplied":true,"max_iterations":0,
+ "max_session_wall_secs":0,"max_check_timeout_secs":null,"silence_window_secs":900,"deliver":"pr",
  "base_branch":"main","draft":true,
  "base_merge":"already_current","target_merge":"merged"}
 {"type":"contract_baseline","gates_nothing":false,"workspace_reused":false,
- "carries_prior_work":false,"results":[…]}
+ "carries_prior_work":false,"results":[{"name":"build","command":"cargo build",…}]}
+{"type":"outcomes_step","step":"enumerate","group":"page","phase":"finished",
+ "outcomes":3,"detail":null}
+{"type":"outcomes_step","step":"baseline_repair","group":null,"phase":"finished",
+ "outcomes":3,"detail":"repaired_with_failing_check"}
+{"type":"outcome_dropped","kept":"…","dropped":"…","group":"page","reason":"…"}
+{"type":"outcomes_written","path":"…/coder-….outcomes.md",
+ "groups":[{"group":"page","outcomes":3},{"group":"artifact","outcomes":2}]}
 {"type":"iteration_start","n":1}
-{"type":"spend","cost_usd":0.0143,"cumulative_usd":0.0143}
+{"type":"spend","phase":"contract","cost_usd":0.0143,"cumulative_usd":0.0143}
 {"type":"check_started","name":"build"}
-{"type":"check_completed","name":"build","passed":true,"exit_code":0,"duration_ms":8123,
- "output_tail":"…","timed_out":false,"deadline_clamped":false}
+{"type":"check_completed","name":"build","command":"cargo build","started_at":1781234559,
+ "passed":true,"exit_code":0,"duration_ms":8123,"output_tail":"…","timed_out":false,
+ "deadline_clamped":false,"credentials_allowed":false,"network_isolation":"sandboxed",
+ "evidence_dir":"/…/evidence/1/build",
+ "evidence_files":["/…/evidence/1/build/result.json","/…/evidence/1/build/stderr.txt","/…/evidence/1/build/stdout.txt"],
+ "env":{"CAR_CHECK_EVIDENCE_DIR":"/…/evidence/1/build","CAR_CHECK_TMPDIR":"/…/evidence/1/build/tmp","CAR_HOME":"/…/evidence/1/build/car-home","PATH":"/…","PYTHONDONTWRITEBYTECODE":"1"},
+ "cwd":"/…/worktree"}
+{"type":"interceptor_group_close","group":"cc-coder-…","success":true,"detail":"closed","trigger":"contract_pass"}
 {"type":"provider_error","status":429,"retry_after_ms":60000,"message":"…"}
 {"type":"contract_evaluated","passed":true,"by":"runtime","iteration":3,"results":[…]}
 {"type":"delivery_started","branch":"goalpool/g_1","draft":true,"base":"main"}
+{"type":"artifact_excluded","path":"car_runtime/car_runtime.abi3.so","reason":"compiled_binary","size_bytes":127926272}
 {"type":"delivery_completed","branch":"…","commit":"abc1234","pushed":true,"pr_number":123,
- "pr_url":"…","pr_action":"opened","draft":true,"body_names_commit":true}
+ "pr_url":"…","pr_action":"opened","draft":true,"body_names_commit":true,
+ "excluded_artifacts":[{"path":"car_runtime/car_runtime.abi3.so","reason":"compiled_binary","size_bytes":127926272}]}
 {"type":"delivery_failed","reason":"…","retriable":true,"stage":"push"}
-{"type":"budget_exhausted","reason":"…","elapsed_secs":3600,"iterations":5}
+{"type":"budget_exhausted","reason":"explicit session cap exhausted: elapsed 1800s of 1800s","elapsed_secs":1800,"iterations":5}
 {"type":"auth_required","message":"…"}
 {"type":"error","message":"…"}
 {"type":"run_end","status":"delivered","failure_class":"none","iterations":3,"cost_usd":0.0421,
+ "contract_cost_usd":0.0143,"contract_billing":"metered",
  "workspace_path":"…","workspace_kept":false,"branch":"…","commit":"…","pr_number":123,
- "pr_url":"…","delivered":true,"error":null}
+ "pr_url":"…","delivered":true,"excluded_artifacts":[{"path":"car_runtime/car_runtime.abi3.so","reason":"compiled_binary","size_bytes":127926272}],"error":null}
 ```
 
+`contract_baseline.results` contains full `CheckResult` objects, not the former
+`{name, passed, exit_code}` projection, so its command, evidence, environment,
+and working-directory fields match later check events and the persisted session.
+
+`run_start.outcomes_path` names the outcomes file written for both derived and
+`--contract-file` contracts. `spend.phase` is `contract` or `work`, so callers
+can separate contract derivation from the coding loop. `run_end.cost_usd` is
+the total reported spend; `run_end.contract_cost_usd` is its optional
+contract-derivation subtotal. `run_end.contract_billing` is `"metered"`,
+`"subscription"`, `"unknown"`, or `null` when no derivation call ran. Any
+subscription call makes the aggregate `subscription`; otherwise any
+unpriceable call makes it `unknown`; otherwise it is `metered`. Dollar totals
+sum only metered calls, so mixed derivation can retain a metered subtotal
+without fabricating a price for subscription or unknown calls.
+`outcomes_step` reports fan-out, critic, merge, and all-green baseline-repair
+progress; nullable `group`, `outcomes`, and `detail` fields apply only to steps
+that have those values.
+`outcome_dropped` records a duplicate or contradiction removed by the merge,
+and `outcomes_written` names the artifact plus the outcome count by group. An
+enumerator or critic call that stays silent past the session's effective
+`silence_window_secs` counts as a failed attempt; `0` disables that per-call
+limit.
+
 `run_end.status` ∈ `delivered` · `reported` · `needs_review` · `contract_failed`
-· `failed`.
+· `abandoned` · `failed`. A request that does not say what should change or
+how anyone would see it ends as `abandoned` with `failure_class: "config_error"`
+and exit 3; its `run_end.error` asks for the missing observable change.
+An authored request whose checks all still pass after baseline repair also ends
+`abandoned`, but with `failure_class: "already_satisfied"` and exit 2; its
+error names every passing check and ends `Nothing to change.`
 
 `delivered` and `reported` share exit 0 and are never conflated: an orchestrator
 counting shipped changes and one counting triaged conclusions read the same
 stream.
 
-`budget_exhausted` and `auth_required` are the two an orchestrator most wants to
-key on — a wall-clock kill versus a missing credential — and correspond to the
-`session_wall_exhausted` and `config_error` failure classes. `error` carries a
-mid-run loop error that did not end the run.
+`budget_exhausted`, `stalled`, `no_progress`, and `auth_required` are the
+persisted failure kinds an orchestrator most often acts on: an explicit cap, a
+silent phase, unchanged native turns or unchanged external chatter, or a missing
+credential. `error` carries a mid-run loop error that did not end the run.
+
+## The cross-vendor audit
+
+Before anything is delivered, a model from a different vendor than the builder
+reads the verified work and may raise findings. The default auditor is Kimi K3
+through OpenRouter (`openrouter/moonshotai/kimi-k3`), so the CAR daemon needs
+`OPENROUTER_API_KEY` in its own environment; without an eligible auditor the
+run is refused and the refusal names that key. Anthropic models are never used
+as the auditor, whether through an Anthropic API key, OpenRouter, a Parslee
+alias, or a Claude subscription, and naming one in `auditor_model` in
+`~/.car/coder.toml` is refused. Local models (MLX, Apple Foundation and other
+on-device models) are never chosen automatically; one runs only when
+`auditor_model` names it. The full selection rules are under
+`auditor_model` in `docs/websocket-protocol.md`.
+
+The auditor is offered no tools: a reply that is only a tool call carries no
+text. Its initial
+payload includes each graded probe's exit code plus redacted, head-and-tail
+capped stdout and stderr. The `start..delivered` diff is also capped and names
+whether it is complete or truncated, along with the delivered and total byte
+counts.
+
+Audit findings are typed as `defect`, `challenge`, or `note`. A `defect`
+contradicts a verdict and carries a confined reproduction command. A known
+outcome id stays scoped to that outcome, and a recorded scoped probe id maps to
+its outcome. A missing, unknown, or unscoped id instead creates the reserved
+session grade `_audit_session`; the original id remains in the claim. A
+non-zero reproduction makes the affected grade FAIL with that probe as its
+reproducer. A missing reproduction, tool error, or exit zero makes it UNPROVEN
+with a manual prerequisite. Session-level reproductions run as `_unscoped`
+probes through the same confined shell. Legacy findings without `kind` are
+defects when `reproduction` is non-empty after trimming and notes otherwise;
+an explicit `kind: "note"` is always a note and its reproduction never runs.
+
+A `challenge` says a PASS is not proven. CAR gives each challenged PASS outcome
+one fresh verifier round without a builder repair and includes
+`audit_challenges: [{outcome_id, reason}]` in the verifier input. PASS then
+requires a probe recorded in that round; otherwise CAR records UNPROVEN with a
+manual prerequisite carrying the reason. A challenge without an outcome id
+applies to every PASS outcome. A challenge on FAIL or UNPROVEN is recorded but
+opens no extra round. If an outcome is challenged again after its one challenge
+round, CAR makes it UNPROVEN and returns to the bounded builder repair path; it
+never opens a second challenge round.
+
+`cannot_decide.what_would_decide` is `{"read":["repo/relative/path"]}` and/or
+`{"run":"command"}`. Reads are canonicalized inside the frozen tree; probe
+evidence directories return only their captured `check`, `command`, `cwd`,
+`exit`, stdout, stderr, and optional `result.json` files. Nested `car-home` and
+`tmp` directories are not traversed. Absolute paths, `..`, symlink escapes, and
+other paths outside the frozen tree or session evidence are returned as refused
+evidence. A typed `run` uses the verifier's confined shell and the item's known
+outcome id, or `_unscoped` otherwise. Legacy free text is never executed: CAR
+extracts existing repo-relative file paths and reads them, or reports that no
+path could be obtained.
+
+Each evidence round resolves every pending item in one follow-up. Notes,
+questions, and blind spots use the replacement reply. Blocking defects and
+challenges are sticky: CAR assigns `defect_id` values (`D1`, `D2`, ...) in
+first-seen order and retains an omitted blocker. A follow-up removes one only
+with `withdrawn: [{defect_id, reason}]` naming an existing id and a non-empty
+reason. Valid withdrawals retain the removed claim and reason in the audit
+attestation and delivery ledger; unknown ids and empty reasons remove nothing.
+CAR stably deduplicates the resulting state. The loop stops when nothing is
+pending, the remaining requests were already answered, or three follow-up
+rounds have run. Notes and unresolved sensitivity questions remain recorded and
+do not block delivery; unanswered challenges and every defect do.
+
+The checked-in legacy live-audit replies now block as designed: the kindless
+machine-1 `cargo test` and machine-4 `cargo run` findings carry reproductions,
+so they are defects. Both reproductions exit zero in the fixture and those
+outcomes finish UNPROVEN with manual prerequisites. The kindless
+`_unscoped:probe-1` “suggestive but not decisive” finding has no reproduction
+and remains a session-level note. A test variant that marks the same
+affirmations explicitly as notes delivers while retaining notes and unresolved
+questions.
+
+The follow-up asks for only the JSON object, but reply extraction also accepts
+that strict audit object inside a JSON or bare Markdown fence or surrounded by
+reasoning prose. A reply with no valid audit object remains unusable. Empty or
+unusable replies are retried under the same three-strike policy as the builder
+and verifier. If a reply is still unusable, the run ends as an
+`infrastructure` failure, not a `verification` one: the message names the
+auditor model and what came back, meaning the content length, reasoning length,
+any tool calls, and the `finish_reason`. A missing audit is never treated as a
+pass. Every auditor reply, parsed or not, is written redacted and capped at 64
+KiB to `<evidence>/audit/reply-NNN.json` and journaled as a
+`coder.audit_reply` event, so a failed audit can be read directly.
 
 ## Delivery semantics
 
@@ -666,33 +1108,228 @@ mid-run loop error that did not end the run.
 }
 ```
 
+### The contract's checks are immutable
+
+A contract must keep measuring the outcome the operator approved. At session
+start, CAR captures committed test logic: scripts a check executes, the
+repo-relative scripts those scripts invoke through shell execution, `node`,
+`python`/`python3`, or `uv run` (recursively, with an eight-edge limit and cycle
+detection), test files or directories a test runner targets, and files matched
+by the contract's optional `protected_paths` entries. The parser recognizes
+Node test targets, `python -m` test runners, `uv run` wrappers, and `swift test`;
+`swift test` protects the package's complete `Tests/` tree because a `--filter`
+may name a type or method rather than a path. A protected directory means its
+exact start-commit contents: additions inside it are hidden for the check and
+restored afterwards. CAR uses a test-logic view of the shell-command parser
+shared with `car coder-ab`; coder-ab keeps restoring its broader historical set
+of named inputs. A product or fixture that an
+ordinary assertion command merely reads (`cat`, `grep`, `diff`, `cmp`, `test`,
+`python -c`, or `< file`) is not protected, because the check must inspect the
+builder's result. Captured files come only from the start commit; the explicit
+directory and configuration rules also reject builder-added entries.
+
+CAR also protects every start-commit `conftest.py` and `pytest.ini`. At each
+ancestor directory from a protected test path through the repository root, it
+protects start-commit `conftest.py`, `pytest.ini`, `.pytest.ini`, `tox.ini`,
+`setup.cfg`, `pyproject.toml`, and `package.json`; builder-added files at those
+locations are hidden for the check. `package.json` is protected as a whole, so
+edits to unrelated fields are reported too. `editable_paths` is the operator's
+escape hatch when such an edit is intentional. Builder-added `conftest.py` and
+`pytest.ini` are protected anywhere in the repository.
+
+Builder-iteration checks and the final gate temporarily overlay changed or
+deleted protected files with their start-commit bytes, run the check, and then
+restore the builder's working copy. The verifier's `run_check` sees the same
+start-commit versions when CAR materializes the frozen delivered tree. This
+keeps a builder from changing the test logic that decides its result while
+leaving the builder's worktree intact for review.
+
+The overlay writes a crash journal before it changes the worktree. Normal
+cleanup restores the builder's bytes, modes, symlinks, and builder-added files,
+then completes the journal. Daemon startup and retained-task resume recover an
+unfinished journal before adopting or reopening the session. Recovery failure
+ends the session as infrastructure failure; CAR does not run checks on a
+partially overlaid tree.
+
+The journal lives at
+`<state dir>/<session-id>/protected-overlay-journal`, outside the worktree,
+its Git directory, check evidence, and check scratch directories. Recovery
+takes the worktree root from the persisted session record; a root in the
+journal must match it. CAR validates every entry and blob as a strict relative
+path, walks components without following symlinks, and validates the complete
+transaction before restoring anything. An unsafe journal is left in place and
+the session records an infrastructure error for operator repair.
+
+Added or changed symlinks in that surface are contract changes. CAR inspects
+symlinks without following them, removes or replaces them for the check, and
+restores the builder's link afterwards. A symlink in a protected path's parent
+is never followed, so pristine writes cannot escape the repository root.
+
+When CAR observes a protected edit, it records the path and whether it was
+added, modified, or deleted, emits `contract_protected_edits`, attaches the
+relevant edits to each `CheckResult.protected_edits`, and tells the builder that the
+original ran. The note appears again in the next repair turn. The session
+snapshot retains the first iteration that observed each edit.
+
+Every fresh capture emits
+`contract_protected_surface {paths, unprotected_checks, partially_protected, invoked_product_files}`
+and stores all four fields in the session snapshot. `car code` prints a capped **Protected
+contract files** list and lines such as `invoked product file (not protected):
+<path> (run by <invoked_by>)`. For each check in `unprotected_checks`, CAR also emits
+`contract_unprotected_check`, writes a tracing warning, and prints a warning
+naming the check: its command names no start-commit test logic CAR can protect,
+so a builder could change what it runs. This warns about the grading boundary;
+it does not turn the check into a failure.
+
+Static discovery follows commands in conditionals, loops, negation, brace and
+subshell groups, boolean chains and sequences, and recognizes `tsx` and
+`ts-node` launchers. A test runner inside a protected helper protects the same
+named tests, directories, and test configuration as a top-level command.
+Runtime-selected helper behavior such as `eval`, command substitutions,
+variable-held programs, computed `cd`, `exec "$@"`, and generated `xargs` or
+`find -exec` invocations appears in `partially_protected`. CAR emits one
+`contract_partial_protection` warning per entry with the check, helper path,
+bounded source line, and reason; `car code` prints the same warning.
+
+Two optional `OutcomeContract` arrays let an operator make the boundary
+explicit:
+
+```json
+{
+  "protected_paths": ["checks", "test/support/*.py"],
+  "editable_paths": ["test/support/generated.py"]
+}
+```
+
+The builder can never weaken HOW it is graded, and can always change WHAT is
+graded. A check script invoking the product is testing the product, not defining
+the test. The protected surface contains (a) committed files and exact directory
+contents declared in `protected_paths`, plus ancestor test configuration for
+declared test paths; (b) files and directories named on a check's own command
+line; and, only when no paths are declared, (c) transitively referenced files
+that are themselves recognizable test logic. Conventional test logic includes
+`test`, `tests`, `testing`, `spec`, `__tests__`, and Swift `Tests` directories,
+test-shaped filenames, and test configuration. A referenced CLI, library, or
+data file outside those locations remains editable and appears in
+`invoked_product_files`; non-test directories referenced inside scripts are
+ignored.
+
+When `protected_paths` is non-empty it is authoritative: the transitive walk
+still reports partial-protection gaps and invoked product files, but it can
+recurse only within declared directories or directories named directly by a
+check. Directly declared and check-command paths always win, even when they look
+like product code. In the deploy-lag replay, `live-fleet.sh` remains pristine
+while its invoked `deploy_lag.py` and `repo-deploy-map.json` use the builder's
+fixed bytes.
+
+`editable_paths` opts matching protected files out of the overlay, so checks
+run the builder's copy. Those changes are still
+recorded as allowed and shown to the verifier and auditor. An ordinary
+builder-added test file outside a protected directory is not protected,
+reported, or overwritten because it did not exist in the start commit.
+
+For replay rows, `car coder-ab` merges the row's recorded `protected_paths`
+into the `OutcomeContract` it sends to every arm, without removing or
+duplicating paths already declared by that contract. Ground-truth restoration
+still uses the row's recorded paths and the broader data-operand rules.
+
+Delivery reports any remaining protected-file edit as a **contract change (not
+graded)** because the checks ran the original. An `editable_paths` edit is
+reported as a **contract change (allowed)**. These labels disclose what the
+delivered diff contains; they do not remove the edit from delivery.
+
+Remaining limits: transitive discovery is static and follows only direct,
+repo-relative script invocations visible in committed script text. It does not
+evaluate variables, command substitutions, generated commands, or runtime
+imports, and it stops after eight invocation edges. Files merely consumed as
+products remain editable by design. Builder background processes are not
+stopped before the pristine check pass. Use `protected_paths` when required
+test logic falls outside the parser's visible surface.
+
 `output_contains` normally performs a literal substring check. Its reserved
 `$json:<JSON Pointer>=<JSON value>` form parses the complete command output as
 JSON and compares the addressed value in the runtime; for example,
 `$json:/ok=true` requires the top-level `ok` field to be the boolean `true`, not
 merely text that resembles it.
 
+Choose a substring that distinguishes success from failure: `match` also occurs
+in `mismatch`. Validation rejects simple literal `command && echo success ||
+echo failure` checks when both branches exit zero and satisfy the same substring
+assertion (or no output assertion is present). Keep the comparison's exit status,
+or use an assertion that distinguishes its results. This lint recognizes a
+limited literal shell form; checks still need review for task coverage.
+
+`$exact:<text>` requires the complete captured UTF-8 output to equal `<text>`
+without trimming. For example, this checks both lines and the final newline
+without generating a shell comparison program:
+
+```json
+{"name":"readme_text","command":"cat -- README.md","expect_exit_zero":true,
+ "output_contains":"$exact:# Example\nWelcome to CAR.\n"}
+```
+
+Use a read command supported by the check's platform (`cat` in this POSIX
+example). Expected text is limited to 64 KiB. The local shell capture must be
+complete and lossless; truncated, invalid-UTF-8, or unattested remote-substrate
+output cannot pass this assertion. Stdout and stderr use the existing combined
+capture format, so diagnostic text also prevents equality. Exit and timeout
+requirements still apply. Binary data and larger files need the repository's
+own tests or a bounded digest check. This reserved form requires a runtime that
+supports exact output; older runtimes interpret it as an ordinary substring.
+
 There is **no maximum check count** — a 95-check contract is legal, and every
 check runs and is reported. Two controls do bind:
 
-- **Duration.** `timeout_secs` is capped at `--max-check-timeout-secs` (600 by
-  default), so the 600 in the example above is also the largest value that has
-  any effect until that flag is raised. This ceiling **is** caller-set: raise it
-  for a gate that legitimately runs longer than ten minutes.
-- **Credentials.** By default, a check naming a credential-looking environment
-  variable or directory is refused before it runs. A caller-supplied or
-  user-edited contract can set `allow_credentials: true`; that removes only
-  `DenyCredentialAccess` from the check chain and records the choice in each
-  result. The model's shell remains denied. Without the opt-in, the matcher is
-  hardening rather than a boundary: `$TOKEN` carries no marker and `aws sts
-  get-caller-identity` names no path, so a differently spelled check can still
-  reach inherited credentials. See
+- **Duration.** `timeout_secs` is an optional explicit cap for that check. The
+  global `--max-check-timeout-secs` / `max_check_timeout_secs` ceiling is also
+  optional and unbounded by default. With neither set, only silence stops a
+  check: no output for `silence_window_secs` (default `900`, `0` disables) kills
+  it and records a red result. The `600` in the example is therefore that
+  check's own explicit cap, not a default.
+- **Credentials.** Every check starts with inherited credential names scrubbed.
+  A check receives a value only when it declares the uppercase environment
+  name and an operator approves that declaration for its exact name and
+  command. `allow_credentials: true` only removes
+  `DenyCredentialAccess` from command inspection. The model shell remains
+  scrubbed and has no injection path. See
   [The property that matters](#the-property-that-matters).
 
 Before the loop starts, the contract is evaluated once against the *unmodified*
-worktree. If every check already passes, the contract gates nothing — nothing
-the session does would be verified — and the run refuses with exit 3 rather than
-delivering a pull request that proves nothing.
+worktree. For a model-derived contract with fan-out outcomes, an all-green first
+baseline is sent through one contract-repair round with the observed results and
+the instruction: "These checks already pass on the untouched repository; write
+checks that fail until the requested change is made." The repaired contract is
+then baselined under the same sandbox, approval, timeout, and silence settings.
+If every ordinary derived check is still green and no outcome is held or Not
+verified, the run ends `abandoned` with `failure_class: "already_satisfied"`
+and exit 2. Its message names every passing
+check, backticked and comma-separated, uses `passes` for one or `pass` for
+several, and ends `on the untouched code. Nothing to change.` If the repair
+produces a red check, the run continues. The round emits `outcomes_step` entries
+with `step: "baseline_repair"` and `started`/`finished` phases; this terminal
+result uses `detail: "already_satisfied"`. Supplied contracts keep their
+existing behavior and are not repaired. An exit-zero-only check that already
+exits zero counts as a passing baseline check. If a held or Not verified outcome
+remains beside the green runnable checks, the task stops before the work loop as
+`needs_review`/`finding_needs_review` and keeps the unresolved outcome visible.
+
+D-92 treats a model-derived request as thin only when its completed enumerator-
+plus-critic fan-out authored zero outcomes before filtering/repair, or the whole trimmed
+request is a conservative case-insensitive no-op such as `fix it`, `make it
+better`, `do something`, or `improve`. Held network checks and all other Not
+verified outcomes still count as specificity evidence, even when no runnable
+check remains. A held-only run stops before the work loop with
+`status: "needs_review"`, `failure_class: "finding_needs_review"`, and exit 3;
+it is specific, but cannot execute until a caller approves or supplies a check.
+No request can be refused as thin while an outcome is listed under Not verified.
+
+Outcome prose that promises specific printed or displayed text must have an
+`output_contains` assertion or a grep/test/diff-style output assertion in its
+command. The normal contract repair loop receives `check <name> must assert the
+output its outcome claims`; if repair still omits the assertion, that outcome
+moves to Not verified. Internal repair and reassessment prompts use neutral
+fallback outcome prose and prompt-marker linting prevents them from appearing
+in the outcomes file.
 
 The refusal stands down when the tree **already carries work**, reported as
 `carries_prior_work` on `contract_baseline`. That is `workspace_reused || HEAD is

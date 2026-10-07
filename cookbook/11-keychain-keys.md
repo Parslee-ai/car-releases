@@ -50,6 +50,9 @@ echo sk-... | car secrets put OPENAI_API_KEY      # or via stdin
 # Read a key (echoes value verbatim, exit 1 if missing).
 car secrets get OPENAI_API_KEY
 
+# Resolve exactly as a contract-check rerun: secret store, then $CAR_HOME/env.
+car secrets get OPENAI_API_KEY --check-credential
+
 # Check existence without revealing the value.
 car secrets status OPENAI_API_KEY
 # {"service": "car", "key": "OPENAI_API_KEY", "exists": true}
@@ -62,7 +65,11 @@ car secrets available
 # {"available": true}
 ```
 
-All `car secrets *` commands accept `--service NAME` to override the namespace. The default `"car"` is the same namespace `car-inference` reads at runtime — don't change it unless you know why.
+All ordinary `car secrets *` commands accept `--service NAME` to override the
+namespace. `get --check-credential` conflicts with `--service`: it must use
+the runtime's fixed CAR secret-store namespace, then fall back to
+`$CAR_HOME/env`, and never consults the process environment. It prints the
+value on stdout and a value-free source label on stderr.
 
 On macOS, CAR reads, writes, checks, and deletes Keychain entries through the Apple-signed `/usr/bin/security` helper. Reads parse the helper's byte-preserving `-g` output, so valid UTF-8 values with trailing newlines still round-trip. Using the Apple-signed helper keeps authorization stable across rebuilt `car-server` helpers whose CDHash changes, avoiding repeated prompts after the user has already allowed access.
 

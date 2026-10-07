@@ -85,11 +85,22 @@ After subscribing, clients receive notifications:
   `{ "session_id": "chat-..." }`.
 - `agents.chat.approve`: resolve an inline chat approval an agent raised
   via an `approval_pending` event, so the parked turn resumes. Params:
-  `{ "session_id": "chat-...", "approval_id": "...", "decision": true }`.
+  `{ "session_id": "chat-...", "approval_id": "...", "decision": true }`,
+  or, for a four-choice card, `answer` (`allow_conversation`,
+  `allow_agent`, `allow_all_agents` or `deny`) plus the event's
+  `permission_kind`. Sent by the person's host (a host-management session),
+  an allow answer to such a card is remembered for that scope once the agent
+  has recorded the approval; the reply does not say whether it was. Only an
+  approval for a web search by the built-in assistant is a four-choice card.
+  A plain `decision` approves the one call and remembers nothing.
   Reverse-requests the agent's `agent.chat.approve`; returns
-  `{ "resolved": bool }`. Distinct from `host.resolve_approval` (that
-  resolves permission-tier / ApprovalLedger requests, not the agent's
-  ephemeral chat-turn gate).
+  `{ "resolved": bool }`. The daemon mirrors each chat gate into the host
+  approval ledger under the same `approval_id`, so `host.resolve_approval`
+  is also valid and routes back to this parked turn. The `approval_id` a
+  host sees is minted by the daemon, one per approval the agent parks, never
+  the agent's own. Only an id still outstanding on the session's current turn is
+  forwarded (translated back to the agent's id); any other id is refused
+  with an error and never reaches the agent.
 - `runs.subscribe`: subscribe to a run's live trace. Returns a snapshot +
   cursor, then streams `runs.trace.event` notifications. Params:
   `{ "run_id": "..." }`. See `runs.trace.event` below.
@@ -187,21 +198,63 @@ notifications:
   The daemon scrubs the excerpt through the feedback redactor, keeps at
   most the first 2,048 UTF-8 bytes plus a truncation marker, and sends
   only closed-world structured evidence (ids, URLs, status/title, and
-  collection counts). The macOS host keeps the excerpt collapsed until
+  collection counts, and the `path` / `edited` / `image_path` /
+  `audio_path` a tool wrote). The macOS host keeps the excerpt collapsed until
   requested and shows count/final-URL/id evidence in the row headline.
+- `todos` — the conversation's whole task list after a successful
+  `todo_write`: `{ items: [{ id: number, text: string, status: "open" |
+  "done" | "dropped" }] }`. The latest event replaces any earlier one.
+  The macOS host renders it as the work panel's Progress section.
 - `approval_pending` — agent has parked the turn on a user approval
   (e.g. Milo's calendar-write gate, or `car do`'s write/shell gate).
   `approval_id: string`, `action`/`tool: string`, `details?`/`params?:
-  object`. Hosts should render an inline Approve/Deny and resolve via
-  **`agents.chat.approve`** `{ session_id, approval_id, decision }`,
-  which reverse-requests the agent's `agent.chat.approve` handler.
-  (`host.resolve_approval` is a separate flow — permission-tier /
-  ApprovalLedger requests — and does **not** resolve this chat-turn
-  gate.) Non-terminal — the agent resumes the stream after resolution.
+  object`, `deadline?: string` (RFC 3339). The daemon mirrors this gate into
+  the host approval ledger under the same ID, with `source: "chat"` and
+  `session_id` in its details, so Command Deck, badges, tray UI, and the
+  inline card all show one request. A host may resolve through either
+  **`agents.chat.approve`** `{ session_id, approval_id, decision }` or
+  `host.resolve_approval`; both route to the parked `agent.chat.approve`
+  handler. Non-terminal — the agent resumes the stream after resolution.
+  An answer can be remembered only for a web search (`web_search`) by the
+  built-in assistant. An approval for one carries, all together,
+  `permission_kind` (always `browse_web`), `purpose` (the fixed sentence
+  "CAR needs to search the web to continue this task."; it takes nothing
+  from the call) and `choices` (`allow_conversation`, `allow_agent`,
+  `allow_all_agents`, `deny`, in that order, each with a `label`), but
+  only when nothing forces a plain card. A web search approval carries
+  none of the three when an exact `require_approval` override is set on
+  `web_search`, when `agent-permissions.json` is damaged or has gone
+  missing under the running agent, in a governed run, and in a turn
+  another agent or an A2A caller started. A host that sees the three may
+  offer the four answers. Every other approval carries none of them, an
+  `http_request` and every other agent's approvals included (the daemon
+  removes them from any agent but the built-in assistant), and the host
+  shows plain approve/deny. A web search a saved answer covers runs
+  without any `approval_pending`.
   `scope.target` is built from `target`/`url`/`path`/`command` only, so
   it is the EMPTY string for a `web_search` gate; a host that shows the
   target should fall back through `params.url`, `params.command`,
   `params.query`, `params.path` rather than render a blank one.
+- `approval_resolved` — authoritative resolution of the preceding chat
+  gate. Carries the same `approval_id` and `resolution: "approve" | "deny" |
+  "timeout"`. Clients keep approval UI pending until
+  this arrives; the daemon uses it to resolve the matching host-ledger row.
+- Approval ids are opaque. The daemon mints one per approval the agent
+  parks, and the flagship assistant's own ids are unique across turns and
+  sessions too. Every turn of a chat shares one `session_id`, so a host
+  still scopes cards to the turn that raised them: it applies
+  `approval_resolved` only to the open card of the turn that raised it,
+  disables (expires) a turn's unanswered cards when the turn ends, is
+  cancelled or times out, and sends a click only for an open card of a
+  turn that is still running. CarHost decides that from the app-wide record
+  of running turns for the conversation the card is shown in, so a chat view
+  opened after the turn started can still answer it and a forked chat's copy
+  of the card cannot. `approval_resolved` reaches only the view that sent the
+  turn, so CarHost shares each card's outcome with every chat view holding
+  that card (a view opened before the card was raised has no copy of it), sends at most one decision per card from any view, and never
+  lets "not confirmed" or "expired" replace a real decision on screen or in
+  the saved transcript. CarHost's rules are `ChatApprovalCards` in
+  `ChatTabView.swift`.
 - `goal_evaluated` — a goal-driven agent's verifier verdict after each
   pass. `iteration: number`, `met: boolean`, `grounded: boolean`,
   `reason: string`. Non-terminal.
