@@ -379,7 +379,7 @@ export class CarRuntime {
   /** Generated daemon wrapper for `agents.health_external` (operator). */
   agentsHealthExternal(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `agents.invoke_external` (operator). */
+  /** Generated daemon wrapper for `agents.invoke_external` (agent). */
   agentsInvokeExternal(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `agents.list` (operator). */
@@ -727,7 +727,7 @@ export class CarRuntime {
   /** Generated daemon wrapper for `memory.utility_get` (operator). */
   memoryUtilityGet(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `memory.utility_set` (operator). */
+  /** Generated daemon wrapper for `memory.utility_set` (agent). */
   memoryUtilitySet(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `message/send` (operator). */
@@ -973,6 +973,15 @@ export class CarRuntime {
   /** Generated daemon wrapper for `session.bindSubstrate` (operator). */
   sessionBindSubstrate(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `session.bind_context` (agent). */
+  sessionBindContext(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `session.consumer.issue` (operator). */
+  sessionConsumerIssue(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `session.consumer.revoke` (operator). */
+  sessionConsumerRevoke(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `session.init` (operator). */
   sessionInit(paramsJson: string): Promise<string>;
 
@@ -1036,7 +1045,7 @@ export class CarRuntime {
   /** Generated daemon wrapper for `speech.prepare` (operator). */
   speechPrepare(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `sync.knowledge` (operator). */
+  /** Generated daemon wrapper for `sync.knowledge` (agent). */
   syncKnowledge(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `tasks.list` (operator). */
@@ -1680,7 +1689,12 @@ export class CarRuntime {
   syncRecordTurn(requestJson: string): Promise<string>;
   /** `sync.record_intent` — write the leased-execution intent ledger; feeds the fence oracle (B6). */
   syncRecordIntent(requestJson: string): Promise<string>;
-  /** `sync.pump` — one push/pull/ack reconciliation round against the relay (B6). */
+  /**
+   * `sync.pump` — one push/pull/ack reconciliation round against the relay (B6).
+   * Returns `{ pushed, push_deduped, folded, acked, state_hash }`; with org-scope
+   * sync on, `{ user, orgs: { <org>: { result } | { error } } }` plus
+   * `org`/`org_error` when exactly one org is configured.
+   */
   syncPump(requestJson: string): Promise<string>;
   /** `sync.checkpoint` — publish a device-side checkpoint at the stable frontier (B6). */
   syncCheckpoint(requestJson: string): Promise<string>;
@@ -2652,10 +2666,23 @@ export class CarRuntime {
    * Bound at `PermissionTier::ReadOnly` with every write/shell escalation
    * auto-denied, so it can never touch the repo. Returns
    * `{discussion_id, repo, repo_summary}`; a non-git path is a clear error.
+   *
+   * A new conversation records its organization by the `coderStart` rule:
+   * `organizationId` (one a signed-in login holds), else the repository's
+   * declared org, else your default org, else personal; `personal: true` opens
+   * it personal even where a default applies. A reopened conversation
+   * (`resumeId`) keeps the organization it recorded, so both are refused there.
    */
   coderDiscussStart(repo: string): Promise<string>;
   coderDiscussStart(repo: string, resumeId: string): Promise<string>;
   coderDiscussStart(repo: string, resumeId: string | null | undefined, model: string | null): Promise<string>;
+  coderDiscussStart(
+    repo: string,
+    resumeId: string | null | undefined,
+    model: string | null | undefined,
+    organizationId: string | null | undefined,
+    personal?: boolean | null,
+  ): Promise<string>;
 
   /**
    * Send one operator message. Returns `{ok, seq}` where `seq` is the first
@@ -3437,6 +3464,27 @@ export class HostClient {
   /** Generated host wrapper for `lattice.disconnect`. */
   latticeDisconnect(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `lattice.knock`. */
+  latticeKnock(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `lattice.knock.accept`. */
+  latticeKnockAccept(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `lattice.knock.block`. */
+  latticeKnockBlock(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `lattice.knock.decline`. */
+  latticeKnockDecline(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `lattice.knock.settings`. */
+  latticeKnockSettings(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `lattice.knock.withdraw`. */
+  latticeKnockWithdraw(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `lattice.knocks`. */
+  latticeKnocks(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `lattice.org.attest`. */
   latticeOrgAttest(paramsJson: string): Promise<string>;
 
@@ -3457,6 +3505,9 @@ export class HostClient {
 
   /** Generated host wrapper for `lattice.org.status`. */
   latticeOrgStatus(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `lattice.relay.probe`. */
+  latticeRelayProbe(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `lattice.requests`. */
   latticeRequests(paramsJson: string): Promise<string>;
@@ -3514,6 +3565,12 @@ export class HostClient {
 
   /** Generated host wrapper for `openrouter.status`. */
   openrouterStatus(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `peers.cert_conflict_clear`. */
+  peersCertConflictClear(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `peers.cert_status`. */
+  peersCertStatus(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `permission.approve`. */
   permissionApprove(paramsJson: string): Promise<string>;
@@ -5834,6 +5891,8 @@ export function agentsHealthExternal(
  *     "allowed_tools"?: string[],      // tool allowlist; [] denies all
  *     "max_turns"?: number,            // turn cap
  *     "isolate_network"?: boolean,     // no web, browser, connectors, MCP; shell offline
+ *     "isolate_config"?: boolean,      // none of the user's CLI config (MCP, plugins,
+ *                                      // connectors, memory); keeps the web. Codex only
  *     "timeout_secs"?: number,         // hard deadline (default 300s)
  *     "mcp_endpoint"?: string,         // MCP server URL passed via
  *                                      // --mcp-config; daemon callers
@@ -5888,7 +5947,7 @@ export function agentsInvokeExternal(
 // drift; Parslee-ai/car#177 made it deliberate.
 
 /**
- * Process-singleton in-process A2UI v0.9 surface store. Wire shapes
+ * Process-singleton in-process A2UI v0.9.1 surface store. Wire shapes
  * match the daemon's WebSocket `a2ui.*` methods exactly, so a host
  * can move between transports without reshaping payloads.
  *

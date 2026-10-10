@@ -427,13 +427,20 @@ Hidden clap commands are excluded.
 | `car lattice connect offer` | Offer a connection to an attested colleague in your org (see `car lattice directory`). No invite code or fingerprint: the org attested their CAR. Nothing is shared until they accept |
 | `car lattice connect share` | Replace which of your nodes an active connection may see and message (repeat --share; none shares nothing). Takes effect here at once; the other CAR is told |
 | `car lattice connections` | Your Lattice connections with other owners' CARs |
-| `car lattice directory` | Colleagues in your org whose CARs an org admin attested — the people `car lattice connect offer` can reach without a fingerprint exchange |
+| `car lattice directory` | Colleagues in your orgs: those whose CARs an org admin attested (for `car lattice connect offer`), and those whose devices Parslee certifies, reachable through the Parslee relay (for `car lattice knock --member`) |
 | `car lattice disconnect` | End a connection now. The other CAR is told; what it already received cannot be recalled |
 | `car lattice find` | Find nodes by capability, e.g. `car lattice find rust parser debugging` |
 | `car lattice held` | Messages waiting for your decision before they are sent — including the first message your agents send to another owner's CAR |
 | `car lattice human` | Register or remove a human node |
 | `car lattice human join` | Join (or update) a person as a node others can find by capability |
 | `car lattice human leave` | Remove a human node |
+| `car lattice knock` | Ask a CAR to connect — no invite code. Either a CAR discovered on your network (`<machine>`; its identity is unverified, so compare fingerprints with its owner if it matters who they are), or, with `--member <account> --org <org>`, a colleague in a Parslee org through the Parslee relay, which works when neither CAR can reach the other (identity `cert:<org>:<account>`, from their device certificate) |
+| `car lattice knock-accept` | Accept a knock, choosing your label for that CAR and what you share |
+| `car lattice knock-block` | Block a key from knocking, quiet it (knocks recorded, no prompt), or allow it again |
+| `car lattice knock-decline` | Decline a knock. That CAR may not knock again for a day, or ever with `--block` |
+| `car lattice knock-settings` | Whether this CAR is discoverable on the network and takes knocks. Without `--accepting`, shows the setting |
+| `car lattice knock-withdraw` | Withdraw a knock you sent. Its owner is told if their CAR can be reached |
+| `car lattice knocks` | CARs discovered on your network, and knocks waiting in both directions |
 | `car lattice nodes` | List live nodes — agents, coding sessions, and people |
 | `car lattice org` | Org-attested connections: status, admin attestation and policy, and your standing auto-accept rules |
 | `car lattice org attest` | As an org admin: vouch that an announced CAR belongs to the colleague who announced it. Check its fingerprint with them first |
@@ -445,6 +452,9 @@ Hidden clap commands are excluded.
 | `car lattice org rule-remove` | Remove a standing rule. Connections it accepted stay |
 | `car lattice org rules` | Your standing auto-accept rules |
 | `car lattice org status` | Whether org connections are on, this CAR's fingerprint and attestation, and (for an org admin) colleagues' CARs awaiting one |
+| `car lattice relay-probe` | Developer check of the Parslee relay: send a sealed probe to a colleague's device, or pull and verify probes sent to this one. Uses this CAR's device certificate for the org; reads no credential |
+| `car lattice relay-probe pull` | Pull this device's relay inbox for the org, verify each probe, print them, and acknowledge them. Other relay mail stays queued |
+| `car lattice relay-probe send` | Seal `text` to the device with this Ed25519 key (from the org's relay directory) and deposit it with the relay |
 | `car lattice release` | Send a held message (`--decline` drops it instead). One waiting on the cross-owner notice is sent only with `--acknowledge-processing`, which agrees for that whole connection; without it the notice is printed and nothing is sent |
 | `car lattice requests` | Requests waiting on a person (all requests with `--all`) |
 | `car lattice respond` | Answer a request. The answer reaches the asker as a reply, and agents waiting on it resume |
@@ -688,7 +698,7 @@ Hidden clap commands are excluded.
 
 ## Daemon JSON-RPC dispatch methods
 
-518 string-literal dispatch methods across 86 namespaces; 0 are not referenced by `docs/websocket-protocol.md`.
+531 string-literal dispatch methods across 87 namespaces; 0 are not referenced by `docs/websocket-protocol.md`.
 
 Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCase aliases are grouped under `root`. Roles are freshly derived from the daemon handler's authorization call sites: `host` for host-management authority, `owner` for per-resource ownership, `agent` for a bound agent identity, and `operator` otherwise. They describe an auth-enabled deployment because host gates are conditional on a configured host token.
 
@@ -765,7 +775,7 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `agents.health` | `operator` | yes |
 | `agents.health_external` | `operator` | yes |
 | `agents.install` | `host` | yes |
-| `agents.invoke_external` | `operator` | yes |
+| `agents.invoke_external` | `agent` | yes |
 | `agents.list` | `operator` | yes |
 | `agents.list_external` | `operator` | yes |
 | `agents.message` | `operator` | yes |
@@ -1116,6 +1126,13 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `lattice.disconnect` | `host` | yes |
 | `lattice.find` | `operator` | yes |
 | `lattice.join` | `operator` | yes |
+| `lattice.knock` | `host` | yes |
+| `lattice.knock.accept` | `host` | yes |
+| `lattice.knock.block` | `host` | yes |
+| `lattice.knock.decline` | `host` | yes |
+| `lattice.knock.settings` | `host` | yes |
+| `lattice.knock.withdraw` | `host` | yes |
+| `lattice.knocks` | `host` | yes |
 | `lattice.leave` | `operator` | yes |
 | `lattice.nodes` | `operator` | yes |
 | `lattice.org.attest` | `host` | yes |
@@ -1125,6 +1142,7 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `lattice.org.rule.remove` | `host` | yes |
 | `lattice.org.rules` | `host` | yes |
 | `lattice.org.status` | `host` | yes |
+| `lattice.relay.probe` | `host` | yes |
 | `lattice.release` | `operator` | yes |
 | `lattice.requests` | `host` | yes |
 | `lattice.respond` | `host` | yes |
@@ -1178,10 +1196,10 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `memory.query` | `operator` | yes |
 | `memory.save_knowledge` | `agent` | yes |
 | `memory.save_procedural` | `agent` | yes |
-| `memory.set_admission_table` | `operator` | yes |
-| `memory.update_status` | `operator` | yes |
+| `memory.set_admission_table` | `agent` | yes |
+| `memory.update_status` | `agent` | yes |
 | `memory.utility_get` | `operator` | yes |
-| `memory.utility_set` | `operator` | yes |
+| `memory.utility_set` | `agent` | yes |
 
 ### `message`
 
@@ -1324,6 +1342,13 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `parslee.auth` | `operator` | yes |
 | `parslee.capabilities` | `operator` | yes |
 | `parslee.m365.generate_document` | `operator` | yes |
+
+### `peers`
+
+| Method | Caller role | Documented |
+|---|---|---|
+| `peers.cert_conflict_clear` | `host` | yes |
+| `peers.cert_status` | `host` | yes |
 
 ### `permission`
 
@@ -1485,7 +1510,10 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `session.auth` | `agent` | yes |
 | `session.bindSandbox` | `agent` | yes |
 | `session.bindSubstrate` | `operator` | yes |
+| `session.bind_context` | `agent` | yes |
 | `session.clear_halt` | `host` | yes |
+| `session.consumer.issue` | `operator` | yes |
+| `session.consumer.revoke` | `operator` | yes |
 | `session.init` | `operator` | yes |
 | `session.policy.close` | `operator` | yes |
 | `session.policy.open` | `operator` | yes |
@@ -1547,21 +1575,21 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 
 | Method | Caller role | Documented |
 |---|---|---|
-| `sync.append` | `operator` | yes |
-| `sync.assistant_action.get` | `operator` | yes |
-| `sync.assistant_action.put` | `operator` | yes |
-| `sync.assistant_checkpoint.get` | `operator` | yes |
-| `sync.assistant_checkpoint.put` | `operator` | yes |
+| `sync.append` | `agent` | yes |
+| `sync.assistant_action.get` | `agent` | yes |
+| `sync.assistant_action.put` | `agent` | yes |
+| `sync.assistant_checkpoint.get` | `agent` | yes |
+| `sync.assistant_checkpoint.put` | `agent` | yes |
 | `sync.checkpoint` | `operator` | yes |
 | `sync.fence_check` | `agent` | yes |
-| `sync.knowledge` | `operator` | yes |
+| `sync.knowledge` | `agent` | yes |
 | `sync.pump` | `operator` | yes |
 | `sync.rebase` | `operator` | yes |
 | `sync.record_intent` | `agent` | yes |
-| `sync.record_turn` | `operator` | yes |
-| `sync.resume` | `operator` | yes |
+| `sync.record_turn` | `agent` | yes |
+| `sync.resume` | `agent` | yes |
 | `sync.status` | `operator` | yes |
-| `sync.transcript` | `operator` | yes |
+| `sync.transcript` | `agent` | yes |
 
 ### `tasks`
 

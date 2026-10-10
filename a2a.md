@@ -47,8 +47,11 @@ A2A's WebSocket binding is **not** implemented; A2A v1.0 specifies HTTP+JSON (wi
 
 ## A2UI payloads
 
-CAR advertises `application/vnd.a2ui+json` as an A2A output mode. If a tool or
-peer agent returns an A2UI v0.9 envelope in a `data` part, either directly or
+CAR advertises `application/a2ui+json` (the A2UI v0.9.1 MIME type) as an A2A
+output mode, and declares the A2UI A2A extension on its agent card as
+`https://a2ui.org/a2a-extension/a2ui/v0.9.1` with
+`params.supportedCatalogIds` naming the basic catalog. If a tool or
+peer agent returns an A2UI v0.9 or v0.9.1 envelope in a `data` part, either directly or
 wrapped as `{ "a2ui": envelope }`, CAR can ingest it into the host-visible A2UI
 surface store:
 
@@ -69,8 +72,16 @@ and `a2ui.apply` for direct envelopes. In the desktop host window, these
 surfaces render under **A2UI Surfaces**. When `a2ui.ingest` sees A2A
 `taskId` / `contextId` values, it records them as the surface owner. If the
 caller also supplies a trusted loopback `endpoint`, user actions are sent back
-to that A2A peer as a `SendMessage` continuation with a data part shaped as
-`{ "a2uiAction": action }`; otherwise the action is still broadcast as
+to that A2A peer as a `SendMessage` continuation with one data part whose
+`data` is the A2UI client-to-server message
+`{ "version": "v0.9", "action": action }` — a single object, as upstream's
+reference agent and Lit client exchange it — and whose `metadata.mimeType`
+is `application/a2ui+json`. CAR stamps `"v0.9"` (valid under v0.9.1) because
+CAR releases before v0.9.1 support reject `"v0.9.1"`. A receiving CAR
+accepts that object, a list of them (the form the A2UI A2A extension text
+shows), and the `{ "a2uiAction": action }` part CAR sent before v0.9.1
+support, and exposes the actions in the proposal context under
+`a2ui_actions`; otherwise the action is still broadcast as
 `host.event` kind `a2ui.action` with the owner metadata attached. Non-loopback
 continuation endpoints require `allowUntrustedEndpoint: true`, and optional
 `routeAuth` credentials are kept server-side rather than exposed to renderers.
@@ -232,7 +243,7 @@ So the Python pattern for hosting a custom agent over A2A today is:
 
 The Agent Card is auto-generated from the runtime's tool registry plus host
 metadata (`name`, `description`, `protocolVersion: "1.0"`, default
-input/output modes including `application/vnd.a2ui+json`, the `/.well-known`
+input/output modes including `application/a2ui+json`, the `/.well-known`
 URL, and any registered push-notification or extended-card flags). To
 customize identity, use `car-server`'s host config (`name`, `description`,
 `provider`, etc.) — the dispatcher reads it through the
@@ -394,6 +405,15 @@ half works today.
   responses, or mTLS certificates implement
   [`AuthValidator::validate`](../car-rs/crates/car-a2a/src/auth.rs)
   to return `Ok(Some(Identity { subject, claims }))`.
+
+  A validator may not return a CAR peer identity. Only peer
+  authentication mints one, and the bearer router refuses with 401 any
+  validator identity whose subject starts with `car-peer:` or `peer:`,
+  or whose claims include `car_peer_key`, `car_peer_fingerprint` or
+  `car_peer_scope`. Everything downstream trusts those fields as a
+  verified peer, so a token whose claims were copied from a real peer
+  would otherwise own that peer's tasks. A validator that copies a
+  token's claims wholesale should drop those keys first.
 
   Without a verified identity, `a2a_caller_verified` is absent —
   distinguishable from "present but empty" so default-deny policies

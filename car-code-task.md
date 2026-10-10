@@ -133,7 +133,14 @@ first-Deny-wins decides which reason the model is shown and a built-in's reason
 Repository conversations, initial and revised check planning, and native execution
 load the same repository context. Reopening a saved conversation refreshes this
 context while preserving its prior messages. Repository guidance does not expand
-tool permissions. These rules can make a diff unacceptable even when checks pass.
+tool permissions. Contract derivation has a separate repository-conventions lane:
+it turns applicable, machine-checkable delivery rules into outcomes, so required
+tests, docs, changelog fragments, generated files, and local CI gates are graded
+with the requested behavior instead of being left for human review. If both model
+attempts for that lane fail, derivation keeps the intent-derived checks and records
+`Repository conventions unavailable` under `Not verified by this contract`; the
+operator and independent verifier see that limitation instead of losing the whole
+contract.
 
 Constraints distilled from a conversation are saved with new tasks and rechecked
 when checks are revised. If the drafting model leaves one without a check after
@@ -148,23 +155,31 @@ Older saved tasks without recorded constraints retain their previous behavior.
   96,000 bytes, shared so one large file cannot hide the other. Truncation names
   the file whose remaining rules must be read before editing.
 - **Directory-scoped instructions** — nested `CLAUDE.md` / `AGENTS.md` files,
-  each labelled with the subtree it governs. When directory rules conflict,
-  the deepest applicable directory's rule wins inside its subtree. Sibling
-  directories' rules do not apply elsewhere. Enumerated with `git ls-files`,
-  so only tracked nested instruction files are included; untracked instruction
-  files are ignored. Budgeted at 8 files, 6KB each
+  each labelled with the subtree it governs. Nested instructions activate the
+  repository-conventions lane even when the repository has no root instruction
+  file or tracked CI workflow. When directory rules conflict, the deepest
+  applicable directory's rule wins inside its subtree. Sibling directories'
+  rules do not apply elsewhere. Enumerated with `git ls-files`, so only tracked
+  nested instruction files are included; untracked instruction files are ignored.
+  Budgeted at 8 files, 6KB each
   and 12KB combined; past a budget the remainder are listed as paths to read
   rather than silently dropped.
   Root and nested instruction reads stay inside the repository: symlinks to
   repository files are supported, while links outside it and non-files are skipped.
 - **Project skills** — `.claude/skills/*/SKILL.md`, indexed by name and
   description only. Bodies are ordinary files the model can `read_file`.
+- **CI check inventory** — job ids from tracked `.github/workflows/*.yml` and
+  `.yaml` files, bounded to 64 names. A workflow job is evidence of a CI surface,
+  not proof that branch protection requires it. The derivation lane combines the
+  inventory with maintainer instructions (or supplied branch-protection evidence)
+  to identify the required subset, and does not invent a local command from a job
+  name alone.
 - **`.car/` knowledge** — identity and recorded team knowledge, up to 8KB.
 
-These are framed in the prompt as review-time constraints that the contract does
-**not** check, together with an instruction never to weaken a check to satisfy
-one: the contract decides whether the work is done, these decide whether it is
-acceptable.
+Applicable rules with a worktree-local assertion become contract outcomes. Rules
+that cannot be checked remain implementation constraints and are disclosed rather
+than silently omitted. Neither kind may be weakened merely because the current
+delivery fails it.
 
 A note for anyone raising the root cap: it is guarded by a test
 (`the_repos_own_instructions_fit_the_cap`) that fails when CAR's own `CLAUDE.md`
@@ -412,8 +427,10 @@ On macOS the composed profile denies read and write access to the daemon's
 directory, and the user's Keychains directory; denies Unix-socket connections
 under the run/token directories; denies the daemon's registered TCP listener
 ports; blocks SecurityServer/securityd lookup; and denies `process-info` for
-other processes. Raw and canonical paths are both denied. Checks without
-explicit network approval also deny non-loopback outbound network. The remaining macOS gap is
+other processes. Raw and canonical paths are both denied. Untrusted repository
+shells and checks without explicit network approval deny non-loopback outbound
+network. On macOS, repository trust is itself a network grant for ordinary
+dependency resolution, including headless runs. The remaining macOS gap is
 `sysctl(KERN_PROCARGS2)`, which Seatbelt does not mediate; see the paragraph
 above.
 
@@ -423,11 +440,14 @@ remounts every other filesystem mount read-only while preserving `nosuid`,
 `nodev`, and `noexec`; it separately restores the permitted `/dev` devices.
 It also overlays each existing secret directory with a mode-000 tmpfs and
 bind-mounts `/dev/null` over each existing secret file. Any failed setup mount
-exits 125 without running the check. Checks without explicit network approval
-also receive a network namespace. Model shells and network-approved checks run without `--net`, so
-loopback TCP to the operator daemon remains reachable on Linux; the token/run
-files and peer `/proc` state remain hidden. Windows and other platforms have no
-secret sandbox.
+exits 125 without running the check. Commands in both trusted and untrusted
+repositories receive a private network namespace, so model shells cannot reach
+external hosts or the daemon's host-loopback TCP ports. CAR withholds trusted
+dependency network on Linux because it cannot yet provide outbound egress from
+that namespace. An individually network-approved check still runs without
+`--net`; its existing host-network reach is an explicit operator grant. The
+token/run files and peer `/proc` state remain hidden in either posture. Windows
+and other platforms have no secret sandbox.
 
 Supervised agents remain separate from coder children and continue receiving
 `CAR_AUTH_TOKEN` or `CAR_AGENT_TOKEN` in their environment. A macOS coder child
@@ -443,8 +463,11 @@ that cannot enforce its write allowlist; a successfully wrapped check records
 `"sandboxed"`.
 `network_isolation` remains `"sandboxed"`, `"unwrapped_approved"`, or
 `"unavailable"`; `"unwrapped_approved"` means only the network restriction was
-omitted, not the secret sandbox. Network approval is tied to the exact check
-name and command, so editing a command removes it.
+omitted, not the secret sandbox. An explicit network approval is tied to the
+exact check name and command, so editing a command removes it. Repository trust
+is pinned to the session instead and, on macOS, grants dependency network to
+every builder shell and contract check in that session. Linux records the same
+trust decision but does not turn it into a network grant.
 
 The proposal filter is deliberately narrower than the runtime isolation. It
 holds commands whose own command words are recognized network tools or network

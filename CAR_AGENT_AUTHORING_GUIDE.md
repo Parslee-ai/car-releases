@@ -342,17 +342,32 @@ let runner: Arc<dyn AgentRunner> =
 ### Create and locate a declarative agent
 
 `car agent new` builds an in-daemon declarative agent, verifies its scenarios,
-and registers it. The final output names both the id and the exact registry file:
+and registers it. Run it at your terminal and answer its prompts. An agent
+connected to CAR can't build an agent, so the command first asks whether to
+build with CAR's permission, sends nothing to CAR before you answer, and uses
+CAR's local host key only after you say yes. It then asks before building and
+before adding the agent. The final output names both the id and the exact
+registry file:
 
 ```text
-car agent new --yes "Summarize support tickets"
+car agent new "Summarize support tickets"
+Build an agent for "Summarize support tickets" with CAR's permission? [y/N] y
+…
+Build this agent? [y/N] y
+…
+Agent passed its scenarios. Add it to your agents? [y/N] y
 registered summarize-support-tickets in /Users/me/.car/declagents.json
 done — run it with:
   car agent run summarize-support-tickets "<input>"
 ```
 
-Use `car agent new --yes --json ...` for a machine-readable result containing
-`agent_id` and `registry_path`. If a newly updated CLI is still connected to an
+`--yes` skips the prompts and `--yes --json ...` prints a machine-readable
+result containing `agent_id` and `registry_path`. Neither uses CAR's local host
+key, so they build the agent only against a daemon with no host token, such
+as one started without authentication; a daemon with a host token refuses with "Building an agent
+needs the CAR app or `car agent new` in your terminal." Run from a process
+started as an agent (`CAR_AGENT_ID` set), `car agent new` refuses with
+"Building an agent needs you at the terminal or in the CAR app." If a newly updated CLI is still connected to an
 older daemon that does not return `registry_path`, a completed registration
 remains successful and the CLI reports its shell-resolved default declarative
 registry path. Use `car agent where <id>` (or `--json`) to locate either a
@@ -5908,14 +5923,14 @@ Task-state derivation (`a2a_state_for`): empty result → `Completed`; `Skipped`
 
 - `protocolVersion` `"1.0"`, `preferredTransport` `"JSONRPC"`
 - default input modes `[text, data]`
-- default output modes `[text, data, application/vnd.a2ui+json]` — A2UI is advertised here
-- an A2UI extension
+- default output modes `[text, data, application/a2ui+json]` — A2UI is advertised here
+- the A2UI A2A extension, `uri` `https://a2ui.org/a2a-extension/a2ui/v0.9.1`, `params.supportedCatalogIds` = the basic catalog
 
 It is served at `/.well-known/agent-card.json` (canonical) and `/.well-known/agent.json` (pre-1.0 alias).
 
 ```rust
 AgentCardConfig::minimal(name, description, url, provider)
-// defaults output modes to [text, data, application/vnd.a2ui+json]
+// defaults output modes to [text, data, application/a2ui+json]
 ```
 
 #### Running the standalone HTTP+SSE listener (CLI)
@@ -6087,11 +6102,11 @@ Register a webhook for a task:
 
 ### 2. A2UI: declarative agent-driven UI
 
-`car-a2ui` is the **A2UI v0.9 protocol model + in-memory surface store**. Your agent emits declarative UI envelopes; the store validates and applies them; renderers (HTML reference, SwiftUI native) subscribe and draw. The agent stays the authoritative state owner — renderers only consume and emit actions.
+`car-a2ui` is the **A2UI v0.9.1 protocol model + in-memory surface store**. Your agent emits declarative UI envelopes; the store validates and applies them; renderers (HTML reference, SwiftUI native) subscribe and draw. The agent stays the authoritative state owner — renderers only consume and emit actions.
 
 #### Envelope types — exactly one per message
 
-An `A2uiEnvelope` has `version` (default `"v0.9"`) plus **exactly one** of:
+An `A2uiEnvelope` has `version` (default `"v0.9"`; `"v0.9.1"` is also accepted — v0.9.1 is wire-compatible, and CAR keeps emitting `"v0.9"` because older CARs, and anything validating against the v0.9 schemas, reject `"v0.9.1"`) plus **exactly one** of:
 
 | Envelope | Shape |
 |---|---|
@@ -6101,13 +6116,13 @@ An `A2uiEnvelope` has `version` (default `"v0.9"`) plus **exactly one** of:
 | `updateDataModel` | `{surfaceId, path?=<JSON-pointer>, value?}` |
 | `deleteSurface` | `{surfaceId}` |
 
-`validate()` enforces **count == 1** and **version == "v0.9"**.
+`validate()` enforces **count == 1** and **version ∈ {"v0.9", "v0.9.1"}**.
 
-> **GOTCHA — count != 1 → `InvalidEnvelope`; version != `"v0.9"` → `UnsupportedVersion`.**
+> **GOTCHA — count != 1 → `InvalidEnvelope`; any other version (`"v0.8"`, `"v1.0"`) → `UnsupportedVersion`.**
 
-#### The 19-component `BASIC_CATALOG_V0_9`
+#### The 24-component `BASIC_CATALOG_V0_9`
 
-The only supported catalog id is `https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json`.
+The only supported catalog id is `https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json` (the id the v0.9.1 `catalog.json` itself declares). `createSurface` also accepts `https://a2ui.org/specification/v0_9_1/catalogs/basic/catalog.json`, the URL the v0.9.1 protocol document's examples use, and stores the canonical id.
 
 - **Layout:** Column, Row, Card, Divider, Spacer, Tabs, Modal, List
 - **Content:** Text (variant `title`/`subtitle`/`body`/`caption`), Image, Icon, Video, AudioPlayer, Chart, File, Badge
@@ -6288,7 +6303,7 @@ An A2UI payload wrapped in an A2A data part:
 }
 ```
 
-On the WS host, `a2ui.ingest` scans these and applies them. If a **trusted loopback endpoint** is supplied, a user `a2ui.action` continues the originating A2A task as a `SendMessage` with a data part `{ a2uiAction: action }`.
+On the WS host, `a2ui.ingest` scans these and applies them. If a **trusted loopback endpoint** is supplied, a user `a2ui.action` continues the originating A2A task as a `SendMessage` with one data part holding the A2UI client-to-server message `{ version: "v0.9", action }` and `metadata.mimeType: "application/a2ui+json"` — a single object, as upstream's reference agent and Lit client exchange it. A receiving CAR also accepts a list of such messages and the older `{ a2uiAction: action }` form, and puts the actions in the proposal context under `a2ui_actions`.
 
 > **GOTCHA — non-loopback continuation requires opt-in.** Non-loopback endpoints require `allowUntrustedEndpoint: true`. `routeAuth` credentials are kept server-side and never returned to the renderer.
 

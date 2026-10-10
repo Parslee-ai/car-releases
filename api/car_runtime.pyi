@@ -309,7 +309,7 @@ class CarRuntime:
     # Generated daemon wrapper for `agents.health_external` (operator).
 
     def agents_invoke_external(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `agents.invoke_external` (operator).
+    # Generated daemon wrapper for `agents.invoke_external` (agent).
 
     def agents_list(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `agents.list` (operator).
@@ -654,7 +654,7 @@ class CarRuntime:
     # Generated daemon wrapper for `memory.utility_get` (operator).
 
     def memory_utility_set(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `memory.utility_set` (operator).
+    # Generated daemon wrapper for `memory.utility_set` (agent).
 
     def message_send(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `message/send` (operator).
@@ -899,6 +899,15 @@ class CarRuntime:
     def session_bind_substrate(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `session.bindSubstrate` (operator).
 
+    def session_bind_context(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.bind_context` (agent).
+
+    def session_consumer_issue(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.consumer.issue` (operator).
+
+    def session_consumer_revoke(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `session.consumer.revoke` (operator).
+
     def session_init(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `session.init` (operator).
 
@@ -963,7 +972,7 @@ class CarRuntime:
     # Generated daemon wrapper for `speech.prepare` (operator).
 
     def sync_knowledge(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `sync.knowledge` (operator).
+    # Generated daemon wrapper for `sync.knowledge` (agent).
 
     def tasks_list(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `tasks.list` (operator).
@@ -1447,7 +1456,9 @@ class CarRuntime:
 
     def sync_pump(self, request_json: str) -> str:
         """``sync.pump`` (B6) — one push/pull/ack reconciliation round against the
-        relay. Returns ``{ pushed, push_deduped, folded, acked, state_hash }``."""
+        relay. Returns ``{ pushed, push_deduped, folded, acked, state_hash }``; with
+        org-scope sync on, ``{ user, orgs: { <org>: {result} | {error} } }`` plus
+        ``org``/``org_error`` when exactly one org is configured."""
 
     def sync_checkpoint(self, request_json: str) -> str:
         """``sync.checkpoint`` (B6) — publish a device-side checkpoint at the
@@ -2884,13 +2895,28 @@ class CarRuntime:
         a ``message`` explaining why, and the daemon emits a
         ``contract_revision_rejected`` event."""
 
-    def coder_discuss_start(self, repo: str, *, resume_id: Optional[str] = None, model: Optional[str] = None) -> str:
+    def coder_discuss_start(
+        self,
+        repo: str,
+        *,
+        resume_id: Optional[str] = None,
+        model: Optional[str] = None,
+        organization_id: Optional[str] = None,
+        personal: Optional[bool] = None,
+    ) -> str:
         """Open a repo-grounded, strictly **read-only** discussion — a thinking
         surface for working out what a change should be, before a run exists.
         Bound at ``PermissionTier::ReadOnly`` with every write/shell escalation
         auto-denied, so it can never touch the repo. Returns
         ``{"discussion_id", "repo", "repo_summary"}``; a non-git path is a
-        clear error."""
+        clear error.
+
+        A new conversation records its organization by the ``coder_start``
+        rule: ``organization_id`` (one a signed-in login holds), else the
+        repository's declared org, else your default org, else personal;
+        ``personal=True`` opens it personal even where a default applies. A
+        reopened conversation (``resume_id``) keeps the organization it
+        recorded, so both are refused there."""
 
     def coder_discuss_send(self, discussion_id: str, text: str) -> str:
         """Send one operator message. Returns ``{"ok", "seq"}`` where ``seq``
@@ -3592,6 +3618,27 @@ class HostClient:
     def lattice_disconnect(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.disconnect`.
 
+    def lattice_knock(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.knock`.
+
+    def lattice_knock_accept(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.knock.accept`.
+
+    def lattice_knock_block(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.knock.block`.
+
+    def lattice_knock_decline(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.knock.decline`.
+
+    def lattice_knock_settings(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.knock.settings`.
+
+    def lattice_knock_withdraw(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.knock.withdraw`.
+
+    def lattice_knocks(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.knocks`.
+
     def lattice_org_attest(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.org.attest`.
 
@@ -3612,6 +3659,9 @@ class HostClient:
 
     def lattice_org_status(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.org.status`.
+
+    def lattice_relay_probe(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.relay.probe`.
 
     def lattice_requests(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.requests`.
@@ -3669,6 +3719,12 @@ class HostClient:
 
     def openrouter_status(self, params_json: str) -> str: ...
     # Generated host wrapper for `openrouter.status`.
+
+    def peers_cert_conflict_clear(self, params_json: str) -> str: ...
+    # Generated host wrapper for `peers.cert_conflict_clear`.
+
+    def peers_cert_status(self, params_json: str) -> str: ...
+    # Generated host wrapper for `peers.cert_status`.
 
     def permission_approve(self, params_json: str) -> str: ...
     # Generated host wrapper for `permission.approve`.
@@ -5577,6 +5633,7 @@ def agents_invoke_external(
         "allowed_tools": list[str] | None,  # [] denies all
         "max_turns": int | None,
         "isolate_network": bool | None,  # no web, browser, connectors, MCP; shell offline
+        "isolate_config": bool | None,  # none of the user's CLI config; keeps the web. Codex only
         "timeout_secs": int | None,  # default 300s
         "mcp_endpoint": str | None,  # MCP server URL passed via
                                      # --mcp-config; daemon callers
@@ -5648,7 +5705,7 @@ def agents_health_external(id: Optional[str] = None, force: bool = False) -> str
 # ---------------------------------------------------------------------------
 # A2UI surface store (car-a2ui)
 #
-# Process-singleton in-process A2UI v0.9 store. Wire shapes match the
+# Process-singleton in-process A2UI v0.9.1 store. Wire shapes match the
 # daemon's WebSocket ``a2ui.*`` methods so a host can swap transports
 # without reshaping payloads. Daemon-shared state across processes
 # still flows over WebSocket — these helpers do NOT proxy to it.

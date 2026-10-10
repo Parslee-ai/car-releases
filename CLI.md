@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.55.0 (2026-09-24). Every subcommand the installed binary reports is
+> 0.57.0-nightly.20261009 (2026-10-09). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 74 top-level commands, 124 nested subcommands
+> 79 top-level commands, 158 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 74 subcommands spanning several different jobs:
+`car` is one binary with 79 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -175,6 +175,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car info`](#car-info) | Show runtime and live machine state |
 | [`car capabilities`](#car-capabilities) | Print the deterministic CAR capability manifest |
 | [`car ui`](#car-ui) | Open the browser dashboard served by the daemon |
+| [`car evaluate-contract`](#car-evaluate-contract) | Evaluate a pinned outcome contract without a model, coding loop, or delivery |
 | [`car verify`](#car-verify) | Statically verify a proposal |
 | [`car simulate`](#car-simulate) | Simulate a proposal's state effects without executing |
 | [`car optimize`](#car-optimize) | Optimize a proposal (remove phantom dependencies) |
@@ -184,10 +185,13 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car tools`](#car-tools) | Invoke CAR's built-in runtime tools directly, in-process and without a daemon |
 | [`car code-task`](#car-code-task) | Run a coder session headlessly and IN THIS PROCESS: derive or accept an outcome contract, work in a git worktree until the runtime's own re-run of that contract is green, then deliver the result as a pull request |
 | [`car coder-ab`](#car-coder-ab) | A/B-test CAR's coder against an external agent (Codex / Claude Code) over a corpus, and grow that corpus from git history — the productionized dogfooding loop (docs/proposals/coder-ab-dogfood.md) |
+| [`car coder`](#car-coder) | Manage operator-controlled repository trust for CarCoder |
+| [`car coder-overlays`](#car-coder-overlays) | Show the approved harness overlays — system-prompt and tool-description text applied through `evolution.run` — that every native coder session starts with, or clear them. Nothing removes an applied overlay on its own; `--clear` is how one is taken out of force. Reads the local coder state directory; no daemon needed |
 | [`car keys`](#car-keys) | Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then `$CAR_HOME/env`, then keychain |
 | [`car heal`](#car-heal) | Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges |
 | [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
+| [`car concierge`](#car-concierge) | Your local models' concierge: what each model is doing, what it would change and what it did on its own. Without a subcommand, prints the facts (no model involved) |
 | [`car models`](#car-models) | Manage local inference models |
 | [`car setup`](#car-setup) | Set up the right model for this machine — detect hardware, recommend, and install. Run with no flags for an interactive walkthrough |
 | [`car speech`](#car-speech) | Manage CAR speech runtime, health checks, and smoke tests |
@@ -204,7 +208,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first |
 | [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel) |
 | [`car purge`](#car-purge) | Remove this CAR install's own state under `~/.car` (config, logs, managed models, binaries) and reap any OS-level schedules CAR installed — for a clean slate before a reinstall. On macOS this also clears CarHost.app's user-level state and resets its privacy (TCC) permissions, so a reinstall really does re-run permission onboarding. NEVER touches the shared HuggingFace model cache (other tools use it); managed models are symlinks into it, so only the links are removed, not the multi-GB blobs. (To uninstall a single contributed agent instead, use `car uninstall <id>`.) |
-| [`car code`](#car-code) | Built-in coding agent: state an intent, review a one-screen outcome summary, then start, inspect the full list, revise checks in plain English, approve held network checks, or cancel. CAR works in an isolated git worktree — natively or via an installed frontier CLI. Review and apply results to your checkout, or publish a branch with --delivery branch (which is what --yes does by default — an unattended run never edits your checkout) |
+| [`car code`](#car-code) | Open a coding conversation in your repository. Ask questions, plan a change, or describe work to implement; review the checks and edits, then keep iterating in the same conversation |
 | [`car board`](#car-board) | Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. Closing the board never stops a run |
 | [`car do`](#car-do) | CAR Assistant: a general-purpose agent that works out of the box |
 | [`car policy-check-hook`](#car-policy-check-hook) | Evaluate a host's proposed tool call against `.car/policies/` and answer on stdout with that host's hook decision envelope |
@@ -220,6 +224,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car voice`](#car-voice) | Voiceprint enrollment — teach CAR your voice so it knows who's speaking (the owner drives commands; other voices are context). Proxies the daemon's `voice.*` surface |
 | [`car onboard`](#car-onboard) | Onboarding readiness — what's set up and what's still pending (the headless equivalent of the CarHost setup wizard) |
 | [`car approvals`](#car-approvals) | Agent approval policy — the default posture for what agents may do without asking. Proxies the daemon's `agent_permissions.*` surface (the CLI counterpart to the CarHost "Approvals" settings / onboarding step) |
+| [`car lattice`](#car-lattice) | The CAR Lattice: agents, coding sessions, and people on this daemon that find each other by capability. Register yourself as a human node, see what is being asked of you, and answer it. Uses the local host credential, so it acts as this machine's operator |
 | [`car accounts`](#car-accounts) | OS-native account discovery — Internet Accounts / WAM / GOA |
 | [`car cal`](#car-cal) | OS-native Calendar integration |
 | [`car contacts`](#car-contacts) | OS-native Contacts integration |
@@ -290,6 +295,36 @@ Usage: car ui [OPTIONS]
 Options:
   -p, --port <PORT>  Daemon WS port; the dashboard is served on this + 1 [default: 9100]
   -h, --help         Print help
+```
+
+### car evaluate-contract
+
+```text
+Evaluate a pinned outcome contract without a model, coding loop, or delivery
+
+Usage: car evaluate-contract [OPTIONS] --repo <REPO> --contract-file <CONTRACT_FILE>
+--expected-commit <EXPECTED_COMMIT> --expected-contract-sha256 <EXPECTED_CONTRACT_SHA256>
+--evidence-dir <EVIDENCE_DIR> --max-check-timeout-secs <MAX_CHECK_TIMEOUT_SECS>
+
+Options:
+      --repo <REPO>
+          Clean repository whose checks run. Ignored and untracked inputs are refused
+      --contract-file <CONTRACT_FILE>
+          Operator-supplied OutcomeContract JSON (raw bytes are pinned)
+      --expected-commit <EXPECTED_COMMIT>
+          Exact full Git commit object ID, not a movable ref
+      --expected-contract-sha256 <EXPECTED_CONTRACT_SHA256>
+          SHA-256 of the exact contract-file bytes
+      --evidence-dir <EVIDENCE_DIR>
+          New directory outside the repository; must not already exist
+      --max-check-timeout-secs <MAX_CHECK_TIMEOUT_SECS>
+          Positive wall-clock ceiling for each check
+      --container-runtime <CONTAINER_RUNTIME>
+          Trusted absolute OCI runtime executable. Requires an exact cached image
+      --container-image <CONTAINER_IMAGE>
+          Exact cached Linux image ID (sha256:...), selected by the verifier host
+  -h, --help
+          Print help
 ```
 
 ### car verify
@@ -519,15 +554,28 @@ corpus from git history — the productionized dogfooding loop (docs/proposals/c
 Usage: car coder-ab <COMMAND>
 
 Commands:
-  run      Run the paired A/B over a corpus manifest, verify each arm against the task's own
+  run           Run the paired A/B over a corpus manifest, verify each arm against the task's own
   contract, and write a JSON report. Exits non-zero when CAR is significantly *behind* the external
   arm (McNemar), so it doubles as a CI regression gate. Needs a running daemon (`car code` routes to
   it)
-  extract  Grow the corpus from a git repo's history: for each recent commit that fixes code AND
-  touches a test, materialize the pre-fix (failing) state as a task (parent's source + the commit's
-  test), keep only tasks whose test actually fails at that state, and append them to a corpus.
-  Best-effort candidate generation for human review
-  help     Print this message or the help of the given subcommand(s)
+  rescore       Re-score one delivered attempt without starting a coding session
+  ledger        Inspect or validate the append-only replay-attempt ledger
+  distill       Contrast CAR's trajectories with the reference arm's (Codex / Claude Code) over a
+  finished A/B report, and name candidate behaviors CAR is missing — each with its invariant and the
+  cheapest CAR mechanism to try. Reads the arm journals the report points at; no inference, no
+  network
+  judge-replay  Ask a generative model and Jev (TypeSafe's System One model, through Parslee) the
+  same code-review judgment over test-labeled diffs, offline. Build candidates first with
+  bench/coder-ab/judge-replay/build_candidates.py; score the output with analyze.py beside it. See
+  docs/proposals/system-one-decisions.md
+  judge-select  Show a generative model and Jev (through Parslee) a set of candidate diffs for one
+  task and ask which to merge, offline. Build sets with bench/coder-ab/judge-replay/build_sets.py;
+  score with analyze_sets.py. See docs/proposals/system-one-decisions.md, Experiment 2
+  extract       Grow the corpus from a git repo's history: for each recent commit that fixes code
+  AND touches a test, materialize the pre-fix (failing) state as a task (parent's source + the
+  commit's test), keep only tasks whose test actually fails at that state, and append them to a
+  corpus. Best-effort candidate generation for human review
+  help          Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
@@ -563,17 +611,25 @@ Options:
           Native arm's repair-iteration cap per task. Defaults to the coder's unbounded shipping
           default (`0`), so the A/B measures the coder users actually get. A positive value is an
           explicit experiment cap; a run whose losses all end at `iteration N/N` is measuring that
-          cap, not the harness. The external arm is not capped by this — it gets its CLI's own turn
-          budget (`max_turns: 50` per invocation) [default: 0]
+          cap, not the harness. The external arm is not capped by this — it gets its CLI's own
+          configuration (the coder passes no turn cap) [default: 0]
       --out-dir <OUT_DIR>
           Directory for the timestamped JSON report [default: bench/results/coder-ab]
       --timeout-secs <TIMEOUT_SECS>
-          Per-task wall bound (seconds) for the NATIVE arm before it's infra. The native reasoning
-          loop can legitimately take many minutes [default: 900]
+          Optional per-task wall bound (seconds) for the NATIVE arm; when it fires the attempt is a
+          scored timeout loss and the daemon session is cancelled with the reason `harness wall
+          bound <N>s reached`. Unset by default: the coder's own silence watchdog and no-progress
+          stop end a stuck session, and a fixed wall only measures the wall
       --external-timeout-secs <EXTERNAL_TIMEOUT_SECS>
-          Per-task wall bound (seconds) for the EXTERNAL arm (Codex/Claude Code). An external CLI
-          finishes fast or is stuck, so keep this well below `--timeout-secs` — a stuck external run
-          otherwise burns the native budget and drags the whole suite [default: 300]
+          Optional per-task wall bound (seconds) for the EXTERNAL arm (Codex/Claude Code). Unset by
+          default, like `--timeout-secs`: a timeout is a scored loss, so any wall turns a slow
+          reference into a CAR win (Claude Code on claude-sonnet-5 needed 338s for a flask task it
+          then passed, and a former 300s default scored it as a loss)
+      --allow-external-web
+          Let the external arm keep its CLI's own web access. Off by default: the external arm runs
+          with `car code --isolate-external-network` (no web search or fetch, browser, app
+          connectors or MCP servers; shell without network), because on a corpus mined from a
+          project's history a reference that can reach the web can read the upstream fix
       --limit <LIMIT>
           Run at most this many not-yet-scored tasks, then stop (the rest resume on the next run).
           Omit to run all remaining. `--limit 1` runs one task so you can inspect it and fix what it
@@ -592,6 +648,125 @@ Options:
       --report-repo <REPORT_REPO>
           Where --report-issues files. The releases repo by default, not the source repo — filing a
           defect report needs no source checkout [default: Parslee-ai/car-releases]
+      --fix-ref <FIX_REF>
+          Name the CarCoder fix made since this corpus's previous attempt. Cite the ledger entry it
+          answers in that PR's body
+      --recurrence-of <ATTEMPT>
+          Record that this run answers an earlier attempt of the same task
+  -h, --help
+          Print help
+```
+
+#### car coder-ab rescore
+
+```text
+Re-score one delivered attempt without starting a coding session
+
+Usage: car coder-ab rescore [OPTIONS] --attempt <ATTEMPT> --corpus <CORPUS>
+
+Options:
+      --attempt <ATTEMPT>  Existing `<ledger-dir>/artifacts/<task-id>/<attempt>` directory
+      --corpus <CORPUS>    Corpus manifest containing the task named by the source ledger row
+      --ledger <LEDGER>    Owning ledger. Omit to discover it from the attempt artifact layout
+  -h, --help               Print help
+```
+
+#### car coder-ab ledger
+
+```text
+Inspect or validate the append-only replay-attempt ledger
+
+Usage: car coder-ab ledger <COMMAND>
+
+Commands:
+  render  Render the append-only replay ledger as Markdown. Writes beside the ledger unless --stdout
+  is supplied
+  check   Check that every evidence path named by the ledger still exists
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car coder-ab distill
+
+```text
+Contrast CAR's trajectories with the reference arm's (Codex / Claude Code) over a finished A/B
+report, and name candidate behaviors CAR is missing — each with its invariant and the cheapest CAR
+mechanism to try. Reads the arm journals the report points at; no inference, no network
+
+Usage: car coder-ab distill [OPTIONS] --report <REPORT>
+
+Options:
+      --report <REPORT>        A report written by `car coder-ab run` (bench/results/coder-ab/…json)
+      --min-cells <MIN_CELLS>  Cells a behavior must separate the arms in before it is a candidate
+      [default: 2]
+      --out-dir <OUT_DIR>      Where to write `<report>.distill.{md,json}` (default: beside the
+      report)
+  -h, --help                   Print help
+```
+
+#### car coder-ab judge-replay
+
+```text
+Ask a generative model and Jev (TypeSafe's System One model, through Parslee) the same code-review
+judgment over test-labeled diffs, offline. Build candidates first with
+bench/coder-ab/judge-replay/build_candidates.py; score the output with analyze.py beside it. See
+docs/proposals/system-one-decisions.md
+
+Usage: car coder-ab judge-replay [OPTIONS] --candidates <CANDIDATES> --out <OUT> --llm-model
+<LLM_MODELS>
+
+Options:
+      --candidates <CANDIDATES>
+          Candidates JSONL written by build_candidates.py
+      --out <OUT>
+          Results JSONL; appended to, and a rerun resumes where it stopped
+      --experiment <EXPERIMENTS>
+          Experiments to run: 1a (capability probe), 1b (heal-review question) [default: 1a 1b]
+      --llm-model <LLM_MODELS>
+          Generative judge; repeat for several. The heal panel has no default
+      --jev-model <JEV_MODEL>
+          Jev model; pinned so a result can be reproduced [default: jev-1.13.0]
+      --requests-per-minute <REQUESTS_PER_MINUTE>
+          Jev request pace. Parslee allows 60/minute per org, shared with everything else the org
+          runs [default: 40]
+      --limit <LIMIT>
+          Only the first N candidates (a diagnostic slice)
+      --perturb
+          Also ask each question under context that should not change the answer, plus an identical
+          repeat that measures each judge's own noise
+      --shard <SHARD>
+          Run one slice of the candidates, as `index/count` (e.g. `0/4`); give each shard its own
+          --out and a share of --requests-per-minute
+      --seen <SEEN>
+          Earlier results file whose answers count as done; repeatable
+  -h, --help
+          Print help
+```
+
+#### car coder-ab judge-select
+
+```text
+Show a generative model and Jev (through Parslee) a set of candidate diffs for one task and ask
+which to merge, offline. Build sets with bench/coder-ab/judge-replay/build_sets.py; score with
+analyze_sets.py. See docs/proposals/system-one-decisions.md, Experiment 2
+
+Usage: car coder-ab judge-select [OPTIONS] --sets <SETS> --out <OUT> --llm-model <LLM_MODELS>
+
+Options:
+      --sets <SETS>
+          Sets JSONL written by build_sets.py
+      --out <OUT>
+          Results JSONL; appended to, and a rerun resumes where it stopped
+      --llm-model <LLM_MODELS>
+          Generative judge; repeat for several
+      --jev-model <JEV_MODEL>
+          Jev model; pinned so a result can be reproduced [default: jev-1.13.0]
+      --requests-per-minute <REQUESTS_PER_MINUTE>
+          Jev request pace; Parslee allows 60/minute per org [default: 40]
+      --limit <LIMIT>
+          Only the first N sets (a diagnostic slice)
   -h, --help
           Print help
 ```
@@ -650,6 +825,55 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+### car coder
+
+```text
+Manage operator-controlled repository trust for CarCoder
+
+Usage: car coder <COMMAND>
+
+Commands:
+  trust  Manage repositories allowed to use the macOS login keychain
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car coder trust
+
+```text
+Manage repositories allowed to use the macOS login keychain
+
+Usage: car coder trust <COMMAND>
+
+Commands:
+  add     Add one trusted repository, replay root, replay-only GitHub owner, or replay-only
+  repository
+  remove  Remove one trust entry of any kind
+  list    List every trust entry and the file that owns them
+  check   Show the live-session trust decision for one repository path
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+### car coder-overlays
+
+```text
+Show the approved harness overlays — system-prompt and tool-description text applied through
+`evolution.run` — that every native coder session starts with, or clear them. Nothing removes an
+applied overlay on its own; `--clear` is how one is taken out of force. Reads the local coder state
+directory; no daemon needed
+
+Usage: car coder-overlays [OPTIONS]
+
+Options:
+      --clear  Remove every stored overlay; the next coder session starts without
+  -h, --help   Print help
 ```
 
 ### car keys
@@ -874,6 +1098,67 @@ Options:
   -h, --help         Print help
 ```
 
+### car concierge
+
+```text
+Your local models' concierge: what each model is doing, what it would change and what it did on its
+own. Without a subcommand, prints the facts (no model involved)
+
+Usage: car concierge [COMMAND]
+
+Commands:
+  ask       Ask about your local models; answered from the facts, by a model
+  maintain  Run one maintenance pass now (retire, upgrade, clean up) under your update policy
+  rollback  Put a lane's default model back to what it was before the concierge's last change (e.g.
+  an automatic upgrade)
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car concierge ask
+
+```text
+Ask about your local models; answered from the facts, by a model
+
+Usage: car concierge ask <QUESTION>
+
+Arguments:
+  <QUESTION>  The question, e.g. "which models can I delete?"
+
+Options:
+  -h, --help  Print help
+```
+
+#### car concierge maintain
+
+```text
+Run one maintenance pass now (retire, upgrade, clean up) under your update policy
+
+Usage: car concierge maintain [OPTIONS]
+
+Options:
+      --dry-run  Decide and report, change nothing
+      --json     Output as JSON
+  -h, --help     Print help
+```
+
+#### car concierge rollback
+
+```text
+Put a lane's default model back to what it was before the concierge's last change (e.g. an automatic
+upgrade)
+
+Usage: car concierge rollback <USE_CASE>
+
+Arguments:
+  <USE_CASE>  The lane: assistant, coding, search, vision, transcription, summarize
+
+Options:
+  -h, --help  Print help
+```
+
 ### car models
 
 ```text
@@ -891,12 +1176,27 @@ Commands:
   recommend        Recommend the best model for this machine and what you want to do
   remove           Remove a downloaded model
   upgrades         Show installed models that have curated newer replacements
+  update-policy    Show the update policy, or set it: `auto` keeps local models current and tidy on
+  its own, `notify` only suggests, `off` does nothing. Setting it makes it your explicit choice
+  portfolio        Assess every installed local model: protected, idle, superseded, never runs here,
+  … with the evidence, and what retiring each would free. Reads only; asks the running daemon
   upgrade          Upgrade installed models to curated newer replacements when CAR can do so
   serve            Start an external MLX runtime for a cataloged local-server model
   add              Add any HuggingFace model by repo id, deriving its schema automatically
+  fit              CAR's memory-fit verdict for catalog rows on stated Apple Silicon machines, under
+  both the `everyday` and `local_focused` policies — the same rule `models.list_unified` reports,
+  without a machine of each size. Reads a row or an array of rows (as `car models add --dry-run
+  --json` prints) from FILE, or stdin. Prints JSON. The verdict is the recommendation estimate
+  `models.list_unified` shows, which sizes the KV cache from the parameter count; load-time
+  admission uses an installed checkpoint's own KV geometry and the machine's live state, so it can
+  differ
   register         Register a custom model from a JSON schema file
   unregister       Unregister a model by ID
   stats            Show performance stats for models based on observed outcomes
+  classify-bench   Compare CAR's `classify` capability against Jev (TypeSafe's System One model,
+  through Parslee) on a human-labeled dataset, offline. Build rows with
+  bench/classify/build_clinc.py; score with bench/classify/analyze.py. See
+  docs/proposals/system-one-decisions.md, Experiment 3
   benchmark        Benchmark curated models and write benchmark priors for cold-start routing
   doctor           Report configured defaults, provider health, and modality coverage
   smoke            Run representative live model checks across text, code, tool, vision, and speech
@@ -1035,6 +1335,34 @@ Options:
   -h, --help  Print help
 ```
 
+#### car models update-policy
+
+```text
+Show the update policy, or set it: `auto` keeps local models current and tidy on its own, `notify`
+only suggests, `off` does nothing. Setting it makes it your explicit choice
+
+Usage: car models update-policy [POLICY]
+
+Arguments:
+  [POLICY]  [possible values: auto, notify, off]
+
+Options:
+  -h, --help  Print help
+```
+
+#### car models portfolio
+
+```text
+Assess every installed local model: protected, idle, superseded, never runs here, … with the
+evidence, and what retiring each would free. Reads only; asks the running daemon
+
+Usage: car models portfolio [OPTIONS]
+
+Options:
+      --json  Output as JSON
+  -h, --help  Print help
+```
+
 #### car models upgrade
 
 ```text
@@ -1085,11 +1413,36 @@ Options:
       --dry-run
           Show the derived schema without registering it
 
+      --json
+          With --dry-run, print the derived schema as JSON — the exact row CAR would register, for a
+          catalog candidate file
+
       --pull
           Download the weights now instead of on first use
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+#### car models fit
+
+```text
+CAR's memory-fit verdict for catalog rows on stated Apple Silicon machines, under both the
+`everyday` and `local_focused` policies — the same rule `models.list_unified` reports, without a
+machine of each size. Reads a row or an array of rows (as `car models add --dry-run --json` prints)
+from FILE, or stdin. Prints JSON. The verdict is the recommendation estimate `models.list_unified`
+shows, which sizes the KV cache from the parameter count; load-time admission uses an installed
+checkpoint's own KV geometry and the machine's live state, so it can differ
+
+Usage: car models fit [OPTIONS] [FILE]
+
+Arguments:
+  [FILE]  Catalog row JSON file; stdin when omitted
+
+Options:
+      --ram-gb <RAM_GB>  Unified-memory sizes to judge, in GB [default:
+      16,24,32,36,48,64,96,128,192,256,512]
+  -h, --help             Print help
 ```
 
 #### car models register
@@ -1132,6 +1485,35 @@ Arguments:
 
 Options:
   -h, --help  Print help
+```
+
+#### car models classify-bench
+
+```text
+Compare CAR's `classify` capability against Jev (TypeSafe's System One model, through Parslee) on a
+human-labeled dataset, offline. Build rows with bench/classify/build_clinc.py; score with
+bench/classify/analyze.py. See docs/proposals/system-one-decisions.md, Experiment 3
+
+Usage: car models classify-bench [OPTIONS] --data <DATA> --labels <LABELS> --out <OUT> --model
+<MODELS>
+
+Options:
+      --data <DATA>
+          Rows JSONL ({id, text, label})
+      --labels <LABELS>
+          JSON array of labels offered for every row
+      --out <OUT>
+          Results JSONL; appended to, and a rerun resumes where it stopped
+      --model <MODELS>
+          CAR `classify` arm by model id, or `default` to let CAR choose; repeatable
+      --jev-model <JEV_MODEL>
+          Jev model; pinned so a result can be reproduced [default: jev-1.13.0]
+      --requests-per-minute <REQUESTS_PER_MINUTE>
+          Jev request pace; Parslee allows 60/minute per org [default: 40]
+      --limit <LIMIT>
+          Only the first N rows (a diagnostic slice)
+  -h, --help
+          Print help
 ```
 
 #### car models benchmark
@@ -1594,19 +1976,19 @@ Options:
 ### car code
 
 ```text
-Built-in coding agent: state an intent, review a one-screen outcome summary, then start, inspect the
-full list, revise checks in plain English, approve held network checks, or cancel. CAR works in an
-isolated git worktree — natively or via an installed frontier CLI. Review and apply results to your
-checkout, or publish a branch with --delivery branch (which is what --yes does by default — an
-unattended run never edits your checkout)
+Open a coding conversation in your repository. Ask questions, plan a change, or describe work to
+implement; review the checks and edits, then keep iterating in the same conversation.
+
+Coding runs in an isolated git worktree. Apply reviewed edits to your checkout, or choose --delivery
+branch to publish a branch. Explicit intent or execution options select the single-task workflow,
+with its one-screen summary and approval menu; --yes defaults to branch delivery.
 
 Usage: car code [OPTIONS] [INTENT]...
 
 Arguments:
   [INTENT]...
-          What to build or fix. With no task, opens a repository conversation in an interactive
-          terminal. --model also works in this mode; other execution flags select the single-task
-          workflow
+          Task intent. Supplying it selects the single-task workflow; omit it to open a continuous
+          interactive conversation
 
 Options:
       --resume <RESUME>
@@ -1650,6 +2032,10 @@ Options:
       --max-iterations <MAX_ITERATIONS>
           Max plan→edit→verify iterations before giving up. Default is unbounded; 0 = unbounded
 
+      --contract-file <CONTRACT_FILE>
+          Use this outcome contract (JSON, the OutcomeContract shape) instead of the derived
+          proposal; it is validated before acceptance
+
       --model <MODEL>
           Choose a model (see `car models list`). In a conversation, saves the choice for replies
           and new native tasks; --resume restores it unless overridden here. Use `auto` to clear a
@@ -1660,8 +2046,34 @@ Options:
           Expose the assistant's browser tools to this coder session. Off by default; calls remain
           policy-gated and recorded in coder events
 
+      --lattice <PROJECT>
+          Join this run to the daemon's Lattice under PROJECT, so Claude Code, Codex and CAR agents
+          in that project can find it by capability, message it, and see its work claims; the run
+          gets peer tools. Selects the native engine. Pair with `--capability` to say what it is
+          good at
+
+      --capability <TAG>
+          A capability tag this run advertises as a node (repeatable), e.g. `--capability rust
+          --capability parser-debugging`. Needs `--node`
+
+      --isolate-external-network
+          Run an external engine (`--engine external:<id>`) with no route off this machine: no web
+          search or fetch, browser, app connectors or MCP servers, and a shell without network.
+          Codex and Claude Code support it; an engine that cannot guarantee it refuses to start
+
   -h, --help
           Print help (see a summary with '-h')
+
+Examples:
+  car code                         Start a conversation here
+  car code --repo ../project       Work in another repository
+  car code --resume <id>           Reopen a saved conversation
+  car code --model <id>            Start with a chosen model
+  car code "Fix the export test"  Run one task with approval
+
+In a conversation: /help shows controls, /model chooses a model,
+/stop interrupts a reply, /sessions opens coding tasks, and /resume
+opens saved conversations. The exit summary prints the resume command.
 ```
 
 ### car board
@@ -1961,7 +2373,8 @@ Arguments:
 
 Options:
   -y, --yes
-          Skip the interactive confirm/approve prompts
+          Skip the interactive prompts. CAR's local host key is then not used, so only a daemon with
+          no host token (such as one started without authentication) builds the agent
 
       --json
           Emit one JSON object; requires --yes so prompts do not share stdout
@@ -2177,6 +2590,7 @@ Arguments:
 
 Options:
       --service <SERVICE>
+      --check-credential   Resolve as a contract-check credential (secret store, then CAR env file)
   -h, --help               Print help
 ```
 
@@ -2262,7 +2676,14 @@ Commands:
   subscription, using browser-based OAuth + PKCE
   status          Show whether CAR has a usable Parslee account token
   logout          Remove stored account tokens from the OS keychain
-  orgs            List the organizations the signed-in account belongs to (active marked)
+  orgs            List the organizations the signed-in account belongs to (active marked). With
+  `--all`, every org every signed-in login holds (default marked)
+  default-org     Show or set the default organization: the org new work uses when nothing more
+  specific (an explicit choice, the repository, the agent) names one. Separate from the active
+  login, and cleared — never moved to another login — when its login is removed or its membership
+  ends
+  resolve         Show which organization a session started in this directory would use, and why —
+  or why none can be
   switch-org      Switch the account's active organization by id (e.g. `org_parslee`)
   accounts        List all stored Parslee logins (active marked)
   switch-account  Switch the active Parslee login by account id
@@ -2306,6 +2727,9 @@ Options:
       --api-base <API_BASE>  Parslee API base URL override
       --json                 Print the raw session object from the Parslee API instead of a summary.
       The shape is the upstream API's and is not a CAR contract
+      --refresh              Also ask the running daemon to issue or renew this CAR's Parslee device
+      certificates now (`peers.cert_status {refresh: true}`). An explicit request, so it may read
+      your Parslee credentials; a headless daemon otherwise renews only after a sign-in change
   -h, --help                 Print help
 ```
 
@@ -2324,13 +2748,46 @@ Options:
 #### car auth orgs
 
 ```text
-List the organizations the signed-in account belongs to (active marked)
+List the organizations the signed-in account belongs to (active marked). With `--all`, every org
+every signed-in login holds (default marked)
 
 Usage: car auth orgs [OPTIONS]
 
 Options:
       --api-base <API_BASE>  Parslee API base URL override
+      --all                  List every signed-in login's organizations, read locally
   -h, --help                 Print help
+```
+
+#### car auth default-org
+
+```text
+Show or set the default organization: the org new work uses when nothing more specific (an explicit
+choice, the repository, the agent) names one. Separate from the active login, and cleared — never
+moved to another login — when its login is removed or its membership ends
+
+Usage: car auth default-org [OPTIONS] [ORGANIZATION_ID]
+
+Arguments:
+  [ORGANIZATION_ID]  Organization id to make the default (see `car auth orgs --all`)
+
+Options:
+      --account <ACCOUNT>  The login to use when more than one holds the org
+      --clear              Remove the default org
+  -h, --help               Print help
+```
+
+#### car auth resolve
+
+```text
+Show which organization a session started in this directory would use, and why — or why none can be
+
+Usage: car auth resolve [OPTIONS]
+
+Options:
+      --org <ORG>  Preview an explicit org choice
+      --personal   Preview explicitly personal (org-less) work
+  -h, --help       Print help
 ```
 
 #### car auth switch-org
@@ -2614,6 +3071,361 @@ Options:
   -h, --help  Print help
 ```
 
+### car lattice
+
+```text
+The CAR Lattice: agents, coding sessions, and people on this daemon that find each other by
+capability. Register yourself as a human node, see what is being asked of you, and answer it. Uses
+the local host credential, so it acts as this machine's operator
+
+Usage: car lattice <COMMAND>
+
+Commands:
+  nodes           List live nodes — agents, coding sessions, and people
+  find            Find nodes by capability, e.g. `car lattice find rust parser debugging`
+  human           Register or remove a human node
+  requests        Requests waiting on a person (all requests with `--all`)
+  respond         Answer a request. The answer reaches the asker as a reply, and agents waiting on
+  it resume
+  held            Messages waiting for your decision before they are sent — including the first
+  message your agents send to another owner's CAR
+  release         Send a held message (`--decline` drops it instead). One waiting on the cross-owner
+  notice is sent only with `--acknowledge-processing`, which agrees for that whole connection;
+  without it the notice is printed and nothing is sent
+  connect         Connect with another owner's CAR for a shared project: invite, inspect, accept,
+  confirm. Both owners consent before anything is shared
+  knock           Ask a CAR discovered on your network to connect — no invite code. Its owner sees
+  your purpose, project and key fingerprint, and accepts or declines. Its identity is unverified:
+  compare fingerprints with its owner if it matters who they are
+  knocks          CARs discovered on your network, and knocks waiting in both directions
+  knock-accept    Accept a knock, choosing your label for that CAR and what you share
+  knock-decline   Decline a knock. That CAR may not knock again for a day, or ever with `--block`
+  knock-withdraw  Withdraw a knock you sent. Its owner is told if their CAR can be reached
+  knock-settings  Whether this CAR is discoverable on the network and takes knocks. Without
+  `--accepting`, shows the setting
+  knock-block     Block a key from knocking, quiet it (knocks recorded, no prompt), or allow it
+  again
+  connections     Your Lattice connections with other owners' CARs
+  directory       Colleagues in your org whose CARs an org admin attested — the people `car lattice
+  connect offer` can reach without a fingerprint exchange
+  org             Org-attested connections: status, admin attestation and policy, and your standing
+  auto-accept rules
+  disconnect      End a connection now. The other CAR is told; what it already received cannot be
+  recalled
+  help            Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car lattice nodes
+
+```text
+List live nodes — agents, coding sessions, and people
+
+Usage: car lattice nodes [OPTIONS]
+
+Options:
+      --project <PROJECT>
+  -h, --help               Print help
+```
+
+#### car lattice find
+
+```text
+Find nodes by capability, e.g. `car lattice find rust parser debugging`
+
+Usage: car lattice find [OPTIONS] [NEED]...
+
+Arguments:
+  [NEED]...
+
+Options:
+      --project <PROJECT>
+  -h, --help               Print help
+```
+
+#### car lattice human
+
+```text
+Register or remove a human node
+
+Usage: car lattice human <COMMAND>
+
+Commands:
+  join   Join (or update) a person as a node others can find by capability
+  leave  Remove a human node
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car lattice requests
+
+```text
+Requests waiting on a person (all requests with `--all`)
+
+Usage: car lattice requests [OPTIONS]
+
+Options:
+      --all
+      --to <TO>  Only requests to this human (`matt` or `human:matt`)
+  -h, --help     Print help
+```
+
+#### car lattice respond
+
+```text
+Answer a request. The answer reaches the asker as a reply, and agents waiting on it resume
+
+Usage: car lattice respond [OPTIONS] <REQUEST_ID> [ANSWER]...
+
+Arguments:
+  <REQUEST_ID>
+  [ANSWER]...
+
+Options:
+      --acknowledge-processing  Agree that what you send to another owner's CAR may be processed
+      there by anything, a cloud model included — asked once per connection. Without it, the first
+      answer to another owner prints that notice and sends nothing
+  -h, --help                    Print help
+```
+
+#### car lattice held
+
+```text
+Messages waiting for your decision before they are sent — including the first message your agents
+send to another owner's CAR
+
+Usage: car lattice held
+
+Options:
+  -h, --help  Print help
+```
+
+#### car lattice release
+
+```text
+Send a held message (`--decline` drops it instead). One waiting on the cross-owner notice is sent
+only with `--acknowledge-processing`, which agrees for that whole connection; without it the notice
+is printed and nothing is sent
+
+Usage: car lattice release [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --decline
+      --acknowledge-processing
+  -h, --help                    Print help
+```
+
+#### car lattice connect
+
+```text
+Connect with another owner's CAR for a shared project: invite, inspect, accept, confirm. Both owners
+consent before anything is shared
+
+Usage: car lattice connect <COMMAND>
+
+Commands:
+  invite        Create an invite: purpose, project, a name for the other CAR, and which of your
+  nodes it may see and address (repeat --share)
+  inspect       Show what an invite asks for — its purpose and project — before accepting it. The
+  inviter's fingerprint is not shown: ask them for it
+  accept        Accept an invite with your own share list. Active once the inviter confirms your
+  CAR's fingerprint
+  offer         Offer a connection to an attested colleague in your org (see `car lattice
+  directory`). No invite code or fingerprint: the org attested their CAR. Nothing is shared until
+  they accept
+  accept-offer  Accept a connection a colleague offered, with your own share list. Active at once
+  confirm       Confirm the CAR that accepted your invite, with the fingerprint its owner told you.
+  Only then is the connection active
+  share         Replace which of your nodes an active connection may see and message (repeat
+  --share; none shares nothing). Takes effect here at once; the other CAR is told
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car lattice knock
+
+```text
+Ask a CAR discovered on your network to connect — no invite code. Its owner sees your purpose,
+project and key fingerprint, and accepts or declines. Its identity is unverified: compare
+fingerprints with its owner if it matters who they are
+
+Usage: car lattice knock --purpose <PURPOSE> --project <PROJECT> --label <LABEL> <MACHINE>
+
+Arguments:
+  <MACHINE>  The discovered CAR: its advertised name (see `car lattice knocks`) or its URL
+
+Options:
+      --purpose <PURPOSE>
+      --project <PROJECT>
+      --label <LABEL>      Your name for that CAR once connected (`<node>@<label>`)
+  -h, --help               Print help
+```
+
+#### car lattice knocks
+
+```text
+CARs discovered on your network, and knocks waiting in both directions
+
+Usage: car lattice knocks
+
+Options:
+  -h, --help  Print help
+```
+
+#### car lattice knock-accept
+
+```text
+Accept a knock, choosing your label for that CAR and what you share
+
+Usage: car lattice knock-accept [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --label <LABEL>
+      --share <SHARE>  A node of yours the other CAR may see and address (repeat)
+  -h, --help           Print help
+```
+
+#### car lattice knock-decline
+
+```text
+Decline a knock. That CAR may not knock again for a day, or ever with `--block`
+
+Usage: car lattice knock-decline [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --block
+  -h, --help   Print help
+```
+
+#### car lattice knock-withdraw
+
+```text
+Withdraw a knock you sent. Its owner is told if their CAR can be reached
+
+Usage: car lattice knock-withdraw <ID>
+
+Arguments:
+  <ID>
+
+Options:
+  -h, --help  Print help
+```
+
+#### car lattice knock-settings
+
+```text
+Whether this CAR is discoverable on the network and takes knocks. Without `--accepting`, shows the
+setting
+
+Usage: car lattice knock-settings [OPTIONS]
+
+Options:
+      --accepting <ACCEPTING>  `true` to be found and take knocks, `false` to stop advertising and
+      refuse new knocks [possible values: true, false]
+  -h, --help                   Print help
+```
+
+#### car lattice knock-block
+
+```text
+Block a key from knocking, quiet it (knocks recorded, no prompt), or allow it again
+
+Usage: car lattice knock-block [OPTIONS] --mode <MODE>
+
+Options:
+      --id <ID>      A pending knock's id
+      --key <KEY>    The knocking CAR's key, from `car lattice knocks`
+      --mode <MODE>  `block`, `quiet`, or `allow`
+  -h, --help         Print help
+```
+
+#### car lattice connections
+
+```text
+Your Lattice connections with other owners' CARs
+
+Usage: car lattice connections
+
+Options:
+  -h, --help  Print help
+```
+
+#### car lattice directory
+
+```text
+Colleagues in your org whose CARs an org admin attested — the people `car lattice connect offer` can
+reach without a fingerprint exchange
+
+Usage: car lattice directory [OPTIONS]
+
+Options:
+      --org <ORG>  Which org, when this CAR serves several (default: all of them)
+  -h, --help       Print help
+```
+
+#### car lattice org
+
+```text
+Org-attested connections: status, admin attestation and policy, and your standing auto-accept rules
+
+Usage: car lattice org [OPTIONS] <COMMAND>
+
+Commands:
+  status       Whether org connections are on, this CAR's fingerprint and attestation, and (for an
+  org admin) colleagues' CARs awaiting one
+  attest       As an org admin: vouch that an announced CAR belongs to the colleague who announced
+  it. Check its fingerprint with them first
+  revoke       As an org admin: withdraw every attestation of a member. Their org-verified
+  connections end at each colleague's next refresh
+  policy       As an org admin: publish the org's Lattice policy floor. It can only narrow what
+  members may do. Replaces the previous policy whole
+  rules        Your standing auto-accept rules
+  rule-add     Accept, in advance, colleagues' offers for one project with a fixed share list. Your
+  choice only; no admin can set one for you
+  rule-remove  Remove a standing rule. Connections it accepted stay
+  enroll-code  Print your org's enrollment code and its fingerprint. Give the code to a new member,
+  and read them the fingerprint another way than the code
+  join         Join your org on this machine: trust the granter keys in an enrollment code, checked
+  against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to $CAR_HOME/env;
+  restart the daemon afterwards. Works without a running daemon
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --org <ORG>  Which org, when this CAR serves several. Required for an admin or rule change
+      then; ignored by `join`, which reads it from the code
+  -h, --help       Print help
+```
+
+#### car lattice disconnect
+
+```text
+End a connection now. The other CAR is told; what it already received cannot be recalled
+
+Usage: car lattice disconnect [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --reason <REASON>
+  -h, --help             Print help
+```
+
 ### car accounts
 
 ```text
@@ -2674,10 +3486,11 @@ Options:
 ```text
 List visible calendars across all sources
 
-Usage: car cal list
+Usage: car cal list [OPTIONS]
 
 Options:
-  -h, --help  Print help
+      --daemon-url <URL>  Ask this daemon's Calendar integration instead of this CLI process
+  -h, --help              Print help
 ```
 
 #### car cal events

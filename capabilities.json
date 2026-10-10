@@ -1119,7 +1119,7 @@
     },
     {
       "path": "lattice directory",
-      "description": "Colleagues in your org whose CARs an org admin attested — the people `car lattice connect offer` can reach without a fingerprint exchange"
+      "description": "Colleagues in your orgs: those whose CARs an org admin attested (for `car lattice connect offer`), and those whose devices Parslee certifies, reachable through the Parslee relay (for `car lattice knock --member`)"
     },
     {
       "path": "lattice disconnect",
@@ -1144,6 +1144,34 @@
     {
       "path": "lattice human leave",
       "description": "Remove a human node"
+    },
+    {
+      "path": "lattice knock",
+      "description": "Ask a CAR to connect — no invite code. Either a CAR discovered on your network (`<machine>`; its identity is unverified, so compare fingerprints with its owner if it matters who they are), or, with `--member <account> --org <org>`, a colleague in a Parslee org through the Parslee relay, which works when neither CAR can reach the other (identity `cert:<org>:<account>`, from their device certificate)"
+    },
+    {
+      "path": "lattice knock-accept",
+      "description": "Accept a knock, choosing your label for that CAR and what you share"
+    },
+    {
+      "path": "lattice knock-block",
+      "description": "Block a key from knocking, quiet it (knocks recorded, no prompt), or allow it again"
+    },
+    {
+      "path": "lattice knock-decline",
+      "description": "Decline a knock. That CAR may not knock again for a day, or ever with `--block`"
+    },
+    {
+      "path": "lattice knock-settings",
+      "description": "Whether this CAR is discoverable on the network and takes knocks. Without `--accepting`, shows the setting"
+    },
+    {
+      "path": "lattice knock-withdraw",
+      "description": "Withdraw a knock you sent. Its owner is told if their CAR can be reached"
+    },
+    {
+      "path": "lattice knocks",
+      "description": "CARs discovered on your network, and knocks waiting in both directions"
     },
     {
       "path": "lattice nodes",
@@ -1188,6 +1216,18 @@
     {
       "path": "lattice org status",
       "description": "Whether org connections are on, this CAR's fingerprint and attestation, and (for an org admin) colleagues' CARs awaiting one"
+    },
+    {
+      "path": "lattice relay-probe",
+      "description": "Developer check of the Parslee relay: send a sealed probe to a colleague's device, or pull and verify probes sent to this one. Uses this CAR's device certificate for the org; reads no credential"
+    },
+    {
+      "path": "lattice relay-probe pull",
+      "description": "Pull this device's relay inbox for the org, verify each probe, print them, and acknowledge them. Other relay mail stays queued"
+    },
+    {
+      "path": "lattice relay-probe send",
+      "description": "Seal `text` to the device with this Ed25519 key (from the org's relay directory) and deposit it with the relay"
     },
     {
       "path": "lattice release",
@@ -2322,7 +2362,7 @@
         {
           "method": "agents.invoke_external",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "agents.list",
@@ -3435,6 +3475,41 @@
           "role": "operator"
         },
         {
+          "method": "lattice.knock",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.knock.accept",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.knock.block",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.knock.decline",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.knock.settings",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.knock.withdraw",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.knocks",
+          "documented": true,
+          "role": "host"
+        },
+        {
           "method": "lattice.leave",
           "documented": true,
           "role": "operator"
@@ -3476,6 +3551,11 @@
         },
         {
           "method": "lattice.org.status",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.relay.probe",
           "documented": true,
           "role": "host"
         },
@@ -3667,12 +3747,12 @@
         {
           "method": "memory.set_admission_table",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "memory.update_status",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "memory.utility_get",
@@ -3682,7 +3762,7 @@
         {
           "method": "memory.utility_set",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         }
       ]
     },
@@ -4113,6 +4193,21 @@
           "method": "parslee.m365.generate_document",
           "documented": true,
           "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "peers",
+      "methods": [
+        {
+          "method": "peers.cert_conflict_clear",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "peers.cert_status",
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -4600,9 +4695,24 @@
           "role": "operator"
         },
         {
+          "method": "session.bind_context",
+          "documented": true,
+          "role": "agent"
+        },
+        {
           "method": "session.clear_halt",
           "documented": true,
           "role": "host"
+        },
+        {
+          "method": "session.consumer.issue",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "session.consumer.revoke",
+          "documented": true,
+          "role": "operator"
         },
         {
           "method": "session.init",
@@ -4792,27 +4902,27 @@
         {
           "method": "sync.append",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "sync.assistant_action.get",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "sync.assistant_action.put",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "sync.assistant_checkpoint.get",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "sync.assistant_checkpoint.put",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "sync.checkpoint",
@@ -4827,7 +4937,7 @@
         {
           "method": "sync.knowledge",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "sync.pump",
@@ -4847,12 +4957,12 @@
         {
           "method": "sync.record_turn",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "sync.resume",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "sync.status",
@@ -4862,7 +4972,7 @@
         {
           "method": "sync.transcript",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         }
       ]
     },
