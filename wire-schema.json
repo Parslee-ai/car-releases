@@ -106,7 +106,7 @@
         "tools.stream.subscribe",
         "tools.unregister"
       ],
-      "total": 532,
+      "total": 533,
       "uncovered": [
         "CancelTask",
         "CreateTaskPushNotificationConfig",
@@ -346,6 +346,7 @@
         "lattice.connect.confirm",
         "lattice.connect.inspect",
         "lattice.connect.invite",
+        "lattice.connect.label",
         "lattice.connect.share",
         "lattice.connections",
         "lattice.directory",

@@ -1103,11 +1103,15 @@
     },
     {
       "path": "lattice connect invite",
-      "description": "Create an invite: purpose, project, a name for the other CAR, and which of your nodes it may see and address (repeat --share)"
+      "description": "Create an invite: purpose, project, a name for the other CAR, and which of your nodes it may see and address (repeat --share; a node address, or `agents:<project>` for every agent joined in that project)"
     },
     {
       "path": "lattice connect offer",
       "description": "Offer a connection to an attested colleague in your org (see `car lattice directory`). No invite code or fingerprint: the org attested their CAR. Nothing is shared until they accept"
+    },
+    {
+      "path": "lattice connect rename",
+      "description": "Rename your name for the other CAR (its nodes are `<node>@<name>`). Only yours: the other owner's name for your CAR does not change"
     },
     {
       "path": "lattice connect share",
@@ -1423,7 +1427,7 @@
     },
     {
       "path": "mp submit",
-      "description": "Submit a stage you did outside CAR (for example in Claude Code or Codex). CAR runs the item's contract on the commit itself, without credentials, before recording it"
+      "description": "Submit work you did outside CAR (for example in Claude Code or Codex). CAR runs the contract on the commit itself, without credentials, before recording it. With an item this is that item's next stage; without one it is a Build that creates the item from --intent and --contract-file"
     },
     {
       "path": "mp take",
@@ -3441,6 +3445,11 @@
         },
         {
           "method": "lattice.connect.invite",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.connect.label",
           "documented": true,
           "role": "host"
         },

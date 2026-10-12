@@ -79,6 +79,7 @@ failure as the run's answer.
   "receipts": { … },
   "ungrounded_claims": [ … ],
   "sandbox": { … },
+  "work_context": null,        // the bound org, or null for personal work (see below)
   "elapsed_seconds": 94.2,
   "goal": { … }                // only for --until / --infer-until runs
 }
@@ -102,6 +103,7 @@ failure as the run's answer.
   "models_served": [ … ],      // completed turns before failure remain attributable
   "receipts": { … },           // work done before the failure is still reported
   "sandbox": { … },
+  "work_context": null,
   "elapsed_seconds": 12.4,
   "suggestions": ["…"]
 }
@@ -122,6 +124,7 @@ failure as the run's answer.
   "models_served": [ … ],
   "receipts": { … },
   "sandbox": { … },
+  "work_context": null,
   "elapsed_seconds": 0.4,
   "suggestions": ["Sign in to your Parslee account, then re-run.", "…"]
 }
@@ -157,6 +160,16 @@ on the existing schema, so `car.do/1` is unchanged.
 An explicit `--model` or `CAR_DO_MODEL` is not affected: naming a model keeps
 the previous selection behaviour for it, including the on-device fallback.
 
+`work_context` names the organization the run works in: `--org`, the
+repository's declared org, or your default org. It appears on `started` and on
+every terminal document as `{ "api_base", "account_id", "organization_id" }`,
+and it is `null` for personal work. Runs started through the MCP endpoint's
+`assistant_start` bind by the same rule and report it the same way. A bound
+run keeps its memory and trajectories (and, for `car do`, its receipts) in that
+org's private store and has only that org's own-account tools, so check the
+field before treating a result as personal. It is an additive field, so
+`car.do/1` is unchanged.
+
 A flag error before the run starts (`--json` with `--serve`, `--json` with no
 goal, `--until` and `--infer-until` together, a `--json-schema` file that is
 unreadable, not JSON, or not a valid JSON Schema) produces the error shape with
@@ -165,7 +178,10 @@ that would have been substituted produces the same shape with
 `error: "StrictModelUnavailable"` and `suggestions` naming the two ways out
 (drop the flag, or name a model that is available here); `--strict-model` with
 a format the model's protocol rejects produces `error:
-"ResponseFormatUnsupported"`. The stdout invariant
+"ResponseFormatUnsupported"`. A run that would work in an organization but
+cannot be bound produces `error: "WorkContextUnavailable"`. That happens when
+the daemon is not running, or when the org cannot be used, for example because
+no signed-in login holds it. The stdout invariant
 holds even then: a `--json` invocation always writes exactly one document, so
 you never have to distinguish "no output" from "no answer".
 
@@ -313,7 +329,7 @@ Each stderr line is `{"type", "phase", "message", "data"}`.
 
 | `type` | Meaning |
 |---|---|
-| `started` | Run began. `data` carries the goal, model, and sandbox posture. |
+| `started` | Run began. `data` carries the goal, model, sandbox posture, and `work_context` (the bound org, or `null`). |
 | `inference_started` | A model call is about to begin, emitted before CAR awaits the generator. `data.model` is the requested model (or `(router)`), `data.attempt` is `1`, and `data.turn` is the assistant turn. |
 | `inference_retry` | A transient remote failure will be retried. `data.model` is the canonical model, `data.attempt` is the attempt about to start, `data.reason` is a generic failure class (`http_status` or `transport`), and `data.backoff_ms` is the delay before it starts. Provider response bodies are never copied into this event. |
 | `model_served` | One model call completed. `data.model_id` is the canonical model that served the turn; `data.local_last_resort` is true only when CAR appended and then used an on-device model behind a remote-only chain. |

@@ -3606,6 +3606,9 @@ class HostClient:
     def lattice_connect_invite(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.connect.invite`.
 
+    def lattice_connect_label(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.connect.label`.
+
     def lattice_connect_share(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.connect.share`.
 

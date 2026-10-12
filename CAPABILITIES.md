@@ -423,8 +423,9 @@ Hidden clap commands are excluded.
 | `car lattice connect accept-offer` | Accept a connection a colleague offered, with your own share list. Active at once |
 | `car lattice connect confirm` | Confirm the CAR that accepted your invite, with the fingerprint its owner told you. Only then is the connection active |
 | `car lattice connect inspect` | Show what an invite asks for — its purpose and project — before accepting it. The inviter's fingerprint is not shown: ask them for it |
-| `car lattice connect invite` | Create an invite: purpose, project, a name for the other CAR, and which of your nodes it may see and address (repeat --share) |
+| `car lattice connect invite` | Create an invite: purpose, project, a name for the other CAR, and which of your nodes it may see and address (repeat --share; a node address, or `agents:<project>` for every agent joined in that project) |
 | `car lattice connect offer` | Offer a connection to an attested colleague in your org (see `car lattice directory`). No invite code or fingerprint: the org attested their CAR. Nothing is shared until they accept |
+| `car lattice connect rename` | Rename your name for the other CAR (its nodes are `<node>@<name>`). Only yours: the other owner's name for your CAR does not change |
 | `car lattice connect share` | Replace which of your nodes an active connection may see and message (repeat --share; none shares nothing). Takes effect here at once; the other CAR is told |
 | `car lattice connections` | Your Lattice connections with other owners' CARs |
 | `car lattice directory` | Colleagues in your orgs: those whose CARs an org admin attested (for `car lattice connect offer`), and those whose devices Parslee certifies, reachable through the Parslee relay (for `car lattice knock --member`) |
@@ -503,7 +504,7 @@ Hidden clap commands are excluded.
 | `car mp list` | Work items on the shared remote, and whether you can take the next stage of each (you may own at most one stage per item) |
 | `car mp publish` | Publish a finished coder session as a stage: an approved diff, or an accepted no-change finding. Without --item this publishes a Build and creates the work item |
 | `car mp show` | One work item's full record |
-| `car mp submit` | Submit a stage you did outside CAR (for example in Claude Code or Codex). CAR runs the item's contract on the commit itself, without credentials, before recording it |
+| `car mp submit` | Submit work you did outside CAR (for example in Claude Code or Codex). CAR runs the contract on the commit itself, without credentials, before recording it. With an item this is that item's next stage; without one it is a Build that creates the item from --intent and --contract-file |
 | `car mp take` | Start the item's next stage: a coder session at the item's tip. Then confirm the item's locked contract (adding checks later is fine) and work it like any coder session, e.g. in `car board` |
 | `car notes` | macOS Notes integration |
 | `car notes accounts` | List Notes.app accounts |
@@ -698,7 +699,7 @@ Hidden clap commands are excluded.
 
 ## Daemon JSON-RPC dispatch methods
 
-531 string-literal dispatch methods across 87 namespaces; 0 are not referenced by `docs/websocket-protocol.md`.
+532 string-literal dispatch methods across 87 namespaces; 0 are not referenced by `docs/websocket-protocol.md`.
 
 Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCase aliases are grouped under `root`. Roles are freshly derived from the daemon handler's authorization call sites: `host` for host-management authority, `owner` for per-resource ownership, `agent` for a bound agent identity, and `operator` otherwise. They describe an auth-enabled deployment because host gates are conditional on a configured host token.
 
@@ -1120,6 +1121,7 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `lattice.connect.confirm` | `host` | yes |
 | `lattice.connect.inspect` | `host` | yes |
 | `lattice.connect.invite` | `host` | yes |
+| `lattice.connect.label` | `host` | yes |
 | `lattice.connect.share` | `host` | yes |
 | `lattice.connections` | `host` | yes |
 | `lattice.directory` | `host` | yes |

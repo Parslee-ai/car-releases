@@ -1,7 +1,7 @@
 {% raw %}
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.57.2**. Check yours with `car --version`; if it
+> Describes CAR **0.57.4**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -262,8 +262,8 @@ gated on an unelevated local run.
 ```
 car approvals get                    # show the current default posture
 car approvals default cautious       # ask before any edit or full-access action
-car approvals default balanced       # allow sandboxed edits without asking
-car approvals default trusting       # allow everything without asking
+car approvals default balanced       # allow reads without asking
+car approvals default trusting       # allow reads and sandboxed edits without asking
 ```
 
 This proxies the daemon's `agent_permissions.*` JSON-RPC surface: it moves the
@@ -271,6 +271,11 @@ This proxies the daemon's `agent_permissions.*` JSON-RPC surface: it moves the
 override, so setting it once changes the fallback for every agent the daemon
 supervises, not just one `car do` invocation. The three presets are the only
 accepted values; anything else is rejected before it reaches the daemon.
+
+A per-agent posture cannot widen the environment that was actually bound.
+**Approve for me** auto-allows `sandbox_edit` actions only when a sandbox exists.
+If Docker is unavailable and CAR falls back to the local host (or the run uses
+`--local`), shell commands and file edits still ask before they touch the Mac.
 
 ## Memory: what actually persists
 

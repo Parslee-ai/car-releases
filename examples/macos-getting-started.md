@@ -82,9 +82,10 @@ The shield next to **+** in the message box sets how much Parslee
 Core, CAR's own agent, may do without asking: **Ask first** (it asks
 before every action, reads included), **Balanced** (Read-only
 actions run on their own; Edit files and Full access actions ask
-first), or **Approve for me** (Read-only and Edit files actions run
-on their own; Full access actions ask first). It's the same setting
-as Settings → Agent Permissions.
+first), or **Approve for me** (Read-only actions and sandboxed file
+edits run on their own; Full access actions ask first). If no sandbox
+is available, file edits and shell commands still ask before touching
+the Mac. It's the same setting as Settings → Agent Permissions.
 
 This is the whole point of CAR: the assistant proposes, and actions
 that touch the real world go through you.

@@ -3741,7 +3741,7 @@ Registry helpers: `list()`, `get(id)`, `find_by_name(name)`, `ensure_local(id)` 
 
 **`ModelSource`**: `Local` (GGUF via Candle), `RemoteApi`, `CodexCli`, `Ollama`, `Mlx`, external/operator-owned `VllmMlx`, CAR-owned `ManagedVllmMlx`, and `AppleFoundationModels` (plus the speech/proprietary/delegated variants). Schema helpers: `is_codex_cli`, `is_mlx`, `is_vllm_mlx`, `is_car_managed_vllm_mlx`, `is_foundation_models`, `requires_apple_silicon`, `size_mb`, `ram_mb`. A loopback endpoint does not turn `VllmMlx` into the managed variant.
 
-The curated `openai/gpt-5.6-sol:high` row is a `CodexCli { model: "gpt-5.6-sol:high" }` source. It is an identity-pinnable, text-only, single-shot generation route through `codex exec`; `:high` maps to `model_reasoning_effort="high"`. Codex owns its ChatGPT-subscription token and CAR removes `OPENAI_API_KEY` from the child, so this source needs no API key. It rejects tools, multi-turn messages, multimodal blocks, response schemas, and streaming. Unlike `external:codex`, it runs in an empty read-only scratch directory with Codex's shell, multi-agent, app, plugin, code-mode, and web-search features disabled. Codex exposes no exact per-call output-token cap, so `max_tokens` is sent as an approximate response-limit instruction and the CLI's reported usage is authoritative.
+The curated `openai/gpt-5.6-sol:high` row is a `CodexCli { model: "gpt-5.6-sol:high" }` source. It is an identity-pinnable generation route through `codex exec`; `:high` maps to `model_reasoning_effort="high"`. Codex owns its ChatGPT-subscription token and CAR removes `OPENAI_API_KEY` from the child, so this source needs no API key. Inline image attachments are decoded into the turn's scratch directory, passed with `--image`, and removed after the turn. Video, audio, and remote image URL attachments produce a model-named refusal while the text is still answered. Conversation history and CAR tool proposals are supported; response schemas and streaming are rejected. Unlike `external:codex`, this route runs in an empty read-only scratch directory with Codex's shell, multi-agent, app, plugin, code-mode, and web-search features disabled. Codex exposes no exact per-call output-token cap, so `max_tokens` is sent as an approximate response-limit instruction and the CLI's reported usage is authoritative.
 
 **`ModelCapability`** (the capability vocabulary the router and intent layer filter on):
 
@@ -4944,7 +4944,7 @@ The daemon endpoint adds three more, which the stdio binary does **not** adverti
 
 | Tool (daemon only) | Hints | Required args | Optional args | Returns |
 |------|-------|---------------|---------------|---------|
-| `assistant_start` | write · destructive · open-world | `task` | `cwd`, `until`, `max_turns` (1–200, default 50), `local`, `model`, `invoked_by` | `{run_id, status:"running", poll_after_ms, sandbox, ancestry}` |
+| `assistant_start` | write · destructive · open-world | `task` | `cwd`, `until`, `max_turns` (1–200, default 50), `local`, `model`, `invoked_by`, `org`, `personal` | `{run_id, status:"running", poll_after_ms, sandbox, ancestry}` |
 | `assistant_poll` | read-only · idempotent | `run_id` | `since_seq` (default 0) | `{status, events, next_seq, events_skipped, …}` plus the `car.do/1` document in `result` once terminal |
 | `assistant_cancel` | write · idempotent | `run_id` | — | `{run_id, status:"cancelled"\|"already_terminal"\|"unknown"}` |
 

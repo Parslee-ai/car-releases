@@ -368,7 +368,10 @@ receive a write allowlist: the worktree; Git's object, ref, reflog,
 `packed-refs`, and current linked-worktree administrative paths; the session's
 private Cargo home and target; private temporary, SwiftPM, Clang module, npm,
 pip, XDG, and Bun caches; and that session's shell/check evidence directories.
-The Git common directory remains closed, so builder writes cannot reach its
+On macOS a confined check may allocate and use its own pseudo-terminal, but the
+slave-device write rule requires Seatbelt's per-allocation pty extension, so the
+check cannot open another process's `/dev/ttys*` device for writing. The Git
+common directory remains closed, so builder writes cannot reach its
 `config`, `hooks`, or `info`. `TMPDIR`, `CAR_CHECK_TMPDIR`,
 `CARGO_TARGET_DIR`, `CLANG_MODULE_CACHE_PATH`, and the package-manager cache
 variables point into the session-private state. SwiftPM's PATH shims pass its
@@ -409,12 +412,50 @@ is an infrastructure failure, not a red contract result. macOS uses CoW clones
 where supported. Linux hosts without CoW retain the existing cold
 empty/full-copy behavior, but at the stable path.
 
+SwiftPM gets the equivalent of that seeded Cargo home. Protected checks run
+with the network denied, so SwiftPM cannot clone a `remoteSourceControl` pin or
+download a remote binary artifact inside them. Before a baseline or verifier
+`run_check` starts, CAR finds every package in the check tree with both
+`Package.swift` and a `Package.resolved` that pins remote dependencies
+(packages without a `Package.resolved` are not examined). It
+then copy-on-write clones that package's resolved dependency state —
+`.build/repositories`, `checkouts`, `artifacts`, `registry`, and
+`workspace-state.json`, never build products — from the same package in the
+operator's checkout, the repository the session was started from. Absolute
+paths in `workspace-state.json` are relocated to the check tree. SwiftPM then
+builds offline with no extra flags. The source is never the session worktree:
+`checkouts` is dependency source a check compiles and runs, and the builder
+can write its own worktree. Before copying, CAR checks that the operator
+checkout's state holds every pin at the revision (or registry version) the
+check tree's `Package.resolved` names, that each checkout exists, and that
+each remote artifact has been extracted. When it does not, the package is
+reported unprepared: `swiftpm\tunprepared` in the check's `caches` evidence
+and, when the check fails, a `dependency_preparation` message in the
+verifier's `run_check` result or a plan-text event for a baseline check. Any
+dependency state already in the check tree is replaced, never reused: a
+verifier tree is what the builder delivered, and the builder can commit a
+`.build`. When the operator checkout cannot replace it, the tree's dependency
+entries are removed. The message names the package and says
+to run `swift package resolve` in the operator checkout. The check still runs,
+because a check that never invokes SwiftPM is unaffected. The network stays
+closed either way. Copying needs a CoW-capable filesystem (APFS, or Linux with
+reflinks); without one the package is reported unprepared, not deep-copied.
+
 The protected `CARGO_TARGET_DIR` remains a fresh check-private copy seeded from
 the stable trusted target store; Cargo does not record that target-directory
 path as a registry source identity. `RUSTUP_HOME` is the stable, shared,
 read-only toolchain root. The check tree itself remains fresh, with workspace
 members addressed relative to that root, and CAR injects no variable
 `--remap-path-prefix` into protected checks.
+
+Protected verifier checks can also reuse SwiftPM dependencies from the baseline
+cache snapshot without network access. A manifest-listed `.build` root belongs
+to the verifier: CAR inspects every component of its package path without
+following symlinks, removes any delivered directory or symlink at the final
+`.build` path, then clones and relocates the baseline copy. A symlinked package
+ancestor or a final root CAR cannot remove refuses the check; if the safe clone
+fails, the root stays absent rather than falling back to package sources supplied
+through the delivered tree.
 
 Daemon-owned Git in builder-shared and verifier trees passes
 `-c core.fsmonitor=false -c core.hooksPath=/dev/null`, preventing repository
@@ -944,14 +985,38 @@ credential. `error` carries a mid-run loop error that did not end the run.
 Before anything is delivered, a model from a different vendor than the builder
 reads the verified work and may raise findings. The default auditor is Kimi K3
 through OpenRouter (`openrouter/moonshotai/kimi-k3`), so the CAR daemon needs
-`OPENROUTER_API_KEY` in its own environment; without an eligible auditor the
-run is refused and the refusal names that key. Anthropic models are never used
+`OPENROUTER_API_KEY` in its own environment. With no OpenRouter or Google key,
+an operator signed in to Parslee (`car auth login`) is audited through a
+Parslee route whose upstream vendor the catalog records —
+`parslee/openrouter/frontier-general` (GPT-5.4) for an Anthropic builder,
+`parslee/openrouter/frontier-multimodal` (Gemini 3.1 Pro) for an OpenAI one.
+What must differ from the builder is that upstream vendor, not Parslee. The
+Parslee capability routes (`parslee/reasoning`, `parslee/advisor`,
+`parslee/fast`) cannot be auditors: the gateway chooses what serves them, so
+the catalog records no vendor for them and naming one is refused with that
+reason. (A builder running on one of those routes is placed as OpenAI by
+assumption, since that is what they have served.) Without an eligible auditor
+the run is refused, and the refusal names
+`OPENROUTER_API_KEY` and the Parslee sign-in. Anthropic models are never used
 as the auditor, whether through an Anthropic API key, OpenRouter, a Parslee
 alias, or a Claude subscription, and naming one in `auditor_model` in
 `~/.car/coder.toml` is refused. Local models (MLX, Apple Foundation and other
 on-device models) are never chosen automatically; one runs only when
 `auditor_model` names it. The full selection rules are under
 `auditor_model` in `docs/websocket-protocol.md`.
+
+This page covers `car code-task`, which always builds with CAR's own loop, so
+its builder's vendor is the vendor of the model that loop ran. Daemon sessions
+started with `car code --engine external:<cli>` or `foreman:<cli>` have no
+such model when CAR's loop wrote none of the change. The audit then takes the
+vendor from what the CLI ran: the models Claude Code names in its stream, then
+the `--model` pin (single-session runs only), then the vendor the CLI itself
+runs, but only when it ran without its user's own configuration
+(`--isolate-external-network` or a bound session). Codex's stream names no
+model, so an unpinned Codex session that read `~/.codex/config.toml` is
+refused. A distributed foreman run is refused because this host never sees
+its fleet workers' streams. The full rules are under `auditor_model` in
+`docs/websocket-protocol.md`.
 
 The auditor is offered no tools: a reply that is only a tool call carries no
 text. Its initial

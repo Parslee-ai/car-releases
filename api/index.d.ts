@@ -3452,6 +3452,9 @@ export class HostClient {
   /** Generated host wrapper for `lattice.connect.invite`. */
   latticeConnectInvite(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `lattice.connect.label`. */
+  latticeConnectLabel(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `lattice.connect.share`. */
   latticeConnectShare(paramsJson: string): Promise<string>;
 
