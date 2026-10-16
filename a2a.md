@@ -233,13 +233,8 @@ So the Python pattern for hosting a custom agent over A2A today is:
    tool name. The daemon emits a server-initiated `tools.execute` over the
    WebSocket; the binding hands the call to your callback and pipes the
    return value back as the JSON-RPC response.
-3. From Python: `register_tool_handler` currently raises
-   `NotImplementedError` (parity gap tracked in Parslee-ai/car-releases#38).
-   Until that lands, Python callers either (a) invoke
-   `execute_proposal(proposal_json, handler_fn)` per call to supply a
-   one-shot handler, or (b) connect to the daemon's WebSocket directly and
-   service `tools.execute` requests from there. There is no "decorate a
-   `def handle(input) -> output`" path yet.
+3. From Python: `register_tool_handler(handler_fn)` installs the same single
+   process-wide callback, multiplexing on the tool name.
 
 The Agent Card is auto-generated from the runtime's tool registry plus host
 metadata (`name`, `description`, `protocolVersion: "1.0"`, default

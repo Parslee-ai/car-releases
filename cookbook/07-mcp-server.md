@@ -98,6 +98,7 @@ left to be discovered:
 
 `assistant_cancel` lands at the next **turn boundary**, not mid-model-call —
 expect one more turn, then poll for the document describing what the run did.
+On an `until` run, a cancel also skips a goal check that has not started, and a check it interrupts is not graded.
 Runs are sandboxed by default (Docker, no network); `local: true` runs on the
 host **read-only**, because a tool call has no way to ask a human to approve a
 write. If your host is itself an agent CLI, send

@@ -149,6 +149,13 @@ existence/owner oracle on the write path either).
 - Same-key retries with the same reason/principal return the same receipt and
   digest. A different key after a terminal returns `already_terminal` bound to
   the immutable terminal digest and appends nothing after `ended`.
+- If `runs.cancel` returns an error after the run's terminal was committed (an
+  audit-journal append failed), a retry with the same `run_id`,
+  `idempotency_key` and `reason` journals whichever rows are missing, each
+  exactly once, before it returns the same receipt. This covers host orphan
+  closes and confirmed cancellations, including a retry from another
+  connection after the owner disconnected. If the daemon restarts first,
+  startup reconciliation journals the receipt.
 - If the durable run has no live metadata, or its live owner session is gone,
   and no cancellation row already exists, only a host-management caller may
   close the orphan. CAR durably records the body-free request and an
@@ -359,7 +366,11 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
 - **Params**: `{ agent_id }` — or, with `runs.pagination.v1` negotiated,
   `RunListRequest` `{ agent_id, cursor, limit }` (all required).
 - **Returns**: `{ agent_id, runs }` where `runs` is an array of
-  `RunSummary`, **newest first** (by `started_at`):
+  `RunSummary`, **newest first**. The legacy `{ agent_id }` shape orders by
+  `started_at`. The paginated `runs.pagination.v1` shape orders by durable
+  summary-index sequence, which normally follows start order; a `runs.start`
+  retried after later runs were indexed takes the newest sequence, so that run
+  lists first there:
   - `RunSummary`: `{ run_id, agent_id, intent, started_at, ended_at?,
     status, turn_count }` where `status` is `in_progress` | `completed` |
     `incomplete` and `turn_count` is the number of persisted model and action

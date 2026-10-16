@@ -233,6 +233,14 @@ export class CarRuntime {
   disconnect(): Promise<void>;
 
   /**
+   * Identify the daemon session this runtime's calls land on, connecting first
+   * if needed. Registered tools, policies and state belong to that session, so
+   * a different value than last time (after `close()`, or a daemon restart the
+   * client reconnected through) means they must be registered again.
+   */
+  connectionEpoch(): Promise<number>;
+
+  /**
    * Invoke any daemon JSON-RPC method with a JSON-encoded params value.
    * `daemonCall` is the call-by-name escape hatch; use the typed wrappers as the primary API.
    * The result is returned as JSON. Daemon rejections are `DaemonRpcError`;
@@ -240,7 +248,7 @@ export class CarRuntime {
    */
   daemonCall(method: string, paramsJson: string): Promise<string>;
 
-  /** Host-management-token twin of `daemonCall`; the method allowlist remains enforced. */
+  /** Host-management-token twin of `daemonCall`; the method allowlist remains enforced. It admits the owner-gated Coder methods (`coder.respond`, `coder.revise_contract`, `coder.confirm_contract`, `coder.refresh_review`, `coder.approve_merge`, `coder.cancel`), but refuses `coder.confirm_contract` and `coder.approve_merge` on an agent build: building an agent needs the CAR app or `car agent new` in your terminal. */
   daemonCallHostManagement(method: string, paramsJson: string): Promise<string>;
 
   /** List durable permission grants using host-management authority. */
@@ -625,16 +633,16 @@ export class CarRuntime {
   /** Generated daemon wrapper for `feedback.submit` (operator). */
   feedbackSubmit(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `goal.clear` (operator). */
+  /** Generated daemon wrapper for `goal.clear` (agent). */
   goalClear(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `goal.set` (operator). */
+  /** Generated daemon wrapper for `goal.set` (agent). */
   goalSet(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `goal.status` (operator). */
+  /** Generated daemon wrapper for `goal.status` (agent). */
   goalStatus(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `goal.suggest` (operator). */
+  /** Generated daemon wrapper for `goal.suggest` (agent). */
   goalSuggest(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `host.subscribe` (operator). */
@@ -664,28 +672,28 @@ export class CarRuntime {
   /** Generated daemon wrapper for `inference.runner.fail` (operator). */
   inferenceRunnerFail(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `lattice.claim` (operator). */
+  /** Generated daemon wrapper for `lattice.claim` (owner). */
   latticeClaim(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `lattice.claims` (operator). */
+  /** Generated daemon wrapper for `lattice.claims` (owner). */
   latticeClaims(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `lattice.find` (operator). */
+  /** Generated daemon wrapper for `lattice.find` (owner). */
   latticeFind(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `lattice.join` (operator). */
+  /** Generated daemon wrapper for `lattice.join` (owner). */
   latticeJoin(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `lattice.leave` (operator). */
+  /** Generated daemon wrapper for `lattice.leave` (owner). */
   latticeLeave(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `lattice.nodes` (operator). */
+  /** Generated daemon wrapper for `lattice.nodes` (owner). */
   latticeNodes(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `lattice.release` (operator). */
+  /** Generated daemon wrapper for `lattice.release` (owner). */
   latticeRelease(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `lattice.wait` (operator). */
+  /** Generated daemon wrapper for `lattice.wait` (owner). */
   latticeWait(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `meeting.get` (operator). */
@@ -823,25 +831,25 @@ export class CarRuntime {
   /** Generated daemon wrapper for `multi.vote` (operator). */
   multiVote(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.abandon` (operator). */
+  /** Generated daemon wrapper for `multiplayer.abandon` (operator_only). */
   multiplayerAbandon(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.get` (operator). */
+  /** Generated daemon wrapper for `multiplayer.get` (operator_only). */
   multiplayerGet(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.list` (operator). */
+  /** Generated daemon wrapper for `multiplayer.list` (operator_only). */
   multiplayerList(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.merge_check` (operator). */
+  /** Generated daemon wrapper for `multiplayer.merge_check` (operator_only). */
   multiplayerMergeCheck(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.publish` (operator). */
+  /** Generated daemon wrapper for `multiplayer.publish` (operator_only). */
   multiplayerPublish(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.start_stage` (operator). */
+  /** Generated daemon wrapper for `multiplayer.start_stage` (operator_only). */
   multiplayerStartStage(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.submit_stage` (operator). */
+  /** Generated daemon wrapper for `multiplayer.submit_stage` (operator_only). */
   multiplayerSubmitStage(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `nlp.extract_entities` (operator). */
@@ -967,7 +975,7 @@ export class CarRuntime {
   /** Generated daemon wrapper for `session.auth` (agent). */
   sessionAuth(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `session.bindSandbox` (agent). */
+  /** Generated daemon wrapper for `session.bindSandbox` (operator_only). */
   sessionBindSandbox(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `session.bindSubstrate` (operator). */
@@ -1666,7 +1674,9 @@ export class CarRuntime {
   /**
    * `agents.peers` — visible peers as JSON. Each row distinguishes the
    * kind-level `can_receive` capability from the current `reachable` delivery
-   * preflight; the send remains authoritative.
+   * preflight; the send remains authoritative. `{"organization_directory": true}`
+   * adds the colleague directory of the organization this connection is bound
+   * to, from what the CAR already holds.
    */
   agentsPeers(requestJson: string): Promise<string>;
   /** `agents.message` — send text to one peer: `{ to, body, summary? }`. The sender is derived server-side. */
@@ -1769,7 +1779,11 @@ export class CarRuntime {
    * `approved_no_patch` | `rejected_by_gate` | `measurement_failed` |
    * `config_moved_during_measurement` (a graded promotion whose measured base
    * was moved by something else while the replays ran — nothing applied, both
-   * values reported, no backoff). When `context_measure` was requested the
+   * values reported, no backoff) | `config_moved_since_diagnosis` (a
+   * human-approved patch whose `conversation_keep_recent` moved after
+   * diagnosis — nothing applied, `diagnosed_under_conversation_keep_recent` and
+   * `current_conversation_keep_recent` reported, no backoff). When
+   * `context_measure` was requested the
    * summary also carries `context_measured: { status: "measured" |
    * "skipped_dry_run", grade_attempts, model, split, split_seed }`.
    *
@@ -2002,9 +2016,11 @@ export class CarRuntime {
    * with reasoning suppressed to produce a direct answer, or
    * `"thinking_truncated"` when even that retry was empty (car-releases#60).
    *
-   * `local_last_resort` is present and true ONLY when CAR appended an
-   * installed on-device model behind a remote-only chain and that model
-   * actually served the turn. An explicitly selected local model is not marked.
+   * `local_last_resort` is present and true ONLY when CAR appended a
+   * model installed through CAR (under CAR's models dir or with an install
+   * receipt; a model only in the shared Hugging Face cache is skipped and
+   * named with `car models adopt`) behind a remote-only chain and that
+   * model actually served the turn. An explicitly selected local model is not marked.
    *
    * `auth_fallback_from` is present ONLY when a candidate earlier in the
    * fallback chain was skipped because its credential was **rejected**
@@ -2164,7 +2180,9 @@ export class CarRuntime {
 
   /**
    * Fetch a URL and extract readable text (keyless; companion to `search`).
-   * Returns JSON `{ url, status, content_type, title?, text }`.
+   * Returns JSON `{ url, status, content_type, title?, text }`. Only the
+   * first 8 MiB of the body are read; a longer page's `text` ends in
+   * `…[truncated]…`.
    */
   webFetch(url: string): Promise<string>;
 
@@ -2238,7 +2256,10 @@ export class CarRuntime {
    *   weights_ready, downloads_weights,
    *   max_output_tokens, public_benchmarks, cost, car_enabled, can_remove,
    *   in_use, management_evidence, fit, estimated_peak_mb,
-   *   platform_compatible, deprecated, family, version }`. `available` means CAR
+   *   platform_compatible, deprecated, credential_required,
+   *   unavailable_reason, family, version, source_kind }`. `source_kind` is the
+   * row's source `type` tag (`codex_cli`, `remote_api`, `proprietary`, ...),
+   * which keeps two routes to one model apart. `available` means CAR
    * can use the model
    * here — for a local MLX entry with a declared `hf_repo` it is `true`
    * before a byte is fetched, because it lazy-downloads on first use —
@@ -2498,7 +2519,7 @@ export class CarRuntime {
    * JSON may carry `network_approved: true` and
    * `approved_credentials: string[]`. Credential approval is limited to names
    * declared by that exact check; changing its name, command, or declarations
-   * drops carried approval.
+   * drops carried approval. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderConfirmContract(
     sessionId: string,
@@ -2556,6 +2577,7 @@ export class CarRuntime {
 
   /**
    * Answer a `user_input_requested` event, or queue native steering with steer=true.
+   * Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderRespond(sessionId: string, text: string): Promise<string>;
   coderRespond(sessionId: string, text: string, steer: boolean | null): Promise<string>;
@@ -2570,7 +2592,7 @@ export class CarRuntime {
    * reply is `{state: "reported", branch: null}`. A plain `approve: true` on
    * a finding, or `acceptFinding` on a diff, is refused. Successful delivery
    * replies include `excluded_artifacts` with the exact records used by the
-   * committed staging pass.
+   * committed staging pass. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderApproveMerge(
     sessionId: string,
@@ -2596,6 +2618,7 @@ export class CarRuntime {
    * `message` names what already happened. Callers that cancel unconditionally
    * on shutdown depend on that — rejecting would turn a quiet exit into a
    * protocol error whenever the session raced to terminal first.
+   * Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   /** `reason` names a non-operator cause and is recorded as `cancelled: <reason>`; omit it only when a person cancelled. */
   coderCancel(sessionId: string, reason?: string | undefined | null): Promise<string>;
@@ -2642,7 +2665,7 @@ export class CarRuntime {
    * Returns `{state: "running", review_refresh: true}`; the outcome arrives on
    * the event stream. Passing checks return the session to `needs_approval`
    * with a new diff; failing checks fail it and keep the worktree. Delivery
-   * still needs a separate `coderApproveMerge`.
+   * still needs a separate `coderApproveMerge`. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderRefreshReview(sessionId: string): Promise<string>;
 
@@ -2656,7 +2679,7 @@ export class CarRuntime {
    * message}`. **Check `revised` before trusting `contract`**: on a redraft
    * that does not validate, the previous contract comes back byte-identical
    * with `revised: false` and a `message` explaining why, and the daemon emits
-   * a `contract_revision_rejected` event.
+   * a `contract_revision_rejected` event. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderReviseContract(sessionId: string, request: string): Promise<string>;
 
@@ -2734,6 +2757,10 @@ export class CarRuntime {
   /**
    * Discover what the signed-in Parslee account can do — identity, m365
    * product entitlements, and Studio reachability. Read-only. Returns JSON.
+   * Resolves `{authenticated: false, hint, error?}` when signed out; rejects
+   * with the underlying failure when Parslee could not answer the session
+   * check (a rate limit, an outage, or no session answer) or denied this
+   * signed-in account access (HTTP 403).
    */
   parsleeCapabilities(): Promise<string>;
   /**
@@ -3557,6 +3584,18 @@ export class HostClient {
   /** Generated host wrapper for `models.storage_roots`. */
   modelsStorageRoots(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `openai_codex.auth_cancel`. */
+  openaiCodexAuthCancel(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `openai_codex.auth_start`. */
+  openaiCodexAuthStart(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `openai_codex.sign_out`. */
+  openaiCodexSignOut(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `openai_codex.status`. */
+  openaiCodexStatus(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `openrouter.auth_cancel`. */
   openrouterAuthCancel(paramsJson: string): Promise<string>;
 
@@ -4005,7 +4044,22 @@ export interface DispatchVoiceTurnResponse {
 
 export type VoiceTurnEvent =
   | { type: 'voice.turn.fast_delta'; turn_id: number; text: string }
-  | { type: 'voice.turn.fast_done'; turn_id: number }
+  | {
+      type: 'voice.turn.fast_done';
+      turn_id: number;
+      /** Present (true) only when the on-device last resort answered the fast track. */
+      local_last_resort?: true;
+      /** The model the request was routed to, when the last resort stood in for it. */
+      substituted_from?: string;
+      /** Why `substituted_from` did not serve. */
+      substitution_reason?:
+        | 'credential_rejected'
+        | 'credential_absent'
+        | 'rate_limited'
+        | 'quota_exhausted'
+        | 'timed_out'
+        | 'failed';
+    }
   | {
       type: 'voice.turn.bridge';
       turn_id: number;

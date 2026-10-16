@@ -24,8 +24,8 @@ The dispatcher follows standard JSON-RPC classification: an `unknown method: ...
 Runtime discovery for clients that cannot read files or run `car capabilities`.
 
 - **Params:** `{}`.
-- **Returns:** `{ caller_role, count, methods: [{ method, role }] }`, sorted by method through the generated capability table. Each role is one of `agent`, `owner`, `operator`, or `host` and is the same derived role published in the generated capability manifest (`car capabilities --json`, car.parslee.ai/capabilities.json).
-- **Filtering:** an agent-scoped session receives `agent`, resource-conditional `owner`, and ungated `operator` rows, but never `host`; an unbound daemon session receives `operator`; a host-management session receives `host`, `owner`, and `operator`. Ownership remains checked against the concrete resource when an owner method is called.
+- **Returns:** `{ caller_role, count, methods: [{ method, role }] }`, sorted by method through the generated capability table. Each role is one of `agent`, `owner`, `operator`, `operator_only`, or `host` and is the same derived role published in the generated capability manifest (`car capabilities --json`, car.parslee.ai/capabilities.json). `operator_only` means an unbound operator client or host may call the method, but a supervised agent may not.
+- **Filtering:** an agent-scoped session receives `agent`, resource-conditional `owner`, and ungated `operator` rows, but never `operator_only` or `host`; an unbound daemon session receives `operator` and `operator_only`; a host-management session receives `host`, `owner`, `operator_only`, and `operator`. Ownership remains checked against the concrete resource when an owner method is called.
 
 The package form is `daemonCall("capabilities.list", "{}")` / `daemon_call("capabilities.list", "{}")`: the second argument is a JSON string even though the wire params are an object. The generated typed forms are `capabilitiesList("{}")` and `capabilities_list("{}")`.
 
@@ -170,7 +170,7 @@ An assistant run takes minutes, so `assistant_start` returns a handle immediatel
 
 **The poll envelope is the `car.do/1` envelope.** `events` are exactly the JSONL progress events `car do --json` writes to stderr, each with a `seq` added. A terminal poll's `result` is exactly the `car.do/1` document `car do --json` writes to stdout — `summary`, `turns`, `model_used`, `receipts`, `ungrounded_claims`, `sandbox`, `elapsed_seconds`, and `goal` for an `until` run — including its truncation caps. Both are documented in `docs/car-do-json.md`; there is no second envelope to learn.
 
-Read `status` twice. The poll's own `status` (`running` | `ok` | `error` | `cancelled`) describes the **handle**; `result.status` (`success` | `max_turns` | `stalled` | `goal_pending` | `cancelled` | `error`) describes the **work**. A run that stopped at its turn cap is `status: "ok"` with `result.status: "max_turns"`; so are `stalled` (the loop stopped making progress) and `goal_pending` (an `until` run whose check never passed). Handle-`ok` means "the loop reached a terminal outcome", not "the work succeeded" — read `result.status` for that, and match it exhaustively rather than assuming the set above is closed.
+Read `status` twice. The poll's own `status` (`running` | `ok` | `error` | `cancelled`) describes the **handle**; `result.status` (`success` | `success_substituted` | `max_turns` | `stalled` | `goal_pending` | `cancelled` | `error`) describes the **work**; `success_substituted` is an answer from a model other than the one the run named, with `result.substituted_from` and `result.substitution_reason` saying which and why. A run that stopped at its turn cap is `status: "ok"` with `result.status: "max_turns"`; so are `stalled` (the loop stopped making progress) and `goal_pending` (an `until` run whose check never passed). So is a run that tried an action and never got it done: handle `status: "ok"` with `result.status: "error"` and `result.failure.cause` of `approval_denied`, `needed_approval` or `action_failed`. This is common here, because a `local: true` run always denies gated tools. Handle `status: "error"` with `result.status: "error"` still means an inference failure, `auth_required`, or a task that died. Handle-`ok` means "the loop reached a terminal outcome", not "the work succeeded" — read `result.status` for that, and match it exhaustively rather than assuming the set above is closed.
 
 Bounds, all reported rather than implied:
 
@@ -179,7 +179,7 @@ Bounds, all reported rather than implied:
 - **A 2000-event buffer**, trimmed at the head. `events_skipped` is how many events were dropped before your `since_seq`, so a gap is stated and never silent. Surviving events keep their original `seq`. A poll returns everything at or after `since_seq` with no per-poll cap, so `since_seq: 0` on a long run can hand you all 2000 at once — pass `next_seq` and poll incrementally, because every one of those events lands in the calling model's context.
 - **No cap on retained *records*.** The 8-run limit counts executing runs; a terminal record stays pollable (with its events) until the idle TTL reaps it. A client that starts many short runs and never polls them again holds those buffers for up to an hour.
 
-`assistant_cancel` lands at the next **turn boundary**, not mid-model-call — expect one more turn's worth of activity, then poll for the document describing what the run had done. Cancelling a finished or unknown run is a successful no-op.
+`assistant_cancel` lands at the next **turn boundary**, not mid-model-call — expect one more turn's worth of activity, then poll for the document describing what the run had done. Cancelling a finished or unknown run is a successful no-op. On an `until` run, a cancel also skips a goal check that has not started, and a check it interrupts is not graded.
 
 **A run handle is not a durable record.** The registry is in memory: after a daemon restart every `run_id` is unknown, and `assistant_poll` returns `isError: true` saying so rather than an empty `running` forever. A run whose task dies without producing an outcome is likewise settled by the next poll, as `status: "error"` with a `car.do/1` `result` naming `run_task_died` — a dead run is never reported as still running.
 
@@ -652,7 +652,7 @@ the daemon's own WebSocket token presented to `session.auth`.
 |--------------------|------------|------------------|-------|
 | `openai/*` API rows | OpenAI Platform API key | Set `OPENAI_API_KEY` or run `car keys set openai`. | These are the `RemoteApi` rows that call `api.openai.com`; this excludes the Codex CLI row below. |
 | `openai/gpt-5.6-sol:high` | The Codex CLI's own ChatGPT sign-in | Install the Codex CLI and run `codex login`. | CAR launches the CLI with `OPENAI_API_KEY` removed; the CLI owns its authentication. |
-| `openai-codex/*` | ChatGPT subscription credential, not an API key: the stored `CAR_OPENAI_CODEX_OAUTH` record | Run `car auth login --provider openai-codex`. | Requests go to `https://chatgpt.com/backend-api/codex/responses`, never `api.openai.com`, and do not use `OPENAI_API_KEY`. Only the `openai-codex` provider may use this credential gate. Usage is reported as `subscription`, never a dollar figure. |
+| `openai-codex/*` | ChatGPT subscription credential, not an API key: the stored `CAR_OPENAI_CODEX_OAUTH` record | Run `car auth login --provider openai-codex`. | Requests go to `https://chatgpt.com/backend-api/codex/responses`, never `api.openai.com`, and do not use `OPENAI_API_KEY`. A schema whose endpoint is anything other than `https://chatgpt.com/backend-api` (blank resolves to it) is refused before the credential is read, and a redirect off that origin fails the request. Only the `openai-codex` provider may use this credential gate. Usage is reported as `subscription`, never a dollar figure. |
 | `anthropic/*` | Anthropic API key | Set `ANTHROPIC_API_KEY` or run `car keys set anthropic`. | The catalog names `ANTHROPIC_API_KEY` for these remote API rows. |
 | `parslee/*` | Parslee OAuth2 PKCE sign-in | Run `car auth login`. | Only `parslee` rows may use this credential gate. |
 | `openrouter/*` | OpenRouter API key from the environment, the pasted-key slot, or the daemon-owned OAuth slot | Set `OPENROUTER_API_KEY`, run `car keys set openrouter`, or connect the OpenRouter account in CarHost. | Resolution order is environment, pasted key, then OAuth. |
@@ -1102,7 +1102,13 @@ application methods.
   authorization_header: string, identity: ParsleeIdentity }`.
 - **Errors**: generic `-32603` with
   `"Parslee account not authenticated; run `car auth login`"` when
-  the user has not connected a Parslee account.
+  the user has not connected a Parslee account, or Parslee refused the
+  stored session (HTTP 401). When Parslee is rate-limited, failing or
+  unreachable, the error is that failure (for example
+  `"fetch Parslee session: HTTP 503 …"`), not the sign-in message. When
+  Parslee answers 403 — the session is valid and the account lacks access —
+  the error says access was denied, because signing in again does not change
+  that.
 - Purpose: lets managed agents use CAR as the bridge from local
   daemon auth (`CAR_AUTH_TOKEN`) to the user's Parslee backend
   auth without injecting the Parslee bearer token into every child
@@ -1130,10 +1136,15 @@ application methods.
                 "bearer_accepted": true, "probe_status": 200, "note": "..." }
   }
   ```
-- **Returns** (not signed in, or a stored session that can't be established —
-  e.g. an expired refresh token): `{ authenticated: false, hint: string,
-  error?: string }`. `error` carries the underlying reason when a stored
-  session failed to refresh (re-authenticate with `car auth login`).
+- **Returns** (not signed in, Parslee refused the stored session, or the local
+  credential store could not be read): `{ authenticated: false, hint: string,
+  error?: string }`. `error` appears only when the local credential store could
+  not be read, and carries that reason.
+- **Errors**: generic `-32603` carrying the underlying failure when Parslee
+  answered the session check with a rate limit or a server error, answered with
+  something that is not a session answer, or could not be reached; or when it
+  answered 403, meaning the account is signed in and lacks access. None of
+  these is a missing sign-in, so none is reported as `authenticated: false`.
 - Read-only discovery: resolves the Parslee bearer, reads the account
   identity, fetches the active org's product entitlements from m365
   (`/api/v1/orgs/{orgId}/entitlements`), and probes Studio with the bearer
@@ -1164,8 +1175,8 @@ application methods.
   section_count, generation_time_ms, document_type, output_file_path }`.
 - **Errors** (generic `-32603`): not signed in; no active organization; the
   `aie` product not enabled for the org (the message lists the enabled
-  products); brief too short/long or missing output path; or the upstream m365
-  HTTP error.
+  products); brief too short/long or missing output path; the Parslee
+  session-check failure (rate limit / outage); or the upstream m365 HTTP error.
 - Generates the document content with AI, builds a `.docx`, and uploads it to
   the user's connected drive (OneDrive / Google Drive — provider chosen by org
   config) at `output_file_path`. Synchronous: returns once the file is saved.
@@ -1216,6 +1227,7 @@ behavior. This section is long — for a compact map of every method with deep l
 - [vision](websocket-protocol/vision.md#vision) <!-- ws-protocol:include -->
 - [memory](websocket-protocol/memory.md#memory) <!-- ws-protocol:include -->
 - [models](websocket-protocol/models.md#models) <!-- ws-protocol:include -->
+- [openai_codex](websocket-protocol/openai-codex.md#openai_codex) <!-- ws-protocol:include -->
 - [multi](websocket-protocol/multi.md#multi) <!-- ws-protocol:include -->
 - [permissions](websocket-protocol/permissions.md#permissions) <!-- ws-protocol:include -->
 - [proposal](websocket-protocol/proposal.md#proposal) <!-- ws-protocol:include -->

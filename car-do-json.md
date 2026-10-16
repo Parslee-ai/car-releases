@@ -42,7 +42,13 @@ An omitted goal is restored from the checkpoint. A different goal, a different
 working repository, or a changed model-visible tool set is refused before
 inference. The resumed loop keeps the same run id, prior tool receipts, task list, and
 receipt-journal hash chain, and numbers its next inference turn after the last
-completed checkpointed turn. The restored task list is rendered in the next
+completed checkpointed turn. That turn total is the loop's own count, so history
+compaction never lowers it and `max_turns` stays a cap over the whole run. If the
+run stopped after the model asked for tool calls but before every result was
+recorded, those calls are not run again (the stopped process may already have
+run them): each one is answered with a failed result saying its outcome is
+unknown and it was not replayed, before the next inference, and a `text` event
+names their tools. The restored task list is rendered in the next
 turn's state block and reported as a `todos` event on that turn's first
 successful `todo_write`, not at startup. `--resume` is for one-shot runs and cannot be
 combined with `--serve`, `--until`, or `--infer-until`. A new run remains usable
@@ -63,10 +69,10 @@ checking `status` gets a missing key rather than quietly presenting a transport
 failure as the run's answer.
 
 ```jsonc
-// status: "success" | "max_turns"
+// status: "success" | "success_substituted" | "max_turns"
 {
   "schema": "car.do/1",
-  "status": "success",
+  "status": "success_substituted",  // "success" when nothing substituted (below)
   "run_id": "run-…",          // pass to car do --resume after an interrupted run
   "summary": "…",              // the assistant's final text
   "turns": 7,                  // the parent loop's own turns — a delegate's are not counted
@@ -74,8 +80,11 @@ failure as the run's answer.
   "model_used": "mlx/qwen3-4b:4bit", // canonical model on the final turn
   "models_served": [             // every completed turn, in order
     { "model_id": "openai/gpt-5", "local_last_resort": false },
-    { "model_id": "mlx/qwen3-4b:4bit", "local_last_resort": true }
+    { "model_id": "mlx/qwen3-4b:4bit", "local_last_resort": true,
+      "substituted_from": "openai/gpt-5", "substitution_reason": "timed_out" }
   ],
+  "substituted_from": "openai/gpt-5",  // only when a turn was answered by a substitute
+  "substitution_reason": "timed_out",
   "receipts": { … },
   "ungrounded_claims": [ … ],
   "sandbox": { … },
@@ -84,6 +93,40 @@ failure as the run's answer.
   "goal": { … }                // only for --until / --infer-until runs
 }
 ```
+
+**`success_substituted` is an answer, but not from the model you asked for.**
+A run that finished with an answer keeps the `summary` shape and exits 0 either
+way; `status` is `"success"` only when every turn was answered by the model the
+run named. When any turn was answered by a substitute, `status` is
+`"success_substituted"` and the document adds `substituted_from` (the model the
+run named) and `substitution_reason`. There are two ways it happens:
+
+- **At request time**, without `--strict-model`: the named model fails — a
+  rejected credential, a timeout, a 5xx — and CAR finishes the turn on an
+  on-device model installed through CAR. `substitution_reason` is
+  `credential_rejected`, `credential_absent`, `rate_limited`,
+  `quota_exhausted`, `timed_out`, or `failed`, and the turn's `models_served`
+  entry has `local_last_resort: true`.
+- **At startup**: the named model cannot call tools, or is not available here,
+  and `car do` picks another (it says so on stderr, too). `substitution_reason`
+  is `not_tool_capable` or `unavailable` — `unavailable` also covers a listed
+  model too large for this machine's memory — and every turn that substitute
+  serves carries the same two fields.
+
+The top-level fields describe the first substitution; each substituted turn
+also carries them in `models_served` and on its `model_served` event. Their
+absence means nothing substituted. A run that stopped at `max_turns` or
+`stalled` keeps that status and still carries the two fields when it
+substituted, and so do the `error` and `auth_required` documents.
+
+"Installed through CAR" means the model's files are in CAR's models directory —
+put there by `car models install` / `car models pull`, CarHost's Models setup,
+or by hand — or CAR holds its install receipt. A model whose only copy is a
+snapshot in the shared Hugging Face cache is never substituted; when the run
+then fails with no fallback, the error names `car models adopt <id>` for each
+such model, which makes it eligible. Among eligible on-device models the
+fallback is the most capable that fits in free memory: a tool-capable one first,
+then the largest. Pass `--strict-model` to fail instead of substituting at all.
 
 ```jsonc
 // status: "error"
@@ -130,6 +173,31 @@ failure as the run's answer.
 }
 ```
 
+A run that tried an action and never got it done also ends with
+`status: "error"`, even when the model's final answer explains why politely.
+`error` and `failure.cause` say which:
+
+- `"ApprovalDenied"` / `"approval_denied"` — a person declined at the prompt,
+  or a standing answer they saved said no.
+- `"NeededApproval"` / `"needed_approval"` — nobody could be asked: no
+  terminal (piped input, a CI job), the prompt could not be shown, or the
+  request timed out.
+- `"ActionFailed"` / `"action_failed"` — the action could not run, or
+  the approval machinery around it failed.
+
+`message` is the model's answer followed by a plain line saying the request did
+not finish. A refused action is cleared only by a later successful call of the
+same tool **with the same arguments**: approving a fetch of one URL does not
+fetch the URL that was declined. A failed action is cleared by any later
+successful call of the same tool, since that is how a model corrects arguments
+it got wrong. A command that ran and exited non-zero (a `grep` that found
+nothing) is a result the model reads, not a failed action.
+
+**Exit codes for a batch run** follow whether the turn finished: `0` when it
+did (`success`), `1` when it did not (`error`, `max_turns`, `stalled`,
+`cancelled`, including a refused action), `3` for `auth_required`, and `2`
+when the run never started.
+
 On an `AssistantLoopFailed` inference error, `failure.cause` is
 `"transient_inference"` when the remote retry budget was exhausted and
 `"inference"` for another generation failure. A transient failure also carries
@@ -153,8 +221,7 @@ Parslee inference through a Parslee account, so a run with no usable account
 ends here rather than on a local model: the turn was refused, not attempted.
 It takes the failure shape — no `summary` — because it is not an answer, and
 `reason` is what you branch on (`message` is for a person to read). A batch
-run exits **1**, through the same mapping as any other non-answer; exit 2
-still means the run never started. `reason` and `message` are additive fields
+run exits **3**; exit 2 still means the run never started. `reason` and `message` are additive fields
 on the existing schema, so `car.do/1` is unchanged.
 
 An explicit `--model` or `CAR_DO_MODEL` is not affected: naming a model keeps
@@ -332,11 +399,11 @@ Each stderr line is `{"type", "phase", "message", "data"}`.
 | `started` | Run began. `data` carries the goal, model, sandbox posture, and `work_context` (the bound org, or `null`). |
 | `inference_started` | A model call is about to begin, emitted before CAR awaits the generator. `data.model` is the requested model (or `(router)`), `data.attempt` is `1`, and `data.turn` is the assistant turn. |
 | `inference_retry` | A transient remote failure will be retried. `data.model` is the canonical model, `data.attempt` is the attempt about to start, `data.reason` is a generic failure class (`http_status` or `transport`), and `data.backoff_ms` is the delay before it starts. Provider response bodies are never copied into this event. |
-| `model_served` | One model call completed. `data.model_id` is the canonical model that served the turn; `data.local_last_resort` is true only when CAR appended and then used an on-device model behind a remote-only chain. |
+| `model_served` | One model call completed. `data.model_id` is the canonical model that served the turn; `data.local_last_resort` is true only when CAR appended and then used an on-device model behind a remote-only chain, and on a substituted turn (last resort, or every turn after a startup substitution) `data.substituted_from` and `data.substitution_reason` name the model it stood in for and why. |
 | `text` | The model's prose for a turn — plus the loop's own bracketed notices (below). |
 | `tool_called` | A tool is about to run. `data.call_id` is CAR-generated, `data.sequence` is its one-based position in the turn, plus `data.tool` and `data.brief` (the goal, for `delegate`). |
 | `tool_result` | A tool succeeded. `data.call_id` and `data.sequence` match its `tool_called` event. |
-| `tool_failed` | A tool failed, was denied, or was cancelled. `data.call_id` and `data.sequence` still close the matching request. |
+| `tool_failed` | A tool failed, was denied, or was cancelled. A tool that returned normally but reported its own failure (`"ok": false`, a non-null `error`, `"success": false`, or `"status": "Failed"` in its top-level result) also emits `tool_failed`. `data.call_id` and `data.sequence` still close the matching request. |
 | `todos` | The run's whole task list after a successful `todo_write`. `data.items` is `[{id, text, status}]`, where `status` is `open`, `done`, or `dropped`. Not emitted for a rejected write. |
 | `goal_evaluated` | One goal-loop verdict. `data.iteration`, `data.met`, `data.grounded`. |
 | `completed` | Run finished. `data.models_served` matches the terminal receipt. |
@@ -356,7 +423,7 @@ can never disagree about how the run ended.
 
 Human-readable `car do` prints `model: <id>` on stderr for every completed model
 turn. If the appended on-device last resort served it, the line is marked with a
-warning and says `(on-device last-resort fallback)`. This attribution is per
+warning and says `(on-device last-resort fallback in place of <requested>: <reason>)`. This attribution is per
 turn. On an assistant-loop error, the terminal block goes to stderr and prints
 the typed cause (when known), completed versus consumed turns, and preserved
 receipt totals/by-tool counts before the error message. The terminal document's
@@ -366,7 +433,7 @@ Durable assistant transcripts store the same `model_id` and
 `local_last_resort` metadata on each assistant message, without sending that
 metadata back to providers during replay.
 
-Three loop notices arrive as `text` events whose message starts with `[`, so a
+These loop notices arrive as `text` events whose message starts with `[`, so a
 consumer can tell them from the model's prose:
 
 | message starts with | Meaning |
@@ -375,6 +442,7 @@ consumer can tell them from the model's prose:
 | `[format repair: …]` | Under `--response-format` / `--json-schema`, the final answer was not the requested JSON (for a schema: did not conform) and the model was re-asked once with no tools. A second line says if the repaired answer still misses; it is returned as-is. |
 | `[format repair failed: …]` | The repair call itself errored (e.g. the model's protocol rejects the format); the DRAFT answer is returned. |
 | `[context window: …]` | `--context-window` asked for more than the model's known window and was clamped to it. |
+| `[N interrupted tool call(s) were not replayed: <tools>]` | On resume, tool calls the stopped run asked for but never recorded a result for were answered as failed with an unknown outcome, and were not run again. |
 
 ## Truncation
 

@@ -13,7 +13,9 @@ neither routed nor registered, so it is invisible to the model. Persisted to
 never in the manifest. WS-only (no FFI surface in Phase 1). Phase 1 supports
 unauthenticated and static-auth-header servers (`connectors.add`), OAuth 2.1
 servers (`connectors.authenticate` / `connectors.complete_authentication`),
-and local stdio servers (`connectors.add_stdio`).
+and local stdio servers (`connectors.add_stdio`). A remote (HTTP) connector
+reply longer than 8 MiB is an error naming the cap, rather than being read
+without end.
 
 **Governance.** A connector's tools are denied wholesale by registering a
 `policy.register { rule: "deny_connector", target: "<slug>", name: "…" }`

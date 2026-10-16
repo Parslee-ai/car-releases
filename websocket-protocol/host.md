@@ -104,7 +104,12 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   `details` is the structured payload surfaces render underneath it (the macOS
   dashboard as typed fields, the Windows tray and the iMessage/Slack prompts via
   `car_proto::approval_summary`); for a gate-raised row it is
-  `{ method, params_preview }`. `options` defaults to `["approve", "deny"]`.
+  `{ method, params_preview }`, and for a row mirrored from Chat it is exactly
+  `{ source: "chat", session_id, agent_id, tool, target, deadline, params_preview }`,
+  which surfaces render as tool / target / parameters (never `session_id`); a
+  row that claims `source: "chat"` while carrying any other key, or lacks
+  `session_id`/`tool`, gets the generic rendering. `options` defaults to
+  `["approve", "deny"]`.
 - `system_level: true` opts the row out of per-session ownership so any
   authenticated session (typically CarHost or `car-host approve`) can resolve it.
   Agents requesting user approval should always set it — session-owned is only
@@ -123,7 +128,10 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 
 #### `host.resolve_approval`
 - **Params**: `ResolveHostApprovalRequest` — `{ approval_id: string, resolution: string }`
-- **Returns**: resolved `HostApproval`
+- **Returns**: the `HostApproval` row. `status: "resolved"` with a `resolution`
+  different from the one sent means another decision already won (or the
+  approval expired), and this request was not applied. `status: "pending"`
+  means it was forwarded to the owning session.
 - `resolution` is the **verb**, matched against the row's `options` (default
   `["approve", "deny"]`); the gate treats anything other than its approve label
   as a denial. Both fields are required.
@@ -170,7 +178,12 @@ uses the chat event's `approval_id` and its `details` include
 Resolving that row through
 `host.resolve_approval` routes the decision to the parked chat gate rather than
 only changing ledger state. The agent's matching `approval_resolved` chat event
-also resolves the row, covering direct inline decisions and timeouts.
+also resolves the row, covering direct inline decisions and timeouts. When the
+parked gate refuses a decision, answering `resolved: false` (the call had
+already given up) or with an error, no `approval_resolved` follows: the daemon
+closes the row itself as `timeout` or `interrupted` respectively, and
+`host.resolve_approval` returns an error ("was not resolved by the parked
+gate").
 
 #### `browser.signin_needed` / `browser.signin_resolved`
 

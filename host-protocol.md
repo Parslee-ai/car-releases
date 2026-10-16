@@ -176,7 +176,10 @@ notifications:
   forwarded.
 - `model_served` — which model served this call. `model_id: string`,
   `local_last_resort: boolean` (true only when the appended on-device
-  last resort actually served). Emitted before each completed turn's
+  last resort actually served), and on such a turn
+  `substituted_from?: string` (the model the request named) and
+  `substitution_reason?: string` (`credential_rejected`, `credential_absent`,
+  `rate_limited`, `quota_exhausted`, `timed_out`, or `failed`). Emitted before each completed turn's
   content, so a turn with several model calls emits several of these;
   the macOS host captions the answer with the last one.
 - `token` — incremental text delta. `delta: string`.
@@ -184,7 +187,7 @@ notifications:
   `text?: string` (the full accumulated text). The daemon drops the
   routing entry on `done`; further events for this `session_id` are
   silently discarded.
-- `error` — agent-side error. `error: string`. Also terminal.
+- `error` — agent-side error. `error: string`. Also terminal. The built-in assistant adds `state: "not_done"` and a `cause` (`approval_denied`, `needed_approval`, `action_failed`, `unreachable`) so a host can tell an action that was not done from an inference failure without parsing `error`.
 - `tool_call` — agent invoking a tool that the host may want to
   render. `tool: string`, `params?: object`. Non-terminal. The macOS
   host renders a structured tool-call row (name + collapsible args).
@@ -237,8 +240,12 @@ notifications:
   `params.query`, `params.path` rather than render a blank one.
 - `approval_resolved` — authoritative resolution of the preceding chat
   gate. Carries the same `approval_id` and `resolution: "approve" | "deny" |
-  "timeout"`. Clients keep approval UI pending until
+  "timeout" | "cancelled"` (`"cancelled"` is what an agent emits after a
+  Stop; the daemon closes the ledger row itself). Clients keep approval UI pending until
   this arrives; the daemon uses it to resolve the matching host-ledger row.
+  The exception is a refused `agents.chat.approve`: after a `resolved: false`
+  or error reply no `approval_resolved` follows. That reply is the terminal
+  signal, and the daemon closes the row itself (`timeout` or `interrupted`).
 - Approval ids are opaque. The daemon mints one per approval the agent
   parks, and the flagship assistant's own ids are unique across turns and
   sessions too. Every turn of a chat shares one `session_id`, so a host
@@ -267,11 +274,25 @@ notifications:
   `local_verification`, `remote_main`, `ci_cd`, `deployment`, `health`,
   `production_browser_proof`. `ungrounded_claims?: string[]` is absent
   on the goal-turn shape. A host renders desktop actions instead of the
-  software matrix when any are present: successful reads are verified;
-  writes remain attempted until a later successful read contains the
-  same identifier, where "write" is the advertised tool definition's
-  own `mutating` flag rather than a name match. Both lists cover only
-  the turn that just ran. Missing evidence stays absent rather than inferred,
+  software matrix when any are present: a read is verified when it
+  succeeded and produced evidence by its own result fields (never with
+  `"ok": false`, `"success": false`, a non-null `error`, `"met": false`,
+  `"settled": false` or `"timed_out": true`; a `web_search` only with
+  results or an abstract; an `http_request` GET only with a 2xx final
+  response (not 204/205) and a body or `binary: true`, never
+  `undecodable: true`);
+  writes remain attempted until a later verified read contains the
+  same object identifier (a fetch never confirms a write by URL; a
+  browser read whose page `url`/`final_url` is the URL a browser
+  write targeted does, ignoring a lone trailing `/`), where "write" is the advertised tool
+  definition's own `mutating` flag rather than a name match
+  (`http_request` counts as a read only for GET, its default). Both
+  lists and the `completion` matrix cover only the turn that just ran;
+  on a goal turn that is every iteration of the goal run, and when its
+  rows exceed a list's cap the latest are kept. A `completion` stage's
+  evidence string carries the turn's `call_id` and the call's redacted
+  excerpt, bounded to 2,048 bytes overall; a call whose output reports a
+  non-null `error` records no stage. Missing evidence stays absent rather than inferred,
   so a host must not render an absent stage as passing. Non-terminal.
 
 ### Agent-side contract (`agent.chat`)
@@ -307,7 +328,11 @@ methods on its server-bound WS connection:
     param.
 - `agent.chat.cancel { session_id }` — notification (no id). Best-
   effort fire-and-forget; agent should short-circuit its inference
-  stream and `inference.stream.cancel` upstream.
+  stream and `inference.stream.cancel` upstream. It should also release
+  any approval it has parked and skip a goal check that has not run. The
+  bundled `car do --serve` assistant keeps the stopped turn in the
+  session's thread: a call it never ran reads as stopped, and call ids
+  on the same `session_id` continue from it.
 
 Streamed tokens go up the same WS as `agent.chat.event`
 notifications keyed by `session_id`. The daemon's interceptor

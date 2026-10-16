@@ -444,6 +444,11 @@
       "what_you_get_for_free": "The daemon, terminal host, native CLI, shared host state, and the agent-driven UI improvement loop.",
       "crates": [
         {
+          "name": "car-build-id",
+          "description": "Compile-time build identity for CAR binaries",
+          "readme": true
+        },
+        {
           "name": "car-cli",
           "description": "Native CLI for Common Agent Runtime",
           "readme": true
@@ -771,7 +776,7 @@
     },
     {
       "path": "board",
-      "description": "Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. Closing the board never stops a run"
+      "description": "Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board launched by an agent cannot. Closing the board never stops a run"
     },
     {
       "path": "bookmarks",
@@ -812,6 +817,10 @@
     {
       "path": "capabilities",
       "description": "Print the deterministic CAR capability manifest"
+    },
+    {
+      "path": "claude",
+      "description": "Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon"
     },
     {
       "path": "code",
@@ -1327,7 +1336,7 @@
     },
     {
       "path": "models fit",
-      "description": "CAR's memory-fit verdict for catalog rows on stated Apple Silicon machines, under both the `everyday` and `local_focused` policies — the same rule `models.list_unified` reports, without a machine of each size. Reads a row or an array of rows (as `car models add --dry-run --json` prints) from FILE, or stdin. Prints JSON. The verdict is the recommendation estimate `models.list_unified` shows, which sizes the KV cache from the parameter count; load-time admission uses an installed checkpoint's own KV geometry and the machine's live state, so it can differ"
+      "description": "CAR's memory-fit verdict for catalog rows on stated Apple Silicon machines, under both the `everyday` and `local_focused` policies — the same rule `models.list_unified` reports, without a machine of each size. Reads a row or an array of rows (as `car models add --dry-run --json` prints) from FILE, or stdin. Prints JSON. The verdict is the recommendation estimate `models.list_unified` shows, which sizes the KV cache from an installed checkpoint's own KV geometry, as load-time admission does, and from the parameter count for a row not installed; admission also uses the machine's live state, so it can differ. `platform_compatible` is false for a row CAR does not run on Apple Silicon at any size (a GGUF/Candle row, say), and its `smallest_mac_gb` is then null whatever the memory verdict"
     },
     {
       "path": "models list",
@@ -1707,7 +1716,7 @@
     },
     {
       "path": "update",
-      "description": "Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel)"
+      "description": "Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it"
     },
     {
       "path": "verify",
@@ -1858,7 +1867,7 @@
       },
       {
         "name": "http_request",
-        "description": "Fetch a URL or call an HTTP API. Defaults to GET. Returns the requested URL, final URL after redirects, response status, HTML title when present, and a size-capped body. Runs from the host, so it works even when the filesystem/shell are sandboxed offline."
+        "description": "Fetch a URL or call an HTTP API. Defaults to GET. Returns the requested URL, final URL after redirects, response status, HTML title when present, and a size-capped body. A non-text or undecodable response comes back flagged `binary` or `undecodable` with no body. Runs from the host, so it works even when the filesystem/shell are sandboxed offline."
       },
       {
         "name": "linked_devices",
@@ -1874,7 +1883,7 @@
       },
       {
         "name": "m365_task",
-        "description": "Delegate a task to the user's cloud Microsoft 365 assistant (their Parslee AI Employee) — email, calendar, contacts, CRM (HubSpot), meetings, and business research across their connected M365 and tools. Give a plain-language instruction like 'summarize my unread email from today', 'what's on my calendar tomorrow', 'draft a follow-up to the Acme thread', or 'find our latest deal with Contoso in HubSpot'. Returns the assistant's reply (and a conversation_id you can pass back to continue the same thread). IMPORTANT: actions that SEND or CHANGE things (send an email, create a calendar event) are drafted and returned for approval, not executed silently — relay the reply and let the user confirm. Mailbox / calendar access needs a connected Microsoft account; if it isn't connected the reply says so. When local macOS Calendar.app or Mail.app tools are available, prefer them for the user's on-device calendar or mailbox and use this cloud path for their connected work account or broader M365 tasks."
+        "description": "Delegate a task to the user's cloud Microsoft 365 assistant (their Parslee AI Employee) — email, calendar, contacts, CRM (HubSpot), meetings, and business research across their connected M365 and tools. Give a plain-language instruction like 'summarize my unread email from today', 'what's on my calendar tomorrow', 'draft a follow-up to the Acme thread', or 'find our latest deal with Contoso in HubSpot'. Returns the assistant's reply (and a conversation_id you can pass back to continue the same thread). IMPORTANT: actions that SEND or CHANGE things (send an email, create a calendar event) are drafted and returned for approval, not executed silently — relay the reply and let the user confirm. Mailbox / calendar access needs a connected Microsoft account; if it isn't connected the reply says so. If the M365 service itself fails, the result has ok: false and a support_code to quote to support. When local macOS Calendar.app or Mail.app tools are available, prefer them for the user's on-device calendar or mailbox and use this cloud path for their connected work account or broader M365 tasks."
       },
       {
         "name": "mail_draft",
@@ -3201,7 +3210,7 @@
         {
           "method": "fleet.worker.set",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         }
       ]
     },
@@ -3226,22 +3235,22 @@
         {
           "method": "goal.clear",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "goal.set",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "goal.status",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         },
         {
           "method": "goal.suggest",
           "documented": true,
-          "role": "operator"
+          "role": "agent"
         }
       ]
     },
@@ -3421,12 +3430,12 @@
         {
           "method": "lattice.claim",
           "documented": true,
-          "role": "operator"
+          "role": "owner"
         },
         {
           "method": "lattice.claims",
           "documented": true,
-          "role": "operator"
+          "role": "owner"
         },
         {
           "method": "lattice.connect.accept",
@@ -3476,12 +3485,12 @@
         {
           "method": "lattice.find",
           "documented": true,
-          "role": "operator"
+          "role": "owner"
         },
         {
           "method": "lattice.join",
           "documented": true,
-          "role": "operator"
+          "role": "owner"
         },
         {
           "method": "lattice.knock",
@@ -3521,12 +3530,12 @@
         {
           "method": "lattice.leave",
           "documented": true,
-          "role": "operator"
+          "role": "owner"
         },
         {
           "method": "lattice.nodes",
           "documented": true,
-          "role": "operator"
+          "role": "owner"
         },
         {
           "method": "lattice.org.attest",
@@ -3571,7 +3580,7 @@
         {
           "method": "lattice.release",
           "documented": true,
-          "role": "operator"
+          "role": "owner"
         },
         {
           "method": "lattice.requests",
@@ -3586,7 +3595,7 @@
         {
           "method": "lattice.wait",
           "documented": true,
-          "role": "operator"
+          "role": "owner"
         }
       ]
     },
@@ -4066,37 +4075,37 @@
         {
           "method": "multiplayer.abandon",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "multiplayer.get",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "multiplayer.list",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "multiplayer.merge_check",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "multiplayer.publish",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "multiplayer.start_stage",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "multiplayer.submit_stage",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         }
       ]
     },
@@ -4142,6 +4151,31 @@
           "method": "notifications.local",
           "documented": true,
           "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "openai_codex",
+      "methods": [
+        {
+          "method": "openai_codex.auth_cancel",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "openai_codex.auth_start",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "openai_codex.sign_out",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "openai_codex.status",
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -4696,7 +4730,7 @@
         {
           "method": "session.bindSandbox",
           "documented": true,
-          "role": "agent"
+          "role": "operator_only"
         },
         {
           "method": "session.bindSubstrate",

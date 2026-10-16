@@ -30,6 +30,7 @@
 #### `web_fetch`
 - **Params**: `{ url: string }`.
 - **Returns**: `{ url, status, content_type, title?, text }` — `url` is the final URL after redirects; `text` is extracted readable text (HTML reduced to title + visible text, scripts/styles dropped; non-HTML returned verbatim).
+- Only the first 8 MiB of the response body are read; the `text` of a longer page is of that part and ends in `…[truncated]…`.
 - Keyless (plain HTTP GET). Cached ~300s; rate-limited 20/min. Companion to `search`.
 
 #### `speech.prepare`
@@ -98,6 +99,7 @@ Closes [Parslee-ai/car-releases#24](https://github.com/Parslee-ai/car-releases/i
   - `{ type: "tool_start", name: string, index: number, id?: string }`
   - `{ type: "tool_delta", index: number, data: string }`
   - `{ type: "usage", input_tokens: number, output_tokens: number, cache_read_input_tokens?: number, cache_creation_input_tokens?: number }`
+    CAR books the runner's reported `output_tokens` as the turn's output and records the usage on the generation span; a missing usage event or `output_tokens: 0` falls back to an estimate of ~4 bytes per token over the text and tool calls.
   - `{ type: "provider_output_item", item: object }`
   - `{ type: "error", message: string }`
   - `{ type: "done", text: string, tool_calls: ToolCall[] }`
@@ -147,7 +149,7 @@ Do not smuggle an identifier through `prompt`. That worked only because delegate
 | Event `type` | Additional fields |
 |--------------|-------------------|
 | `voice.turn.fast_delta` | `turn_id: number`, `text: string` |
-| `voice.turn.fast_done` | `turn_id: number` |
+| `voice.turn.fast_done` | `turn_id: number`; when the on-device last resort answered the fast track, also `local_last_resort: true`, `substituted_from?: string` (the model the request was routed to) and `substitution_reason?: string` (`credential_rejected` \| `credential_absent` \| `rate_limited` \| `quota_exhausted` \| `timed_out` \| `failed`) |
 | `voice.turn.bridge` | `turn_id: number`, `kind: "email"\|"calendar"\|"search"\|"unknown"`, `phrase: string` |
 | `voice.turn.sidecar` | `turn_id: number`, `text: string` |
 | `voice.turn.error` | `turn_id: number`, `error: string` |

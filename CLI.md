@@ -3,21 +3,26 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.57.0-nightly.20261009 (2026-10-09). Every subcommand the installed binary reports is
+> 0.58.0 (2026-10-16). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 79 top-level commands, 158 nested subcommands
+> 80 top-level commands, 159 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 79 subcommands spanning several different jobs:
+`car` is one binary with 80 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
 flag follows below.
+
+A release-lab build appends its compile-time identity to version output, for
+example `car 0.57.0 (build 20261008-7fdc72e)`. The `car-server`,
+`car-host`, and `car-mcp` binaries report the same ID. Ordinary builds
+without `CAR_BUILD_ID` keep the shorter `name version` form.
 
 ### Run an agent
 
@@ -206,10 +211,10 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car init`](#car-init) | Initialize a .car/ project directory for team-shared configuration |
 | [`car doctor`](#car-doctor) | Diagnose (and optionally repair) a CAR install: corrupt model weights, unparseable `~/.car` state files, version skew, and leftover files from a previous install. Runs entirely against the local filesystem — no daemon required, so it works even when `car-server` won't start |
 | [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first |
-| [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel) |
+| [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it |
 | [`car purge`](#car-purge) | Remove this CAR install's own state under `~/.car` (config, logs, managed models, binaries) and reap any OS-level schedules CAR installed — for a clean slate before a reinstall. On macOS this also clears CarHost.app's user-level state and resets its privacy (TCC) permissions, so a reinstall really does re-run permission onboarding. NEVER touches the shared HuggingFace model cache (other tools use it); managed models are symlinks into it, so only the links are removed, not the multi-GB blobs. (To uninstall a single contributed agent instead, use `car uninstall <id>`.) |
 | [`car code`](#car-code) | Open a coding conversation in your repository. Ask questions, plan a change, or describe work to implement; review the checks and edits, then keep iterating in the same conversation |
-| [`car board`](#car-board) | Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. Closing the board never stops a run |
+| [`car board`](#car-board) | Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board launched by an agent cannot. Closing the board never stops a run |
 | [`car do`](#car-do) | CAR Assistant: a general-purpose agent that works out of the box |
 | [`car policy-check-hook`](#car-policy-check-hook) | Evaluate a host's proposed tool call against `.car/policies/` and answer on stdout with that host's hook decision envelope |
 | [`car project`](#car-project) | Manage CAR-managed projects (a named, git-backed workspace CAR creates for you — no repo to pick) |
@@ -249,6 +254,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car registry`](#car-registry) | Registry tooling for the contributed-agents registry (Parslee-ai/car#182 phase 5): `digest` a manifest, or `validate` a registry directory (the CI gate run by Parslee-ai/car-agent-registry) |
 | [`car fleet`](#car-fleet) | What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon |
 | [`car mp`](#car-mp) | Multiplayer development: a work item moves Build → Improve → Polish through different developers before it merges, each stage a coder session on its owner's machine with the engine they choose. Needs a running daemon and a shared git remote |
+| [`car claude`](#car-claude) | Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon |
 | [`car publish`](#car-publish) | Publish a contributed agent to the registry (Parslee-ai/car#182 phase 5). Reads a local agent's `manifest.toml`, signs it for `--audience public` (ed25519 key at `$CAR_PUBLISH_KEY_PATH`), stages it at the versioned `agents/<namespace>/<name>/<version>/` path, updates `index.json` + the README catalog, re-runs the EXACT `car registry validate` CI gate locally, and opens a PR against the registry repo. Aborts (no PR) on a missing signing key or a validation failure |
 | [`car help`](#car-help) | Print this message or the help of the given subcommand(s) |
 
@@ -281,7 +287,7 @@ Options:
       --json         Emit machine-readable JSON
       --md           Emit generated Markdown (the default)
       --role <ROLE>  Print exactly the daemon method names assigned to this caller role [possible
-      values: agent, owner, operator, host]
+      values: agent, owner, operator, operator_only, host]
   -h, --help         Print help
 ```
 
@@ -665,7 +671,8 @@ Re-score one delivered attempt without starting a coding session
 Usage: car coder-ab rescore [OPTIONS] --attempt <ATTEMPT> --corpus <CORPUS>
 
 Options:
-      --attempt <ATTEMPT>  Existing `<ledger-dir>/artifacts/<task-id>/<attempt>` directory
+      --attempt <ATTEMPT>  Existing `<ledger-dir>/artifacts/ledgers/<ledger
+      stem>/<task-id>/<attempt>` (or legacy `<ledger-dir>/artifacts/<task-id>/<attempt>`) directory
       --corpus <CORPUS>    Corpus manifest containing the task named by the source ledger row
       --ledger <LEDGER>    Owning ledger. Omit to discover it from the attempt artifact layout
   -h, --help               Print help
@@ -1187,9 +1194,11 @@ Commands:
   both the `everyday` and `local_focused` policies — the same rule `models.list_unified` reports,
   without a machine of each size. Reads a row or an array of rows (as `car models add --dry-run
   --json` prints) from FILE, or stdin. Prints JSON. The verdict is the recommendation estimate
-  `models.list_unified` shows, which sizes the KV cache from the parameter count; load-time
-  admission uses an installed checkpoint's own KV geometry and the machine's live state, so it can
-  differ
+  `models.list_unified` shows, which sizes the KV cache from an installed checkpoint's own KV
+  geometry, as load-time admission does, and from the parameter count for a row not installed;
+  admission also uses the machine's live state, so it can differ. `platform_compatible` is false for
+  a row CAR does not run on Apple Silicon at any size (a GGUF/Candle row, say), and its
+  `smallest_mac_gb` is then null whatever the memory verdict
   register         Register a custom model from a JSON schema file
   unregister       Unregister a model by ID
   stats            Show performance stats for models based on observed outcomes
@@ -1431,8 +1440,11 @@ CAR's memory-fit verdict for catalog rows on stated Apple Silicon machines, unde
 `everyday` and `local_focused` policies — the same rule `models.list_unified` reports, without a
 machine of each size. Reads a row or an array of rows (as `car models add --dry-run --json` prints)
 from FILE, or stdin. Prints JSON. The verdict is the recommendation estimate `models.list_unified`
-shows, which sizes the KV cache from the parameter count; load-time admission uses an installed
-checkpoint's own KV geometry and the machine's live state, so it can differ
+shows, which sizes the KV cache from an installed checkpoint's own KV geometry, as load-time
+admission does, and from the parameter count for a row not installed; admission also uses the
+machine's live state, so it can differ. `platform_compatible` is false for a row CAR does not run on
+Apple Silicon at any size (a GGUF/Candle row, say), and its `smallest_mac_gb` is then null whatever
+the memory verdict
 
 Usage: car models fit [OPTIONS] [FILE]
 
@@ -1899,8 +1911,9 @@ Usage: car doctor [OPTIONS]
 
 Options:
       --repair  Apply safe repairs: purge corrupt cache files (re-pull afterward), back up
-      unparseable state files, refresh the version stamp. Never deletes unrecognized entries or
-      anything not provably corrupt
+      unparseable state files, refresh the version stamp, and (on macOS) link a missing, dangling,
+      or wrong-bundle `car-mcp` beside a bundle-linked `car`. Never deletes unrecognized entries or
+      anything not provably corrupt, and never overwrites a regular file
       --deep    Deep-verify model weights (recompute sha256 vs the HuggingFace etag) instead of the
       cheap presence/non-empty check. Slower but catches truncated-but-non-empty corruption
   -h, --help    Print help
@@ -1938,7 +1951,10 @@ which of your agents have drifted, and prints the exact command per environment.
 `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as
 `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U
 car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the
-wrong interpreter installs into an environment that does not hold the stale wheel)
+wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also
+creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling /
+wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates
+`car-mcp` lacks it
 
 Usage: car update [OPTIONS]
 
@@ -2082,7 +2098,8 @@ opens saved conversations. The exit summary prints the resume command.
 Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever
 started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its
 outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded
-discussion first. Closing the board never stops a run
+discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board
+launched by an agent cannot. Closing the board never stops a run
 
 Usage: car board [OPTIONS]
 
@@ -2215,6 +2232,18 @@ Options:
           delegating run cannot amplify its model calls without bound
 
           [default: 20]
+
+      --org <ORG>
+          Work in this organization (one a signed-in login holds). Omitted, the run binds the
+          repository's declared org, else your default org (`car auth default-org`), else runs as
+          personal work. Its memory, learned repairs, trajectories and receipts stay in that org's
+          private store, and your own-account tools (Mail, Calendar, M365, Studio, automation,
+          iMessage) are left out. Needs the daemon. Not with --serve: a served agent's organization
+          is fixed when it is registered with the daemon
+
+      --personal
+          Run as personal work even where a default org applies. Refused in a repository that
+          declares an org. Not with --serve
 
   -h, --help
           Print help (see a summary with '-h')
@@ -3094,9 +3123,11 @@ Commands:
   without it the notice is printed and nothing is sent
   connect         Connect with another owner's CAR for a shared project: invite, inspect, accept,
   confirm. Both owners consent before anything is shared
-  knock           Ask a CAR discovered on your network to connect — no invite code. Its owner sees
-  your purpose, project and key fingerprint, and accepts or declines. Its identity is unverified:
-  compare fingerprints with its owner if it matters who they are
+  knock           Ask a CAR to connect — no invite code. Either a CAR discovered on your network
+  (`<machine>`; its identity is unverified, so compare fingerprints with its owner if it matters who
+  they are), or, with `--member <account> --org <org>`, a colleague in a Parslee org through the
+  Parslee relay, which works when neither CAR can reach the other (identity `cert:<org>:<account>`,
+  from their device certificate)
   knocks          CARs discovered on your network, and knocks waiting in both directions
   knock-accept    Accept a knock, choosing your label for that CAR and what you share
   knock-decline   Decline a knock. That CAR may not knock again for a day, or ever with `--block`
@@ -3106,8 +3137,12 @@ Commands:
   knock-block     Block a key from knocking, quiet it (knocks recorded, no prompt), or allow it
   again
   connections     Your Lattice connections with other owners' CARs
-  directory       Colleagues in your org whose CARs an org admin attested — the people `car lattice
-  connect offer` can reach without a fingerprint exchange
+  directory       Colleagues in your orgs: those whose CARs an org admin attested (for `car lattice
+  connect offer`), and those whose devices Parslee certifies, reachable through the Parslee relay
+  (for `car lattice knock --member`)
+  relay-probe     Developer check of the Parslee relay: send a sealed probe to a colleague's device,
+  or pull and verify probes sent to this one. Uses this CAR's device certificate for the org; reads
+  no credential
   org             Org-attested connections: status, admin attestation and policy, and your standing
   auto-accept rules
   disconnect      End a connection now. The other CAR is told; what it already received cannot be
@@ -3232,7 +3267,8 @@ Usage: car lattice connect <COMMAND>
 
 Commands:
   invite        Create an invite: purpose, project, a name for the other CAR, and which of your
-  nodes it may see and address (repeat --share)
+  nodes it may see and address (repeat --share; a node address, or `agents:<project>` for every
+  agent joined in that project)
   inspect       Show what an invite asks for — its purpose and project — before accepting it. The
   inviter's fingerprint is not shown: ask them for it
   accept        Accept an invite with your own share list. Active once the inviter confirms your
@@ -3245,6 +3281,8 @@ Commands:
   Only then is the connection active
   share         Replace which of your nodes an active connection may see and message (repeat
   --share; none shares nothing). Takes effect here at once; the other CAR is told
+  rename        Rename your name for the other CAR (its nodes are `<node>@<name>`). Only yours: the
+  other owner's name for your CAR does not change
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -3254,19 +3292,30 @@ Options:
 #### car lattice knock
 
 ```text
-Ask a CAR discovered on your network to connect — no invite code. Its owner sees your purpose,
-project and key fingerprint, and accepts or declines. Its identity is unverified: compare
-fingerprints with its owner if it matters who they are
+Ask a CAR to connect — no invite code. Either a CAR discovered on your network (`<machine>`; its
+identity is unverified, so compare fingerprints with its owner if it matters who they are), or, with
+`--member <account> --org <org>`, a colleague in a Parslee org through the Parslee relay, which
+works when neither CAR can reach the other (identity `cert:<org>:<account>`, from their device
+certificate)
 
-Usage: car lattice knock --purpose <PURPOSE> --project <PROJECT> --label <LABEL> <MACHINE>
+Usage: car lattice knock [OPTIONS] --purpose <PURPOSE> --project <PROJECT> [MACHINE]
 
 Arguments:
-  <MACHINE>  The discovered CAR: its advertised name (see `car lattice knocks`) or its URL
+  [MACHINE]  The discovered CAR: its advertised name (see `car lattice knocks`) or its URL
 
 Options:
+      --member <MEMBER>    A colleague's account, as `car lattice directory` lists it: knock through
+      the Parslee relay of `--org`
+      --org <ORG>          With `--member`, the org whose Parslee relay carries the offer. Without
+      it, the org whose device certificate this knock presents
+      --device <DEVICE>    With `--member`, which of their devices (default: the one with the newest
+      certificate)
       --purpose <PURPOSE>
       --project <PROJECT>
-      --label <LABEL>      Your name for that CAR once connected (`<node>@<label>`)
+      --label <LABEL>      Your name for that CAR once connected (`<node>@<label>`). Never sent to
+      it. Required for a network knock
+      --share <SHARE>      With `--member`, a node of yours the colleague may see and address once
+      they accept (repeat)
   -h, --help               Print help
 ```
 
@@ -3368,14 +3417,35 @@ Options:
 #### car lattice directory
 
 ```text
-Colleagues in your org whose CARs an org admin attested — the people `car lattice connect offer` can
-reach without a fingerprint exchange
+Colleagues in your orgs: those whose CARs an org admin attested (for `car lattice connect offer`),
+and those whose devices Parslee certifies, reachable through the Parslee relay (for `car lattice
+knock --member`)
 
 Usage: car lattice directory [OPTIONS]
 
 Options:
       --org <ORG>  Which org, when this CAR serves several (default: all of them)
+      --refresh    Read the org's Parslee relay directory again instead of the cache
   -h, --help       Print help
+```
+
+#### car lattice relay-probe
+
+```text
+Developer check of the Parslee relay: send a sealed probe to a colleague's device, or pull and
+verify probes sent to this one. Uses this CAR's device certificate for the org; reads no credential
+
+Usage: car lattice relay-probe <COMMAND>
+
+Commands:
+  send  Seal `text` to the device with this Ed25519 key (from the org's relay directory) and deposit
+  it with the relay
+  pull  Pull this device's relay inbox for the org, verify each probe, print them, and acknowledge
+  them. Other relay mail stays queued
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
 ```
 
 #### car lattice org
@@ -4450,8 +4520,10 @@ Commands:
   board`
   publish  Publish a finished coder session as a stage: an approved diff, or an accepted no-change
   finding. Without --item this publishes a Build and creates the work item
-  submit   Submit a stage you did outside CAR (for example in Claude Code or Codex). CAR runs the
-  item's contract on the commit itself, without credentials, before recording it
+  submit   Submit work you did outside CAR (for example in Claude Code or Codex). CAR runs the
+  contract on the commit itself, without credentials, before recording it. With an item this is that
+  item's next stage; without one it is a Build that creates the item from --intent and
+  --contract-file
   check    Re-verify an item end to end and, if it holds, create `car/mp/<id>-final` for a pull
   request. Runs the item's contract here
   abandon  Retire a work item (e.g. its locked contract was wrong). Nothing is deleted: the record
@@ -4535,19 +4607,27 @@ Options:
 #### car mp submit
 
 ```text
-Submit a stage you did outside CAR (for example in Claude Code or Codex). CAR runs the item's
-contract on the commit itself, without credentials, before recording it
+Submit work you did outside CAR (for example in Claude Code or Codex). CAR runs the contract on the
+commit itself, without credentials, before recording it. With an item this is that item's next
+stage; without one it is a Build that creates the item from --intent and --contract-file
 
-Usage: car mp submit [OPTIONS] <ITEM>
+Usage: car mp submit [OPTIONS] [ITEM]
 
 Arguments:
-  <ITEM>
+  [ITEM]
 
 Options:
-      --commit <COMMIT>  The stage's work: a commit descending from the item's tip [default: HEAD]
-      --repo <REPO>      [default: .]
-      --remote <REMOTE>  [default: origin]
-  -h, --help             Print help
+      --commit <COMMIT>                The work: a commit descending from the item's tip, or for a
+      Build from --base [default: HEAD]
+      --intent <INTENT>                Build only: what the item is for. Fixed here; the only text
+      that travels to the later stages
+      --contract-file <CONTRACT_FILE>  Build only: the outcome contract (JSON, as
+      `coder.confirm_contract` takes it) that becomes the item's locked contract
+      --base <BASE>                    Build only: the commit the Build starts from, which must be
+      on the remote. Defaults to the remote's default branch
+      --repo <REPO>                    [default: .]
+      --remote <REMOTE>                [default: origin]
+  -h, --help                           Print help
 ```
 
 #### car mp check
@@ -4584,6 +4664,23 @@ Options:
       --repo <REPO>      [default: .]
       --remote <REMOTE>  [default: origin]
   -h, --help             Print help
+```
+
+### car claude
+
+```text
+Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to
+the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's
+collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments
+after `--` go to `claude`. Needs a running daemon
+
+Usage: car claude [ARGS]...
+
+Arguments:
+  [ARGS]...
+
+Options:
+  -h, --help  Print help
 ```
 
 ### car publish

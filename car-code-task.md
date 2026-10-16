@@ -256,7 +256,17 @@ staged tree is searched (`git grep --cached`, value passed on stdin) for every
 credential value resolved for an approved check in this daemon process. A match
 fails the session with a delivery failure that names the credential and files,
 never the value. `car coder-ab` applies the same check to `delivered.patch` and
-fails the attempt without writing the patch.
+fails the attempt without writing the patch. Because `--binary` hunks are
+compressed and encoded, it also searches the raw bytes of every binary file
+version the patch carries, so a value stored uncompressed in a binary file (for
+example a SQLite database) is refused too, even when a later commit deletes the
+file. The search matches exact bytes: a value inside compressed or re-encoded
+content, such as a zip archive or a PNG, is not found. Text files are covered
+by the patch text alone, so a value in base lines the change does not touch
+does not block delivery. Binary files follow the same rule: a binary version
+is refused only when it holds the value more times than the version it
+replaced (the old path, for a rename), so editing or renaming a binary file
+whose base version already held the value still delivers.
 
 At each local spawn, CAR removes the union of names from `$CAR_HOME/env`,
 built-in model/provider declarations, explicit CAR secret and auth-token
@@ -314,7 +324,10 @@ first, then `$CAR_HOME/env`; the daemon process environment is never a source.
 An unresolved approval also fails without executing. Resolved values are
 injected only after scrubbing, into that child only. Exact occurrences printed
 by a check are replaced with `[REDACTED:NAME]` before output, events, session
-snapshots, journals, or evidence files persist.
+snapshots, journals, or evidence files persist. A value split across the
+stdout/stderr boundary in either direction, stdout into stderr or stderr into
+stdout, is replaced with the full marker in both streams, so the two stream files
+never hold complementary fragments.
 
 `allow_credentials` remains a separate command-policy switch. It defaults to
 `false`; when true, every check in that contract uses a frozen twin of the
@@ -673,6 +686,7 @@ still ends `no_progress` at `no_progress_turn_limit`.
 | `1` | Work not done: the contract stayed red, an explicit operator cap was exhausted, the session stalled, or the no-progress rule fired. | Read the terminal class and persisted `failure_kind`. A `stalled` run keeps its workspace for diagnosis; `budget_exhausted` names usage and cap; `no_progress` names either the native unchanged-turn limit or the external unchanged-chatter window. |
 | `2` | Retriable infrastructure, **or** an already-satisfied request. | Read `failure_class`: requeue infrastructure; do not retry `already_satisfied`. |
 | `3` | Non-retryable — bad invocation, unusable contract, missing credential, a vacuous contract, **or** a no-change finding that needs a human this command cannot reach. | Park it and quote the failure class. For `finding_needs_review`, a person reads the finding; re-running changes nothing. |
+| `130` / `143` / `129` | A prompt was interrupted — Ctrl-C, or Escape or Ctrl-D at a terminal (`130`), SIGTERM (`143`) or SIGHUP (`129`) — and the session was cancelled, with unfinished work retained. The same codes `car do` uses. | Not done and not a failure of the task: the operator or the system stopped it. Re-run only if the stop was not intended. |
 
 `run_end.failure_class` ∈ `none` · `contract_not_green` · `delivery_failed` ·
 `task_max_turns` · `session_wall_exhausted` · `stalled` · `no_progress` · `infra_setup` · `infra_inference` ·
@@ -809,7 +823,19 @@ redaction scrub up to 64 MiB per file; any larger stream or text artifact is rep
 with a placeholder instead of being retained unredacted, while a larger binary
 artifact is kept as it always was. `output_tail` keeps
 its type and size bound but is redacted with the same scrub before it is emitted
-or persisted.
+or persisted. Credential redaction also catches a value split across the two
+streams in either direction. A stream cut off before a value finished (by a
+timeout, a size cap, or a read error) also has a trailing start of a resolved
+value, at least 4 bytes long, replaced with the marker.
+
+`car coder-ab rescore` captures each check's stdout and stderr as they arrive.
+A check that times out keeps the redacted output it printed before its deadline
+instead of recording empty streams. Once the check exits, or is killed at its
+deadline, output is collected for at most 5 more seconds. A background process
+the check left holding a pipe cannot stall the re-score, and a clean exit never
+waits out the check's timeout. Each stream keeps at most 64 MiB, and the rest is
+drained and discarded. A note at the end of the stream records a truncation, a
+read error, or that collection stopped while a process still held the stream.
 
 Before a contract check runs, CAR lexically checks redirections, `tee`,
 `-o`/`--output`/`--out`/`--output-file`/`--path` values, and `cp`/`mv`/`install`
@@ -822,7 +848,15 @@ directory, outside the worktree and evidence roots. A variable assigned
 directly from `$(mktemp)`, `$(mktemp -d)`, or the equivalent backtick form is
 treated as contained for writes to the variable itself (and descendants for
 `-d`). An explicit outside template such as `mktemp /tmp/x.XXXX`, an explicit
-`/tmp/x`, `$HOME/x`, `../x`, or `/etc/x` remains denied. The same inspector and
+`/tmp/x`, `$HOME/x`, `../x`, or `/etc/x` remains denied. On Windows, where a
+check runs under `cmd /C`, the inspector also checks `copy`/`move`/`xcopy`/
+`robocopy`/`md`/`mklink` destinations and robocopy's `/LOG:` and `/UNILOG:`
+files. A target that cmd would rewrite before the write happens is refused: an
+unresolved `%NAME%` (including one whose closing `%` is later on the line), a
+`for` loop variable such as `%~i`, or a delayed-expansion `!NAME!`.
+`%CAR_CHECK_EVIDENCE_DIR%`, `%CAR_CHECK_TMPDIR%`, and `%CAR_HOME%` match in any
+letter case, and a leading `%CD%` resolves against the check's current
+directory, which `cd` and `chdir` update. The same inspector and
 representative baseline/evidence context run during contract admission, so a
 denied model proposal enters repair before review; a still-denied check is kept
 under Not verified and removed before baseline. This checks those recognizable
@@ -1025,6 +1059,12 @@ capped stdout and stderr. The `start..delivered` diff is also capped and names
 whether it is complete or truncated, along with the delivered and total byte
 counts.
 
+The reply may wrap its JSON in prose or Markdown fences. Only an object with a
+`findings` field counts as an audit, and the last such object wins, so trailing
+unrelated JSON such as `{"usage":123}` cannot replace the audit before it. A
+reply with no such object is unusable and fails closed rather than passing as a
+clean audit.
+
 Audit findings are typed as `defect`, `challenge`, or `note`. A `defect`
 contradicts a verdict and carries a confined reproduction command. A known
 outcome id stays scoped to that outcome, and a recorded scoped probe id maps to
@@ -1061,7 +1101,17 @@ path could be obtained.
 Each evidence round resolves every pending item in one follow-up. Notes,
 questions, and blind spots use the replacement reply. Blocking defects and
 challenges are sticky: CAR assigns `defect_id` values (`D1`, `D2`, ...) in
-first-seen order and retains an omitted blocker. A follow-up removes one only
+first-seen order and retains an omitted blocker. A follow-up finding that
+repeats an existing id with the same kind and outcome replaces that blocker, so
+a refined claim or reproduction keeps its id instead of becoming a second
+blocker beside the stale wording. An id repeated with a different kind or
+outcome, an unknown id, or one already claimed earlier in the reply gets a new
+id and leaves the original blocker active. A finding that repeats an id the same
+reply withdraws gets a new id, and the withdrawal still applies. Explicit ids are resolved
+first; a finding without an id then keeps the id of an unchanged claim.
+Rewording one blocker into another blocker's exact claim does not claim its id:
+the restatement keeps the matching blocker's id and the reworded original stays
+active. A follow-up removes one only
 with `withdrawn: [{defect_id, reason}]` naming an existing id and a non-empty
 reason. Valid withdrawals retain the removed claim and reason in the audit
 attestation and delivery ledger; unknown ids and empty reasons remove nothing.
@@ -1237,7 +1287,9 @@ cleanup restores the builder's bytes, modes, symlinks, and builder-added files,
 then completes the journal. Daemon startup and retained-task resume recover an
 unfinished journal before adopting or reopening the session. Recovery failure
 ends the session as infrastructure failure; CAR does not run checks on a
-partially overlaid tree.
+partially overlaid tree. `car code-task` holds its session's lease for its whole
+run, delivery included, so daemon startup leaves a leased session's overlay and
+snapshot alone, and reopening refuses while another process holds it.
 
 The journal lives at
 `<state dir>/<session-id>/protected-overlay-journal`, outside the worktree,
@@ -1273,9 +1325,28 @@ Static discovery follows commands in conditionals, loops, negation, brace and
 subshell groups, boolean chains and sequences, and recognizes `tsx` and
 `ts-node` launchers. A test runner inside a protected helper protects the same
 named tests, directories, and test configuration as a top-level command.
-Runtime-selected helper behavior such as `eval`, command substitutions,
-variable-held programs, computed `cd`, `exec "$@"`, and generated `xargs` or
-`find -exec` invocations appears in `partially_protected`. CAR emits one
+A file a shell reads as shell text (a `source`/`.` operand, a script `bash` or
+`sh` runs, a `BASH_ENV=` or `bash --rcfile`/`--init-file` startup file) is
+walked even without an extension or shebang, and a node preload (`-r`,
+`--require`, `--import`, `--loader` or `--experimental-loader`, as `FLAG x` or
+`FLAG=x`) is named alongside the script. Runtime-selected helper behavior such
+as `eval`, command and process substitutions, variable-held programs, a file
+sourced through a variable (`source "$LIB/x.sh"`), a startup file that is not
+in the start commit, computed `cd`, `exec "$@"`, and generated `xargs` or
+`find -exec` invocations appears in `partially_protected`. The same line
+checks run over each check's own command, reported with the script
+`<check command>`; there an `xargs` fed by a `find` or `git ls-files` listing,
+or a `find -exec`, is not reported, because the parser names what the listing
+feeds the test runner. Discovery does not follow imports. A protected
+Python or JavaScript helper's import of a module from its own directory (a
+relative import such as `from . import lib` or `require('./lib')`, or a Python
+module whose `name.py` or `name/` sits beside the helper) appears in
+`partially_protected`, unless the helper is inside a protected directory; list
+such modules in `protected_paths` (for example `"test/support/*.py"`). An
+import of the product from elsewhere in the tree (`from app import slug`) is
+testing the product and is not listed, and neither is a sibling-name import
+from a helper at the repository root, where the module beside it is the
+product (a root `test_app.py` importing `app.py`). CAR emits one
 `contract_partial_protection` warning per entry with the check, helper path,
 bounded source line, and reason; `car code` prints the same warning.
 
@@ -1294,13 +1365,18 @@ graded. A check script invoking the product is testing the product, not defining
 the test. The protected surface contains (a) committed files and exact directory
 contents declared in `protected_paths`, plus ancestor test configuration for
 declared test paths; (b) files and directories named on a check's own command
-line; and, only when no paths are declared, (c) transitively referenced files
-that are themselves recognizable test logic. Conventional test logic includes
+line, including a helper the command loads with `source` or `.` and a shell
+startup file it names; and, only
+when no paths are declared, (c) transitively referenced files that are
+themselves recognizable test logic. Conventional test logic includes
 `test`, `tests`, `testing`, `spec`, `__tests__`, and Swift `Tests` directories,
 test-shaped filenames, and test configuration. A referenced CLI, library, or
 data file outside those locations remains editable and appears in
 `invoked_product_files`; non-test directories referenced inside scripts are
-ignored.
+ignored. A check that sources a product library
+(`source src/lib.sh && [ "$(slug A)" = a ]`) grades it at its session-start
+bytes, so list that library in `editable_paths` when the builder is expected
+to fix it.
 
 When `protected_paths` is non-empty it is authoritative: the transitive walk
 still reports partial-protection gaps and invoked product files, but it can
@@ -1325,6 +1401,17 @@ Delivery reports any remaining protected-file edit as a **contract change (not
 graded)** because the checks ran the original. An `editable_paths` edit is
 reported as a **contract change (allowed)**. These labels disclose what the
 delivered diff contains; they do not remove the edit from delivery.
+
+When a coder shell command replays a contract check, its worktree edits are
+rolled back, so check output does not ride into delivery as builder work. A
+command replays a check only when it runs the check's exact command words or
+executes the same resolved script path. The script must run as a program, or
+as the script operand of an interpreter such as `bash`, `python`, `source` or
+`call`. Reading or editing a script (`cat`, `sed -i`, `chmod`) is not a replay.
+`cd`, `pushd`/`popd`, subshells, and `sh -c`/`cmd /c` command lines are
+followed when resolving the path. A check script outside the worktree keeps its
+absolute path and is matched exactly. Where a `cd` cannot be followed (`cd
+"$ROOT"`, a bare `cd`), the script is matched by file name.
 
 Remaining limits: transitive discovery is static and follows only direct,
 repo-relative script invocations visible in committed script text. It does not

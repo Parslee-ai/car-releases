@@ -39,6 +39,21 @@ reconfiguration, history rewrite, privilege escalation, credential-file reads,
 broad staging (`git add .`, `git add -A`, `git commit -a`), and repository-scope
 escapes are unconditional denials.
 
+On macOS and Linux, every local assistant shell child also runs under CAR's OS
+secret sandbox. The sandbox denies reads of the daemon `auth-token` and
+`host-token` files after path resolution, so a glob, symlink, `/dev/fd`,
+subshell, or encoder cannot turn either file into tool output. CAR also checks
+the protected files' inode link counts before spawning; a pre-existing hard-link
+alias refuses the command rather than leaving a second readable name. If the OS
+wrapper cannot be applied on those platforms, the local command is refused.
+Exact token value redaction remains in the output path as a second layer.
+
+Windows keeps the existing approval boundary and output redaction: approved
+local shell commands still run without an OS file-read sandbox. Redaction
+removes exact token values but cannot remove every encoded or split form. The
+Windows OS boundary is tracked in car-96vm; until it lands, approval is the
+boundary for that residual risk.
+
 ## Mandatory project gates
 
 Database commands fail closed unless the repository contains a matching gate

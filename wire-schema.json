@@ -106,7 +106,7 @@
         "tools.stream.subscribe",
         "tools.unregister"
       ],
-      "total": 533,
+      "total": 537,
       "uncovered": [
         "CancelTask",
         "CreateTaskPushNotificationConfig",
@@ -469,6 +469,10 @@
         "notes.accounts",
         "notes.find",
         "notifications.local",
+        "openai_codex.auth_cancel",
+        "openai_codex.auth_start",
+        "openai_codex.sign_out",
+        "openai_codex.status",
         "openrouter.auth_cancel",
         "openrouter.auth_start",
         "openrouter.disconnect",
@@ -1206,6 +1210,7 @@
             "agent",
             "owner",
             "operator",
+            "operator_only",
             "host"
           ],
           "type": "string"

@@ -1,7 +1,7 @@
 {% raw %}
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.57.4**. Check yours with `car --version`; if it
+> Describes CAR **0.58.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -103,7 +103,7 @@ than no tool.
 |---|---|
 | `http_request` | `url`, `method?`, `headers?`, `body?`, `timeout_secs?` (default 30, max 120) |
 | `web_search` | `query`, `max_results?` |
-| `m365_task` | `task`, `conversation_id?` — delegates to the user's Microsoft 365 Parslee AI Employee (email, calendar, contacts, HubSpot CRM, meetings) over one chat call. Mutating actions (send mail, create an event) come back **drafted for approval**, never executed silently. Advertised only with a Parslee session (`car auth login`) |
+| `m365_task` | `task`, `conversation_id?` — delegates to the user's Microsoft 365 Parslee AI Employee (email, calendar, contacts, HubSpot CRM, meetings) over one chat call. Mutating actions (send mail, create an event) come back **drafted for approval**, never executed silently. When the M365 service itself fails the task, the result has `ok: false`, an `error`, and the code to quote to support in `support_code`. Advertised only with a Parslee session (`car auth login`) |
 
 These self-declare `"tier": "full_access"`, so — unlike file/shell — they need
 approval even *inside* the sandbox unless the session was started with
@@ -126,8 +126,10 @@ The capability a text-only coding agent structurally does not have. Two tiers:
 local models (fast, always-available-if-installed) and Parslee Studio
 (slower, needs `car auth login`, materially higher quality on some axes).
 
-**Local (`sandbox_edit` tier — no approval needed once the run has edit
-permission), advertised only when the matching local model is installed:**
+**Local (`full_access` tier — approval is required unless the run uses
+`--full-access`), advertised only when the matching local model is installed.**
+These generators run through the host process even during a sandboxed session,
+so their artifact writes cross the sandbox boundary:
 
 | Tool | Parameters |
 |---|---|
@@ -180,7 +182,7 @@ nothing for it.
 | `browse_wait` | `condition` (`"page_loaded"` or `"url_changed"`), `timeout_ms?` (default 5000) |
 | `browse_observe` | `include_screenshot?`, `ocr?` — screenshot + accessibility tree + a fused `ui_map`; OCR recovers labels a polished SPA's accessibility tree misses |
 | `browser_await_answer` | `timeout_seconds?` (default 45) — blocks until a page stops changing after you submit something, so you don't screenshot mid-load |
-| `browser_await_signin` | `url?`, `success_url_contains?`, `timeout_seconds?` (default 300, max 1800) — asks the human to complete a sign-in the agent can't (SSO, MFA); the session persists afterward |
+| `browser_await_signin` | `url?`, `success_url_contains?`, `timeout_seconds?` (default 300, max 1800) — asks the human to complete a sign-in the agent can't (SSO, MFA); the session persists afterward. `success_url_contains` is matched against the URL without its query string; omitted, the wait ends when the URL leaves a login/SSO page. A start page that already passes the test (the needle matches it, or with no needle it does not look like a login page) is refused, since it cannot tell signed in from not |
 | `browser_record_start` | `quality?` (JPEG 1–100, default 80) |
 | `browser_record_stop` | `output_path?` — writes an MP4 (requires ffmpeg), captures only frames where the page actually changed |
 
@@ -238,17 +240,20 @@ a human:
 tool is routed to approval whenever its declared tier **exceeds** the run's
 standing tier. This is why `web_search`, the browser tools, `run_applescript`
 / `run_powershell`, `m365_task`, the Studio media tools, `remember`, and
-`notify_linked_device` all stop for approval inside the *default sandboxed
-run* — they declare `full_access`, and the sandbox's standing tier is only
-`SandboxEdit`. The local generators (`generate_image`, `generate_speech`)
-declare `sandbox_edit`, so they run without asking inside the sandbox but are
-gated on an unelevated local run.
+`notify_linked_device`, and the local generators (`generate_image`,
+`generate_speech`) all stop for approval inside the *default sandboxed run* —
+they declare `full_access`, and the sandbox's standing tier is only
+`SandboxEdit`. The generators write artifacts through the host process rather
+than inside the container, so their writes cross the sandbox boundary.
 
 **How the human is asked** depends on the surface:
 
 - One-shot / REPL (`car do "<goal>"` or `car do`): a terminal prompt —
   `⚠  Approve <tool>(<brief>)? [y/N]` — reading a single line from stdin.
   Anything but `y` is a denial with reason `"declined by user"`.
+  A run whose needed action was declined, or could not be approved because
+  nobody could be asked, ends as not done and exits 1, even when the final
+  answer explains it.
 - `car do --serve` / `agents.chat`: routed through the chat surface's
   `approval_pending` → park → resolve flow. A connected host can present that
   same pending approval as a reviewable control rather than a plain
@@ -273,9 +278,11 @@ supervises, not just one `car do` invocation. The three presets are the only
 accepted values; anything else is rejected before it reaches the daemon.
 
 A per-agent posture cannot widen the environment that was actually bound.
-**Approve for me** auto-allows `sandbox_edit` actions only when a sandbox exists.
-If Docker is unavailable and CAR falls back to the local host (or the run uses
-`--local`), shell commands and file edits still ask before they touch the Mac.
+**Approve for me** auto-allows `sandbox_edit` actions only when a sandbox exists
+or the user explicitly starts the run with `--full-access`. If Docker is
+unavailable and CAR falls back to the local host (or the run uses `--local`),
+shell commands and file edits still ask before they touch the Mac unless that
+explicit full-access flag was supplied.
 
 ## Memory: what actually persists
 
@@ -472,7 +479,12 @@ of `summary`, which a failed run does not carry:
 }
 ```
 
-- `status` is `"success"` or `"error"`. Branch on it.
+- `status` is one of `"success"`, `"success_substituted"`, `"max_turns"`,
+  `"stalled"`, `"error"` or `"auth_required"`. Branch on it, and match the set
+  exhaustively rather than assuming it is closed. `"success_substituted"` is an
+  answer from a model other than the one the run named, with `substituted_from`
+  and `substitution_reason` naming the model it replaced and why; it exits 0
+  like `"success"`.
 - `error` is a stable machine-readable kind (e.g. `AssistantLoopFailed`);
   `message` is the human-readable detail and is NOT stable enough to match on.
 - `receipts` is always present, including on failure, and is how you see what

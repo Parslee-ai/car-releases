@@ -226,7 +226,7 @@ for level in &levels {
 - **Record each model decision.** After every inference and before submitting its requested actions, the harness best-effort calls `rt.runsRecordModelTurn(...)` with the one-based turn index, assistant text, normalized tool-call IDs and arguments, exact model id, provider token usage, and duration. The daemon appends this as `model_turn` through the same index/persistence/fanout path as action `turn` records, so `runs.get_trace` explains why each following action ran.
 - **Close and return the key.** After the terminal `AgentOutcome` is assembled and **before `runAgent` returns**, the harness calls `rt.runsComplete(JSON.stringify({ run_id, outcome }))` and awaits the ack (the connection may close right after), then adds the acknowledged id as return-only `outcome.run_id`. This keeps the daemon's `car-ir` outcome wire shape unchanged while giving a host the key to pass directly to `runs.get_trace`.
 - **Graceful degradation.** Lifecycle and per-inference trace calls are wrapped in `try/catch` exactly like `registerAgentBasics` — a daemon **without** the newer `runs.*` methods makes them throw, the harness swallows it, and the run proceeds. An unacknowledged start yields the additive `run_id: null`; a missing model-turn method only omits those records. No trace call writes to stdout, so the **last** stdout line in `--json` mode stays the `AgentOutcome` JSON (`run_scenarios.py` depends on this contract).
-- **One run per `runAgent`.** In `--serve` mode each iteration is its own run on its own fresh `CarRuntime`/connection — its own `runsStart`/`runsComplete` bracket. Two sequential standing-goal runs produce two distinct `run_id`s.
+- **One run per `runAgent`.** In `--serve` mode each iteration is its own run — its own `runsStart`/`runsComplete` bracket — on the same long-lived chat runtime (a runtime per run only when chat setup failed). Tools and policies are registered again when `connectionEpoch()` changes, so an iteration after a daemon restart lands on a set-up session. Two sequential standing-goal runs produce two distinct `run_id`s.
 
 This is a deliberate evolution of the packaged helper, not a per-agent fork: edit `car-rs/crates/car-ffi-napi/npm/agent-loop.js`, never a generated `agent.mjs` — generated agents import the package implementation. See `runsStart` / `runsRecordModelTurn` / `runsComplete` in `car-ffi-napi/npm/index.d.ts` for the exact request/response shapes.
 
@@ -361,6 +361,8 @@ done — run it with:
   car agent run summarize-support-tickets "<input>"
 ```
 
+Ctrl-C, SIGTERM or SIGHUP at either prompt, or Escape at a terminal, cancels the build session; it is not approved. The command then exits 130 (143 for SIGTERM, 129 for SIGHUP); answering no exits 0.
+
 `--yes` skips the prompts and `--yes --json ...` prints a machine-readable
 result containing `agent_id` and `registry_path`. Neither uses CAR's local host
 key, so they build the agent only against a daemon with no host token, such
@@ -392,7 +394,12 @@ not change the active agent. Rebuild and approve the project again to register
 those edits. Agent Builder registrations keep the selected template and all
 seven guided answers in the spec's `builder_draft`. An edit creates its managed
 project with `existing_agent_id`; approval then replaces that exact registry id
-instead of deriving a new one from the project slug. The prior registered spec
+instead of deriving a new one from the project slug. The project starts from
+the agent's registered spec and records which version it edits; every approval
+of an agent project records the version it registered. A build is refused at
+start or approval if that agent has since been removed, changed, or had its id
+taken by another agent — reopen the agent to edit its current version.
+Approval keeps the agent's enabled or disabled state. The prior registered spec
 is retained one level deep as `previous`, so a host can offer one-step revert
 without maintaining a second history store. CarHost's Agents screen exposes
 that lifecycle directly: **Edit agent** reloads the stored Builder answers,
@@ -453,12 +460,13 @@ default, and every agent registered before the field existed keeps loading and
 behaves as `car`.
 
 **An unrecognized value is not an error.** `"context": "mine"` loads as `car`
-and logs a warning naming the bad value. That leniency is deliberate and
-temporary: an unparseable `declagents.json` currently reads as an *empty*
-registry and the next agent registration writes that emptiness back, so a strict
-parser would let one typo in a hand-edited file unregister every agent on the
-machine. Strict validation returns once the registry loader surfaces read errors
-instead of swallowing them (tracked separately).
+and logs a warning naming the bad value. That leniency is deliberate: an
+unparseable `declagents.json` reads as an *empty* registry, so a strict parser
+would let one typo in a hand-edited file hide every agent on the machine until
+the file is fixed. Writes do not make that worse — every registration, remove,
+enable/disable and revert refuses an unparseable file with "`<path>` is not a
+valid declarative-agent registry (…); refusing to overwrite it — fix or move
+the file" and leaves it untouched.
 
 #### Pinning inference for one agent
 
@@ -478,7 +486,16 @@ chat, or direct invocation use one backend, persist the selection on the agent:
 A bare model is resolved as `<provider>/<model>`; an already-qualified model id
 must have the same provider prefix. The supported effort values are `low`,
 `medium`, and `high`, mapped to each serving provider's coarse reasoning
-control. A persisted selection is strict: a failure is reported rather than
+control. On Claude and on OpenAI reasoning models, where reasoning tokens count
+against the output limit, the runner adds the reasoning budget on top of its
+per-turn answer allowance, capped at the model's catalog output limit, so a
+saved effort does not crowd out the answer. On every other model the request
+keeps the plain answer allowance, so a pin to a smaller-output model such as
+`gpt-4o` is not pushed past its cap. On older Anthropic models that take a
+thinking token budget (4.5 and earlier), CAR raises a budget below Anthropic's
+1024-token minimum to that minimum, and sends a request whose budget cannot fit
+below its `max_tokens` without extended thinking rather than one the provider
+rejects. A persisted selection is strict: a failure is reported rather than
 silently replacing the requested model with a local fallback, and a per-call
 model parameter cannot replace the saved choice. Host availability and policy
 may still refuse or narrow it. `declagents.invoke` returns `model_served`, and CarHost records it
@@ -487,8 +504,19 @@ what the spec merely requested. Specs written before this field continue to
 load with `inference` absent.
 
 The Agent Builder review explicitly shows that a new wizard-built agent keeps
-adaptive routing. Its existing execution recommendation remains advisory; it
-does not pretend a recommended coding setup is a native model id.
+adaptive routing. When you edit an agent whose spec saves an `inference` pin,
+the review shows that saved model, provider, and reasoning effort instead. A
+rebuild keeps every field you set on the registered spec that the build model
+never writes: the `inference` pin, a `self` context policy, the `cadence`
+request, `denied_tools`, and whether the agent is enabled. They are read from
+the registry when the build runs, so a pin you change or clear before Save &
+rebuild is the one the rebuild keeps. The generated spec is verified against
+its scenarios with the pin, context policy, cadence and denials in place; a
+disabled agent's scenarios still run, and it stays disabled after
+registration. The Builder does not author or change a pin; edit the
+declarative specification for that. Its
+existing execution recommendation remains advisory; it does not pretend a
+recommended coding setup is a native model id.
 
 **Local models:** the window is read from the catalog — for a pinned model up
 front, and after every call from the model that actually served it, so a run
@@ -3741,7 +3769,7 @@ Registry helpers: `list()`, `get(id)`, `find_by_name(name)`, `ensure_local(id)` 
 
 **`ModelSource`**: `Local` (GGUF via Candle), `RemoteApi`, `CodexCli`, `Ollama`, `Mlx`, external/operator-owned `VllmMlx`, CAR-owned `ManagedVllmMlx`, and `AppleFoundationModels` (plus the speech/proprietary/delegated variants). Schema helpers: `is_codex_cli`, `is_mlx`, `is_vllm_mlx`, `is_car_managed_vllm_mlx`, `is_foundation_models`, `requires_apple_silicon`, `size_mb`, `ram_mb`. A loopback endpoint does not turn `VllmMlx` into the managed variant.
 
-The curated `openai/gpt-5.6-sol:high` row is a `CodexCli { model: "gpt-5.6-sol:high" }` source. It is an identity-pinnable generation route through `codex exec`; `:high` maps to `model_reasoning_effort="high"`. Codex owns its ChatGPT-subscription token and CAR removes `OPENAI_API_KEY` from the child, so this source needs no API key. Inline image attachments are decoded into the turn's scratch directory, passed with `--image`, and removed after the turn. Video, audio, and remote image URL attachments produce a model-named refusal while the text is still answered. Conversation history and CAR tool proposals are supported; response schemas and streaming are rejected. Unlike `external:codex`, this route runs in an empty read-only scratch directory with Codex's shell, multi-agent, app, plugin, code-mode, and web-search features disabled. Codex exposes no exact per-call output-token cap, so `max_tokens` is sent as an approximate response-limit instruction and the CLI's reported usage is authoritative.
+The curated `openai/gpt-5.6-sol:high` row is a `CodexCli { model: "gpt-5.6-sol:high" }` source. It is an identity-pinnable generation route through `codex exec`; `:high` maps to `model_reasoning_effort="high"`. Codex owns its ChatGPT-subscription token and CAR removes `OPENAI_API_KEY` from the child, so this source needs no API key. Inline image attachments are decoded into the turn's scratch directory, passed with `--image`, and removed after the turn. They are passed in conversation order, earlier turns first and the current message's last, and each message in the encoded conversation lists the 1-based positions of the images it carried; an image over 32 MiB is refused before it is written. Video, audio, and remote image URL attachments produce a model-named refusal while the text is still answered. Conversation history and CAR tool proposals are supported; response schemas and streaming are rejected. Unlike `external:codex`, this route runs in an empty read-only scratch directory with Codex's shell, multi-agent, app, plugin, code-mode, and web-search features disabled. Codex exposes no exact per-call output-token cap, so `max_tokens` is sent as an approximate response-limit instruction and the CLI's reported usage is authoritative.
 
 **`ModelCapability`** (the capability vocabulary the router and intent layer filter on):
 
@@ -3824,10 +3852,11 @@ recommend_with_policy(
     use_case: UseCase,
     tier: QualityTier,
     privacy: Privacy,
+    geometry: &CheckpointGeometry, // engine.checkpoint_geometry(models)
 ) -> RecommendationSet   // { picks, not_enough_memory, note }
 ```
 
-Pipeline: **hard filter** (role lane + required caps + privacy + apple-silicon eligibility + deprecated) → **soft score** (tier-weighted quality / latency / memory) → **policy-aware deterministic order**. Each `Recommendation` carries `{ model_id, display_name, role, rationale, download_mb, already_installed, fit: FitStatus, acceleration, is_local, requires_cloud_consent, trust_tier, score, within_recommendation_target }`. `already_installed` means CAR-downloadable weights are physically ready, not merely routable. The memory estimate = weights + context overhead (8192-token working window) + backend runtime overhead + a distinct transient margin. Everyday automatic choices must also fit the policy's smaller recommendation target; heavier and unknown-memory entries remain visible only as explicit alternatives.
+Pipeline: **hard filter** (role lane + required caps + privacy + apple-silicon eligibility + deprecated) → **soft score** (tier-weighted quality / latency / memory) → **policy-aware deterministic order**. Each `Recommendation` carries `{ model_id, display_name, role, rationale, download_mb, already_installed, fit: FitStatus, acceleration, is_local, requires_cloud_consent, trust_tier, score, within_recommendation_target }`. `already_installed` means CAR-downloadable weights are physically ready, not merely routable. The memory estimate = weights + context overhead (8192-token working window) + backend runtime overhead + a distinct transient margin. The KV part of the context overhead comes from an installed checkpoint's own `config.json` geometry when `geometry` holds the row — `InferenceEngine::checkpoint_geometry` reads it from the models directory load-time admission reads — and from the parameter count otherwise, so an installed row is estimated the way admission estimates it. Everyday automatic choices must also fit the policy's smaller recommendation target; heavier and unknown-memory entries remain visible only as explicit alternatives.
 
 > **Recommender gotchas:**
 > - External `VllmMlx`/`RemoteApi` models are **never** given the local-memory fit budget — they get `FitStatus::ServerProvided`. `ManagedVllmMlx` is local and charged. Endpoint spelling, including loopback, never changes ownership. A model with unknown `ram_mb` is `FitStatus::Unknown`, never silently treated as "fits", unless its source is explicitly OS-provided (`WindowsSpeech` or Apple FoundationModels), whose memory is owned outside CAR's model budget. Platform eligibility remains separate: Windows/Apple-only rows are offered only on their matching hosts.
@@ -4872,7 +4901,7 @@ car auth login parslee                         # Parslee OAuth2 PKCE sign-in (sh
 - **Negotiate before host/auth calls.** Await auth success, then exact
   `server.handshake {"protocol_version":3,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}` success before `host.subscribe` or
   any `auth.*` method. Reconnects repeat both barriers.
-- **Sessions are ephemeral.** Memgine, state, tools, and policies die on disconnect. Persist explicitly (`memory.persist`) or bind an `agent_id` for a durable per-agent memgine.
+- **Sessions are ephemeral.** Memgine, state, tools, and policies die on disconnect. Persist explicitly (`memory.persist`) or bind an `agent_id` for a durable per-agent memgine. `connectionEpoch()` / `connection_epoch()` changes on the silent reconnect that follows, and the packaged loops use it to register their tools and policies again.
 - **`tools.register` takes a bare array;** `session.init` wraps it in `{tools:[...]}`.
 - **Demux by `id`, not arrival order.** Interleaved `tools.execute` requests can precede your final result.
 - **Reply to `tools.execute` on the server's id within 60s,** or the proposal aborts with a callback timeout. Send an `error` object to signal tool failure.
@@ -5724,7 +5753,7 @@ Both await transport auth (when enabled), exact protocol-v3 negotiation with
 the mandatory model-catalog and inference-identity capabilities, then
 `host.subscribe`/other host calls on each new WebSocket connection.
 
-> **`DaemonClient` does NOT auto-reconnect** — it is lazy/per-call. On a daemon restart the recv loop ends, in-flight calls return `closed before response`, and the next call lazy-reconnects with no automatic retry. Notification handlers persist across reconnects.
+> **`DaemonClient` does NOT auto-reconnect** — it is lazy/per-call. On a daemon restart the recv loop ends, in-flight calls return `closed before response`, and the next call lazy-reconnects with no automatic retry. Notification handlers persist across reconnects. `connection_epoch()` changes on that silent reconnect; the packaged agent loops use it to register their tools and policies again on the new session.
 
 ---
 
@@ -6022,7 +6051,7 @@ cr.stop_a2a_server(rt)
 
 1. Declare each skill with `register_tool_schema(name, description, <JSON schema>)`.
 2. **Node:** `registerToolHandler(handlerFn)` installs one callback the daemon invokes for **all** dispatched tools — multiplex on the tool name; the daemon emits a server-initiated `tools.execute` over WS.
-3. **Python:** `register_tool_handler` raises `NotImplementedError` today (parity gap, car-releases#38). Instead call `execute_proposal(proposal_json, handler_fn)` per call, or service `tools.execute` over the WS directly. There is no decorate-a-`def` path yet.
+3. **Python:** `register_tool_handler(handler_fn)` installs the same single process-wide callback, multiplexing on the tool name.
 
 Customize card identity (name/description/provider) via `car-server` host config, read through the `AgentCardSource` closure.
 
@@ -6316,7 +6345,7 @@ On the WS host, `a2ui.ingest` scans these and applies them. If a **trusted loopb
 | Make my CAR agent reachable by peers | `car-server --a2a-bind`, or `a2a.start` over WS, or `start_a2a_server` FFI |
 | Define my A2A skills | `register_tool_schema(...)` — one A2A skill per tool |
 | Handle inbound A2A tool calls (Node) | `registerToolHandler(fn)` — multiplex on tool name |
-| Handle inbound A2A tool calls (Python) | `execute_proposal(proposal_json, handler_fn)` (no decorator path; `register_tool_handler` raises) |
+| Handle inbound A2A tool calls (Python) | `register_tool_handler(fn)` — multiplex on tool name |
 | Enforce verified callers | custom `AuthValidator` → `Ok(Some(Identity))`, then `with_require_identity(true)`; check `a2a_caller_verified` in policies |
 | Call a peer | `A2aClient` (Rust) or `a2a.send` (WS) |
 | Show a human a UI | `a2ui.apply` (`createSurface` → `updateComponents` → `updateDataModel`) |
@@ -6390,7 +6419,7 @@ pub fn classify_utterance(utterance: &str) -> UtteranceClass {
 | Event type | Payload |
 |---|---|
 | `voice.turn.fast_delta` | `{ turn_id, text }` |
-| `voice.turn.fast_done` | `{ turn_id }` |
+| `voice.turn.fast_done` | `{ turn_id, local_last_resort?, substituted_from?, substitution_reason? }` (the last three only when the on-device last resort answered) |
 | `voice.turn.bridge` | `{ turn_id, kind, phrase }` |
 | `voice.turn.sidecar` | `{ turn_id, text }` |
 | `voice.turn.error` | `{ turn_id, error }` |
@@ -8085,7 +8114,7 @@ A single-agent author must first decide *which kind* they're building — the au
 | Skills | `car-memgine` | First-class graph nodes, auto-degradation, distill/evolve/repair loop | `ingest_skill`, `find_skill`, `report_outcome`, `distill_skills`, `ingest_distilled_skills`, `list_skills`, `domains_needing_evolution`, `evolve_skills`, `repair_skill` |
 | Policies | `car-policy` | Per-action deny rules (+ `InspectorChain`) | `register_policy`, `register_tool`, `register_tool_schema`, `register_agent_basics` |
 | Inference | `car-inference` | OpenAI/Anthropic/Google via `ProtocolHandler`; context-aware routing | `infer`, `infer_tracked`, `infer_with_context`, `infer_with_context_tracked`, `infer_stream`, `embed`, `classify`, `route_model`, `model_stats` |
-| Model UX (v0.20) | `car-inference` | Intent-driven recommendation | `recommend(models, hardware, use_case, tier, privacy) -> RecommendationSet` |
+| Model UX (v0.20) | `car-inference` | Intent-driven recommendation | `recommend(models, hardware, use_case, tier, privacy, geometry) -> RecommendationSet` |
 | Multi-agent | `car-multi` | swarm / pipeline / supervisor / map-reduce / vote | `run_swarm`, `run_pipeline`, `run_supervisor`, `run_map_reduce`, `run_vote`, `register_agent_runner` |
 | External CLIs | `car-external-agents` | Invoke Claude Code/Codex/Gemini | `agents.invoke_external`, `agents.list_external`, `ExternalAwareRunner` |
 | Supervised agents | `car-registry` | Declarative lifecycle of child processes | `agents.{list,upsert,remove,start,stop,restart,tail_log,health,install}` |

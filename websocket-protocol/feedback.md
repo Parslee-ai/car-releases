@@ -74,7 +74,9 @@ server counterpart advanced shows the server state. Queued entries drain
 to `POST /api/v1/orgs/{orgId}/car-feedback` only while the anonymous capability probe
 (`GET /api/v1/car-feedback/capability`) advertises the entry's lane:
 `authenticatedIntake` gates signed-in entries, and anonymous entries hold
-while `anonymousIntake` is `false` (the v1 server reality). `note?` carries per-row daemon annotations on TERMINAL settles (the
+while `anonymousIntake` is `false` (the v1 server reality). Authenticated
+entries also hold while the Parslee session cannot be checked (a rate limit,
+an outage, or a failed renewal); they are retried, not marked `auth_required`. `note?` carries per-row daemon annotations on TERMINAL settles (the
 drain persists upload-time omission notes when an entry settles
 terminal); for successful uploads, omissions surface at submit time in
 the manifest/UI warning, not as a persisted row note.

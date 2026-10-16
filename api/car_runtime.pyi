@@ -159,6 +159,15 @@ class CarRuntime:
     def disconnect(self) -> None:
         """Transport-named alias for :meth:`close`."""
 
+    def connection_epoch(self) -> int:
+        """Identify the daemon session this runtime's calls land on.
+
+        Connects first if needed. Registered tools, policies and state belong
+        to that session, so a different value than last time (after
+        :meth:`close`, or a daemon restart the client reconnected through)
+        means they must be registered again.
+        """
+
     def daemon_call(self, method: str, params_json: str) -> str:
         """Invoke any daemon JSON-RPC method and return result JSON.
 
@@ -169,7 +178,13 @@ class CarRuntime:
         """
 
     def daemon_call_host_management(self, method: str, params_json: str) -> str:
-        """Host-management-token twin of :meth:`daemon_call`."""
+        """Host-management-token twin of :meth:`daemon_call`. It admits the
+        owner-gated Coder methods (``coder.respond``, ``coder.revise_contract``,
+        ``coder.confirm_contract``, ``coder.refresh_review``,
+        ``coder.approve_merge``, ``coder.cancel``), but refuses
+        ``coder.confirm_contract`` and ``coder.approve_merge`` on an agent
+        build: building an agent needs the CAR app or ``car agent new`` in your
+        terminal."""
 
     def agent_permissions_list_grants(self, params_json: str) -> str:
         """List durable permission grants using host-management authority."""
@@ -555,16 +570,16 @@ class CarRuntime:
     # Generated daemon wrapper for `feedback.submit` (operator).
 
     def goal_clear(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `goal.clear` (operator).
+    # Generated daemon wrapper for `goal.clear` (agent).
 
     def goal_set(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `goal.set` (operator).
+    # Generated daemon wrapper for `goal.set` (agent).
 
     def goal_status(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `goal.status` (operator).
+    # Generated daemon wrapper for `goal.status` (agent).
 
     def goal_suggest(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `goal.suggest` (operator).
+    # Generated daemon wrapper for `goal.suggest` (agent).
 
     def host_subscribe(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `host.subscribe` (operator).
@@ -591,28 +606,28 @@ class CarRuntime:
     # Generated daemon wrapper for `inference.runner.fail` (operator).
 
     def lattice_claim(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `lattice.claim` (operator).
+    # Generated daemon wrapper for `lattice.claim` (owner).
 
     def lattice_claims(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `lattice.claims` (operator).
+    # Generated daemon wrapper for `lattice.claims` (owner).
 
     def lattice_find(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `lattice.find` (operator).
+    # Generated daemon wrapper for `lattice.find` (owner).
 
     def lattice_join(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `lattice.join` (operator).
+    # Generated daemon wrapper for `lattice.join` (owner).
 
     def lattice_leave(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `lattice.leave` (operator).
+    # Generated daemon wrapper for `lattice.leave` (owner).
 
     def lattice_nodes(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `lattice.nodes` (operator).
+    # Generated daemon wrapper for `lattice.nodes` (owner).
 
     def lattice_release(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `lattice.release` (operator).
+    # Generated daemon wrapper for `lattice.release` (owner).
 
     def lattice_wait(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `lattice.wait` (operator).
+    # Generated daemon wrapper for `lattice.wait` (owner).
 
     def meeting_get(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `meeting.get` (operator).
@@ -750,25 +765,25 @@ class CarRuntime:
     # Generated daemon wrapper for `multi.vote` (operator).
 
     def multiplayer_abandon(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.abandon` (operator).
+    # Generated daemon wrapper for `multiplayer.abandon` (operator_only).
 
     def multiplayer_get(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.get` (operator).
+    # Generated daemon wrapper for `multiplayer.get` (operator_only).
 
     def multiplayer_list(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.list` (operator).
+    # Generated daemon wrapper for `multiplayer.list` (operator_only).
 
     def multiplayer_merge_check(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.merge_check` (operator).
+    # Generated daemon wrapper for `multiplayer.merge_check` (operator_only).
 
     def multiplayer_publish(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.publish` (operator).
+    # Generated daemon wrapper for `multiplayer.publish` (operator_only).
 
     def multiplayer_start_stage(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.start_stage` (operator).
+    # Generated daemon wrapper for `multiplayer.start_stage` (operator_only).
 
     def multiplayer_submit_stage(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.submit_stage` (operator).
+    # Generated daemon wrapper for `multiplayer.submit_stage` (operator_only).
 
     def nlp_extract_entities(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `nlp.extract_entities` (operator).
@@ -894,7 +909,7 @@ class CarRuntime:
     # Generated daemon wrapper for `session.auth` (agent).
 
     def session_bind_sandbox(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `session.bindSandbox` (agent).
+    # Generated daemon wrapper for `session.bindSandbox` (operator_only).
 
     def session_bind_substrate(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `session.bindSubstrate` (operator).
@@ -1417,7 +1432,9 @@ class CarRuntime:
     def agents_peers(self, request_json: str) -> str:
         """``agents.peers`` — visible peers as JSON. Each row distinguishes
         kind-level ``can_receive`` from the current ``reachable`` delivery
-        preflight; the send remains authoritative."""
+        preflight; the send remains authoritative. ``{"organization_directory":
+        true}`` adds the colleague directory of the organization this
+        connection is bound to, from what the CAR already holds."""
 
     def agents_message_pending(self, request_json: str) -> str:
         """``agents.message.pending`` — peer messages awaiting an operator
@@ -1555,7 +1572,11 @@ class CarRuntime:
         ``approved_no_patch`` | ``rejected_by_gate`` |
         ``measurement_failed`` | ``config_moved_during_measurement`` (a graded
         promotion whose measured base was moved by something else while the
-        replays ran -- nothing applied, both values reported, no backoff).
+        replays ran -- nothing applied, both values reported, no backoff) |
+        ``config_moved_since_diagnosis`` (a human-approved patch whose
+        ``conversation_keep_recent`` moved after diagnosis -- nothing applied,
+        ``diagnosed_under_conversation_keep_recent`` and
+        ``current_conversation_keep_recent`` reported, no backoff).
         When ``context_measure`` was requested the summary also carries
         ``context_measured: { status: "measured" | "skipped_dry_run",
         grade_attempts, model, split, split_seed }``.
@@ -2069,10 +2090,10 @@ class CarRuntime:
     ) -> str:
         """Execute a proposal against the daemon's executor (F3 parity).
 
-        One-call convenience matching NAPI's ``executeProposal``: installs
-        ``tool_fn`` as the ``tools.execute`` handler for this runtime and
-        submits ``proposal_json`` in a single call. Equivalent to
-        :func:`register_tool_handler` followed by :meth:`submit_proposal`.
+        One-call convenience matching NAPI's ``executeProposal``: routes this
+        proposal's ``tools.execute`` requests only to ``tool_fn``. Concurrent
+        calls on one runtime are serialized, and the process-wide handler from
+        :func:`register_tool_handler` is never replaced.
         The returned serialized ``ProposalResult`` adds ``rolled_back: true``
         to an ``ActionResult`` that succeeded before an abort restored proposal
         state; false is omitted. Detect rollback from this field, never from
@@ -2099,13 +2120,10 @@ class CarRuntime:
         view so distinct tenants can't observe each other's keys
         (Parslee-ai/car#187 phase 3). Single-tenant callers omit.
 
-        **Not exposed in the FFI bindings** — the daemon owns the executor.
-        Prefer :meth:`submit_proposal` with a handler registered via
-        :func:`register_tool_handler` (Parslee-ai/car-releases#38);
-        the underlying daemon ``proposal.submit`` accepts the same
-        ``scope`` shape. Signature is kept here for parity with NAPI
-        so a future in-process PyO3 implementation lands with the
-        same shape.
+        The daemon owns the executor; this binding supplies only the scoped
+        callback bridge. Use :meth:`submit_proposal` with
+        :func:`register_tool_handler` when one persistent handler should serve
+        many explicit submissions.
         """
 
     def submit_proposal(
@@ -2229,9 +2247,11 @@ class CarRuntime:
         "model_used", "trace_id", "latency_ms",
         "time_to_first_token_ms", "stop_reason"}``.
 
-        ``local_last_resort`` is present and true ONLY when CAR appended an
-        installed on-device model behind a remote-only chain and that model
-        actually served the turn. An explicitly selected local model is not marked.
+        ``local_last_resort`` is present and true ONLY when CAR appended a
+        model installed through CAR (under CAR's models dir or with an install
+        receipt; a model only in the shared Hugging Face cache is skipped and
+        named with ``car models adopt``) behind a remote-only chain and that
+        model actually served the turn. An explicitly selected local model is not marked.
 
         ``auth_fallback_from`` is present ONLY when a candidate earlier in
         the fallback chain was skipped because its credential was
@@ -2391,7 +2411,9 @@ class CarRuntime:
 
     def web_fetch(self, url: str) -> str:
         """Fetch a URL and extract readable text (keyless; companion to
-        ``search``). Returns JSON ``{url, status, content_type, title?, text}``."""
+        ``search``). Returns JSON ``{url, status, content_type, title?, text}``.
+        Only the first 8 MiB of the body are read; a longer page's ``text``
+        ends in ``…[truncated]…``."""
 
     def transcribe(
         self,
@@ -2451,7 +2473,11 @@ class CarRuntime:
         ``downloads_weights``, ``max_output_tokens``,
         ``public_benchmarks``, ``cost``, ``car_enabled``, ``can_remove``,
         ``in_use``, ``management_evidence``, ``fit``, ``estimated_peak_mb``,
-        ``platform_compatible``, ``deprecated``, ``family``, and ``version``.
+        ``platform_compatible``, ``deprecated``, ``credential_required``,
+        ``unavailable_reason``, ``family``, ``version``, and ``source_kind``.
+        ``source_kind`` is the row's source ``type`` tag (``codex_cli``,
+        ``remote_api``, ``proprietary``, ...), which keeps two routes to one
+        model apart.
         ``available`` means CAR can use the model here — for a local MLX
         entry with a declared ``hf_repo`` that is ``True`` before a byte is
         fetched, because it lazy-downloads on first use — whereas
@@ -2759,7 +2785,7 @@ class CarRuntime:
         the edited JSON may carry ``network_approved: true`` and
         ``approved_credentials: list[str]``. Credential approval is limited to
         names declared by that exact check; changing its name, command, or
-        declarations drops carried approval."""
+        declarations drops carried approval. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     def coder_list(self) -> str:
         """List coder sessions (live and persisted), newest first.
@@ -2799,7 +2825,8 @@ class CarRuntime:
 
     @overload
     def coder_respond(self, session_id: str, text: str, steer: bool) -> str:
-        """Answer a question, or queue native guidance with steer=True."""
+        """Answer a question, or queue native guidance with steer=True.
+        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     @overload
     def coder_approve_merge(
@@ -2813,7 +2840,7 @@ class CarRuntime:
         and the reply is ``{"state": "reported", "branch": None}``. A plain
         approve on a finding, or ``accept_finding`` on a diff, is refused.
         Successful delivery replies include ``excluded_artifacts`` from the
-        exact staging pass used by the commit."""
+        exact staging pass used by the commit. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     @overload
     def coder_approve_merge(
@@ -2833,7 +2860,7 @@ class CarRuntime:
         An already-finished session **succeeds** rather than raising: ``state``
         keeps its pre-existing name and type, ``already_terminal`` is ``True``,
         and ``message`` names what already happened. Callers that cancel
-        unconditionally on shutdown depend on that."""
+        unconditionally on shutdown depend on that. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     def coder_watch(self, renew: bool | None = None) -> str:
         """The current session list AND registration for
@@ -2880,7 +2907,8 @@ class CarRuntime:
         Returns ``{"state": "running", "review_refresh": true}``; the outcome
         arrives on the event stream. Passing checks return the session to
         ``needs_approval`` with a new diff; failing checks fail it and keep the
-        worktree. Delivery still needs a separate ``coder_approve_merge``."""
+        worktree. Delivery still needs a separate ``coder_approve_merge``.
+        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     def coder_revise_contract(self, session_id: str, request: str) -> str:
         """Redraft a PROPOSED outcome contract from a plain-English request
@@ -2893,7 +2921,8 @@ class CarRuntime:
         trusting ``contract``**: on a redraft that does not validate, the
         previous contract comes back byte-identical with ``revised: False`` and
         a ``message`` explaining why, and the daemon emits a
-        ``contract_revision_rejected`` event."""
+        ``contract_revision_rejected`` event.
+        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     def coder_discuss_start(
         self,
@@ -2964,7 +2993,11 @@ class CarRuntime:
 
     def parslee_capabilities(self) -> str:
         """Discover what the signed-in Parslee account can do — identity, m365
-        product entitlements, and Studio reachability. Read-only. Returns JSON."""
+        product entitlements, and Studio reachability. Read-only. Returns JSON.
+        Returns ``{authenticated: false, hint, error?}`` when signed out; raises
+        with the underlying failure when Parslee could not answer the session
+        check (a rate limit, an outage, or no session answer) or denied this
+        signed-in account access (HTTP 403)."""
 
     def parslee_m365_generate_document(
         self,
@@ -3710,6 +3743,18 @@ class HostClient:
 
     def models_storage_roots(self, params_json: str) -> str: ...
     # Generated host wrapper for `models.storage_roots`.
+
+    def openai_codex_auth_cancel(self, params_json: str) -> str: ...
+    # Generated host wrapper for `openai_codex.auth_cancel`.
+
+    def openai_codex_auth_start(self, params_json: str) -> str: ...
+    # Generated host wrapper for `openai_codex.auth_start`.
+
+    def openai_codex_sign_out(self, params_json: str) -> str: ...
+    # Generated host wrapper for `openai_codex.sign_out`.
+
+    def openai_codex_status(self, params_json: str) -> str: ...
+    # Generated host wrapper for `openai_codex.status`.
 
     def openrouter_auth_cancel(self, params_json: str) -> str: ...
     # Generated host wrapper for `openrouter.auth_cancel`.
@@ -4854,7 +4899,9 @@ def register_tool_handler(handler: Callable[[str], str]) -> None:
     stored value on each daemon callback through a GIL-aware drain
     task. Re-calling overwrites the previous handler atomically —
     proposals already in flight pick up the new callable on their
-    next ``tools.execute`` round-trip.
+    next ``tools.execute`` round-trip. The packaged
+    ``car_runtime.agent_loop`` helpers pass their own handler to each
+    ``execute_proposal`` call and leave a handler registered here in place.
 
     ``handler(call_json)`` receives ``{"tool": "name", "params":
     {...}, "action_id": "<id>", "request_id": "<id>", "timeout_ms":
