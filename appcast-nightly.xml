@@ -4,6 +4,18 @@
     <title>CAR Host Updates (Nightly)</title>
     <language>en</language>
             <item>
+                <title>Version 0.59.0-nightly.20261019</title>
+                <pubDate>Mon, 19 Oct 2026 03:47:20 +0000</pubDate>
+                <sparkle:version>20261019</sparkle:version>
+                <sparkle:shortVersionString>0.59.0-nightly.20261019</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+                <sparkle:releaseNotesLink>https://github.com/Parslee-ai/car-releases/releases/tag/v0.59.0-nightly.20261019</sparkle:releaseNotesLink>
+                <enclosure
+                    url="https://github.com/Parslee-ai/car-releases/releases/download/v0.59.0-nightly.20261019/CAR-Host-darwin-arm64.zip"
+                    type="application/octet-stream"
+                    sparkle:edSignature="ipvRXn6vhx/tKrGgnEctot7AI+KdHaIJ7Ug27in+B2hzUpUPvuxuiTV/gL2kQgTOLTuR/g5mnQka51Dc9DQKBA==" length="165349280" />
+            </item>
+            <item>
                 <title>Version 0.59.0-nightly.20261018</title>
                 <pubDate>Sun, 18 Oct 2026 03:47:22 +0000</pubDate>
                 <sparkle:version>20261018</sparkle:version>
