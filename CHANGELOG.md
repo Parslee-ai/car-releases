@@ -3,6 +3,16 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.60.0] — 2026-10-31
+
+### Changes
+
+- `car doctor` recognizes the `commons` and `topology` folders that the shared contribution graph and coordination-topology records write under the state root, instead of offering them up as leftover debris. Self-healing's `[[org]] roots` expand `~` on Windows too, where the home directory comes from `USERPROFILE` rather than `HOME`.
+
+- Walled agents on a Mac can run Apple's developer tools (`git`, `python3`, `clang` in `/usr/bin`) when Xcode is installed but nobody ran `xcode-select -s`. The wall granted the Command Line Tools in that case, while `xcrun` ran Xcode's tools, so every one of them was refused. It now resolves the active developer directory the way `xcode-select -p` does.
+
+See the [release notes][v0.60.0].
+
 ## [v0.58.0] — 2026-10-15
 
 ### Changes
@@ -729,6 +739,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.60.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.60.0
 [v0.58.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.58.0
 [v0.57.4]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.57.4
 [v0.57.2]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.57.2
