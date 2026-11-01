@@ -16,7 +16,7 @@ Most agent systems treat the model as both the source of reasoning and the contr
 CAR separates those concerns. The model proposes. The runtime decides and executes.
 
 - **Static verification before execution** — check a plan is satisfiable, and catch missing tools, bad parameters, and dependency errors, before calling any tools.
-- **Policies enforced on every action** — declarative rules, not prompt engineering.
+- **Policies checked before tool calls** — declarative rules, not prompt engineering, checked in `car do`, daemon sessions and the Claude Code hook. A default A2A listener and the external CLIs CAR launches as agents are not checked.
 - **Graph-based memory** — spreading activation over a knowledge graph, not flat key-value.
 - **Native skills** — learned procedures as first-class runtime primitives.
 - **DAG execution** — independent actions run concurrently.
@@ -35,18 +35,18 @@ Install:
 
 ```bash
 npm install car-runtime          # Node.js (bundles car-server too)
-pip install car-runtime          # Python (bundles car-server too)
+pip install car-runtime          # Python (does NOT bundle car-server; see below)
 # macOS .pkg / GitHub Release archive (Linux/Windows) — see README.md
 ```
 
-Start the daemon (v0.8+) — every binding is a thin client to one
+Start the daemon (v0.8+). The pip wheel does not include `car-server`, so Python users start it the same way. Every binding is a thin client to one
 singleton `car-server` process per host:
 
 ```bash
 # Foreground (Ctrl-C to stop). Default port 9100; auth on by default.
-npx --package=car-runtime car-server
-# or:
-python -m car_runtime.server
+npx --package=car-runtime car-server --port 9100
+# or the car-server binary from the release tarball:
+car-server --port 9100
 # or, on macOS, double-click CAR Host.app — it supervises car-server
 # for you and updates in place via Sparkle.
 ```

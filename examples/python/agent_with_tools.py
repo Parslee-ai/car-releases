@@ -119,7 +119,8 @@ def main() -> None:
     for name in TOOLS:
         rt.register_tool(name)
 
-    # 2. Policies — these run in Rust on every action, before the tool fires.
+    # 2. Policies — checked in Rust before each action this runtime executes,
+    #    before the tool fires.
     rt.register_policy(
         "writes_only_in_tmp",
         "deny_tool_param",

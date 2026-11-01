@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.58.0 (2026-10-16). Every subcommand the installed binary reports is
+> 0.58.0 (2026-10-28). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 80 top-level commands, 159 nested subcommands
+> 83 top-level commands, 167 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 80 subcommands spanning several different jobs:
+`car` is one binary with 83 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -179,7 +179,7 @@ commands on a cadence via launchd / cron / schtasks).
 |---|---|
 | [`car info`](#car-info) | Show runtime and live machine state |
 | [`car capabilities`](#car-capabilities) | Print the deterministic CAR capability manifest |
-| [`car ui`](#car-ui) | Open the browser dashboard served by the daemon |
+| [`car ui`](#car-ui) | Sign a browser in to the daemon's dashboard with a one-time link |
 | [`car evaluate-contract`](#car-evaluate-contract) | Evaluate a pinned outcome contract without a model, coding loop, or delivery |
 | [`car verify`](#car-verify) | Statically verify a proposal |
 | [`car simulate`](#car-simulate) | Simulate a proposal's state effects without executing |
@@ -192,7 +192,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car coder-ab`](#car-coder-ab) | A/B-test CAR's coder against an external agent (Codex / Claude Code) over a corpus, and grow that corpus from git history — the productionized dogfooding loop (docs/proposals/coder-ab-dogfood.md) |
 | [`car coder`](#car-coder) | Manage operator-controlled repository trust for CarCoder |
 | [`car coder-overlays`](#car-coder-overlays) | Show the approved harness overlays — system-prompt and tool-description text applied through `evolution.run` — that every native coder session starts with, or clear them. Nothing removes an applied overlay on its own; `--clear` is how one is taken out of force. Reads the local coder state directory; no daemon needed |
-| [`car keys`](#car-keys) | Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then `$CAR_HOME/env`, then keychain |
+| [`car keys`](#car-keys) | Store cloud-provider API keys in CAR's secret store, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then the secret store |
 | [`car heal`](#car-heal) | Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges |
 | [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
@@ -217,6 +217,8 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car board`](#car-board) | Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board launched by an agent cannot. Closing the board never stops a run |
 | [`car do`](#car-do) | CAR Assistant: a general-purpose agent that works out of the box |
 | [`car policy-check-hook`](#car-policy-check-hook) | Evaluate a host's proposed tool call against `.car/policies/` and answer on stdout with that host's hook decision envelope |
+| [`car peer-inbox-hook`](#car-peer-inbox-hook) | Tell a running Claude Code session that colleagues' messages wait for it. Wired by the CAR plugin as a Claude Code hook (after a prompt or a tool call, and before stopping); reads the count `car claude`'s collaboration server keeps. Prints nothing outside a `car claude` session, and always exits 0 |
+| [`car worktree`](#car-worktree) | Lease a warm git worktree from this repo's pool instead of creating one per task (acquire, release, status, reclaim, clean, and `hook` for the CAR Claude Code plugin). Off until the repo commits .car/worktree-pool.toml with `enabled = true` |
 | [`car project`](#car-project) | Manage CAR-managed projects (a named, git-backed workspace CAR creates for you — no repo to pick) |
 | [`car parslee`](#car-parslee) | Parslee platform capabilities for the signed-in account (requires `car auth login`) |
 | [`car agent`](#car-agent) | Build and run in-daemon agents from plain-language descriptions. An agent runs inside CAR — nothing to install |
@@ -244,6 +246,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car health`](#car-health) | Wearable / activity data (HealthKit + Fitbit/Garmin/Oura/etc.) |
 | [`car install`](#car-install) | Install a contributed agent — from a local directory OR a registry reference (Parslee-ai/car#182 phases 4 + 5) |
 | [`car ls`](#car-ls) | List every installed contributed agent (Parslee-ai/car#182 phase 4). Calls the daemon's `agents.list` and renders the result. Long alias: `agents` |
+| [`car spend`](#car-spend) | Spend on model calls made through CAR. `car spend <agent>` prints one agent's spend this hour, today and this month beside its declared caps, when it is at budget and until when, and its cap history (the daemon's `spend.status`); inside a supervised agent's environment (`CAR_AGENT_ID` / `CAR_AGENT_TOKEN` set) the agent may be left out and the agent's own is printed. `car spend --all` prints every principal's spend today, over the last 7 days and this month (the daemon's `spend.costs`): agents, workers, labels, the operator and CAR's own background work. Only calls routed through CAR are counted |
 | [`car inspect`](#car-inspect) | Inspect a single installed agent (Parslee-ai/car#182 phase 4). Shows the on-disk manifest plus the supervisor's current status. Resolves unqualified names to the highest installed semver per the contributed-agents proposal |
 | [`car start`](#car-start) | Start an installed contributed agent |
 | [`car stop`](#car-stop) | Stop an installed contributed agent |
@@ -294,13 +297,28 @@ Options:
 ### car ui
 
 ```text
-Open the browser dashboard served by the daemon
+Sign a browser in to the daemon's dashboard with a one-time link
+
+Asks the running daemon on `--port` for a link to its own dashboard and prints it,
+`http://127.0.0.1:<dashboard port>/#login=<code>`; with no daemon answering it mints nothing. On
+macOS and Windows it also opens the link in the browser; on Linux it only prints it, because a
+browser opener would carry the code in its command line, which every user on the machine can read.
+The link works once, within 10 minutes. Through an ssh tunnel, change the port in the link to the
+tunnel's local port.
 
 Usage: car ui [OPTIONS]
 
 Options:
-  -p, --port <PORT>  Daemon WS port; the dashboard is served on this + 1 [default: 9100]
-  -h, --help         Print help
+  -p, --port <PORT>
+          Daemon WS port; the daemon reports its own dashboard address
+
+          [default: 9100]
+
+      --sign-out
+          Sign every browser out of the dashboard instead
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 ### car evaluate-contract
@@ -529,10 +547,10 @@ Options:
           separate ceiling regardless
 
       --silence-window-secs <SILENCE_WINDOW_SECS>
-          Stop the run when nothing makes progress for this many seconds (default 900; 0 disables).
-          This is the only time-based stop: a check that prints nothing for this long is killed and
-          judged red, and a session silent this long ends `failed` with `failure_kind: "stalled"`,
-          naming what it was waiting on
+          Stop the run when nothing makes progress for this many seconds (default 900; 0 disables;
+          values 1-29 are raised to the 30 s floor). This is the only time-based stop: a check that
+          prints nothing for this long is killed and judged red, and a session silent this long ends
+          `failed` with `failure_kind: "stalled"`, naming what it was waiting on
 
       --workspace-dir <WORKSPACE_DIR>
           Explicit workspace location. Reused when it is already a valid worktree
@@ -886,9 +904,9 @@ Options:
 ### car keys
 
 ```text
-Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment
-variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then
-`$CAR_HOME/env`, then keychain
+Store cloud-provider API keys in CAR's secret store, so a native-app user never sets an environment
+variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then the secret
+store
 
 Usage: car keys <COMMAND>
 
@@ -1323,13 +1341,16 @@ Options:
 ```text
 Remove a downloaded model
 
-Usage: car models remove <NAME>
+Usage: car models remove [OPTIONS] <NAME>
 
 Arguments:
   <NAME>  Model name
 
 Options:
-  -h, --help  Print help
+      --force  Also remove an artifact CAR has no install receipt for, when it is a link or an
+      interrupted install at the model's own path under the models directory. Shared HuggingFace
+      blobs are never deleted
+  -h, --help   Print help
 ```
 
 #### car models upgrades
@@ -1910,10 +1931,14 @@ filesystem — no daemon required, so it works even when `car-server` won't star
 Usage: car doctor [OPTIONS]
 
 Options:
-      --repair  Apply safe repairs: purge corrupt cache files (re-pull afterward), back up
-      unparseable state files, refresh the version stamp, and (on macOS) link a missing, dangling,
-      or wrong-bundle `car-mcp` beside a bundle-linked `car`. Never deletes unrecognized entries or
-      anything not provably corrupt, and never overwrites a regular file
+      --repair  Apply safe repairs: purge corrupt cache files (re-pull afterward), clear a model
+      directory an interrupted pull left with no weights (its links only — the HuggingFace blobs
+      they point at stay), remove partial downloads in repos CAR fetches whole that no writer holds
+      and nothing has written for a day, remove empty event journals inside the state root (never
+      through a symlink), back up unparseable state files, refresh the version stamp, and (on macOS)
+      link a missing, dangling, or wrong-bundle `car-mcp` beside a bundle-linked `car`. Never
+      deletes unrecognized entries or anything not provably corrupt, and never overwrites a regular
+      file
       --deep    Deep-verify model weights (recompute sha256 vs the HuggingFace etag) instead of the
       cheap presence/non-empty check. Slower but catches truncated-but-non-empty corruption
   -h, --help    Print help
@@ -1981,8 +2006,9 @@ Usage: car purge [OPTIONS]
 Options:
       --dry-run           Show what would be removed and exit without deleting anything
   -y, --yes               Skip the confirmation prompt
-      --keep-secrets      Keep `~/.car/env` (the dotenv secrets file) so a reinstall doesn't need
-      API keys re-entered
+      --keep-secrets      Keep `~/.car/secrets` (the key store on a Linux machine with no Secret
+      Service), and a leftover `~/.car/env` that may hold the only copy of a key, so a reinstall
+      doesn't need API keys re-entered
       --keep-permissions  macOS: keep CarHost.app's privacy (TCC) grants — Accessibility, Screen
       Recording, Automation, … — instead of resetting them. For using `car purge` as a state reset
       rather than an uninstall
@@ -2269,6 +2295,340 @@ Options:
           Print help (see a summary with '-h')
 ```
 
+### car peer-inbox-hook
+
+```text
+Tell a running Claude Code session that colleagues' messages wait for it. Wired by the CAR plugin as
+a Claude Code hook (after a prompt or a tool call, and before stopping); reads the count `car
+claude`'s collaboration server keeps. Prints nothing outside a `car claude` session, and always
+exits 0
+
+Usage: car peer-inbox-hook
+
+Options:
+  -h, --help  Print help
+```
+
+### car worktree
+
+```text
+Lease a warm git worktree from this repo's pool instead of creating one per task (acquire, release,
+status, reclaim, clean, and `hook` for the CAR Claude Code plugin). Off until the repo commits
+.car/worktree-pool.toml with `enabled = true`
+
+Usage: car worktree <COMMAND>
+
+Commands:
+  acquire  Lease a slot checked out on BRANCH and print its path (the only line on stdout)
+  release  Give a slot back: park it detached on the base, keep its build output, lock it, and drop
+  the lease
+  status   Show the pool: each slot free or leased (branch, owner, pid, DEAD when the holder is
+  gone, since when), and this repo's other worktrees
+  reclaim  Free leases whose holder process is gone (clean slots only, unless --archive-dirty)
+  clean    Find stale ad-hoc worktrees of this repo; archive, then remove them with --apply (dry run
+  otherwise)
+  hook     Claude Code's WorktreeCreate, WorktreeRemove and SubagentStop hook, wired by the CAR
+  plugin; reads the hook's JSON on stdin
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+
+Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
+
+Environment:
+  WT_POOL_OWNER    who holds the lease (default: CLAUDE_CODE_SESSION_ID)
+  WT_POOL_PID      a process that lives as long as the work; the lease dies with it
+                   (default: CLAUDE_PID). Not the pid of a one-off shell.
+  WT_POOL_OFFLINE  1 = never fetch; use the refs already here (same as --offline)
+  WT_POOL_HOOK_WAIT
+                   minutes `hook` waits for a slot when the pool is full (default 10)
+
+Per-machine git config: wtpool.size (default 6), wtpool.dir (default
+<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+
+Exit codes:
+  0  done
+  2  error or refusal (the reason is on stderr)
+  3  every slot is leased (acquire): wait (--wait), reclaim, or ask a holder to
+     release. Do not fall back to `git worktree add`.
+```
+
+#### car worktree acquire
+
+```text
+Lease a slot checked out on BRANCH and print its path (the only line on stdout)
+
+An existing local branch is switched to, a branch on origin is tracked, otherwise BRANCH is created
+from the base. The same owner acquiring the same branch again gets the same slot back without
+fetching. A branch whose holder process is gone is handed over with its uncommitted work. Before a
+new slot is handed out, origin is fetched; a failed fetch is fatal unless --offline. With every slot
+leased, dead holders' clean slots are reclaimed first; then it waits up to --wait minutes, or exits
+3.
+
+Usage: car worktree acquire [OPTIONS] <BRANCH>
+
+Arguments:
+  <BRANCH>
+          The branch to work on
+
+Options:
+      --repo <DIR>
+          Any path inside the repository (default: the current directory)
+
+      --base <REF>
+          Start new branches from this ref (default: origin/HEAD's target, else origin/main)
+
+      --wait <MIN>
+          Wait up to this many whole minutes for a slot when the pool is full
+
+          [default: 0]
+
+      --offline
+          Do not fetch; use the refs already here (or WT_POOL_OFFLINE=1)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
+
+Environment:
+  WT_POOL_OWNER    who holds the lease (default: CLAUDE_CODE_SESSION_ID)
+  WT_POOL_PID      a process that lives as long as the work; the lease dies with it
+                   (default: CLAUDE_PID). Not the pid of a one-off shell.
+  WT_POOL_OFFLINE  1 = never fetch; use the refs already here (same as --offline)
+  WT_POOL_HOOK_WAIT
+                   minutes `hook` waits for a slot when the pool is full (default 10)
+
+Per-machine git config: wtpool.size (default 6), wtpool.dir (default
+<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+
+Exit codes:
+  0  done
+  2  error or refusal (the reason is on stderr)
+  3  every slot is leased (acquire): wait (--wait), reclaim, or ask a holder to
+     release. Do not fall back to `git worktree add`.
+```
+
+#### car worktree release
+
+```text
+Give a slot back: park it detached on the base, keep its build output, lock it, and drop the lease
+
+Refused while the slot has uncommitted or untracked files, ignored files that are not build output,
+an unfinished rebase, merge, cherry-pick, revert or bisect, or commits only a detached HEAD holds.
+Refused for a slot leased to someone else, or to one of your subagents (`<owner>/agent-<id>`),
+unless --force.
+
+Usage: car worktree release [OPTIONS] [SLOT]
+
+Arguments:
+  [SLOT]
+          The slot to release (default: the checkout containing --repo or the current directory)
+
+Options:
+      --owner <PATTERN>
+          Release the one slot whose lease owner matches this pattern (`*` and `?` wildcards). With
+          SLOT, act only while that slot's lease still matches
+
+      --repo <DIR>
+          Any path inside the repository (default: the current directory)
+
+      --force
+          Release a slot that is not yours, or one a killed acquire left mid-switch
+
+      --base <REF>
+          Park the slot on this ref (default: origin/HEAD's target, else origin/main)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
+
+Environment:
+  WT_POOL_OWNER    who holds the lease (default: CLAUDE_CODE_SESSION_ID)
+  WT_POOL_PID      a process that lives as long as the work; the lease dies with it
+                   (default: CLAUDE_PID). Not the pid of a one-off shell.
+  WT_POOL_OFFLINE  1 = never fetch; use the refs already here (same as --offline)
+  WT_POOL_HOOK_WAIT
+                   minutes `hook` waits for a slot when the pool is full (default 10)
+
+Per-machine git config: wtpool.size (default 6), wtpool.dir (default
+<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+
+Exit codes:
+  0  done
+  2  error or refusal (the reason is on stderr)
+  3  every slot is leased (acquire): wait (--wait), reclaim, or ask a holder to
+     release. Do not fall back to `git worktree add`.
+```
+
+#### car worktree status
+
+```text
+Show the pool: each slot free or leased (branch, owner, pid, DEAD when the holder is gone, since
+when), and this repo's other worktrees
+
+Usage: car worktree status [OPTIONS]
+
+Options:
+      --repo <DIR>  Any path inside the repository (default: the current directory)
+  -h, --help        Print help
+
+Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
+
+Environment:
+  WT_POOL_OWNER    who holds the lease (default: CLAUDE_CODE_SESSION_ID)
+  WT_POOL_PID      a process that lives as long as the work; the lease dies with it
+                   (default: CLAUDE_PID). Not the pid of a one-off shell.
+  WT_POOL_OFFLINE  1 = never fetch; use the refs already here (same as --offline)
+  WT_POOL_HOOK_WAIT
+                   minutes `hook` waits for a slot when the pool is full (default 10)
+
+Per-machine git config: wtpool.size (default 6), wtpool.dir (default
+<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+
+Exit codes:
+  0  done
+  2  error or refusal (the reason is on stderr)
+  3  every slot is leased (acquire): wait (--wait), reclaim, or ask a holder to
+     release. Do not fall back to `git worktree add`.
+```
+
+#### car worktree reclaim
+
+```text
+Free leases whose holder process is gone (clean slots only, unless --archive-dirty)
+
+Usage: car worktree reclaim [OPTIONS]
+
+Options:
+      --repo <DIR>     Any path inside the repository (default: the current directory)
+      --archive-dirty  Also free dead holders' dirty slots: save the work first (tag
+      `archive/wt/...` plus `<parent>/<repo>-archive/<name>/`), then reset the slot to a clean
+      detached base. A failed save leaves it as it is
+      --base <REF>     Reset archived slots to this ref (default: origin/HEAD's target, else
+      origin/main)
+  -h, --help           Print help
+
+Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
+
+Environment:
+  WT_POOL_OWNER    who holds the lease (default: CLAUDE_CODE_SESSION_ID)
+  WT_POOL_PID      a process that lives as long as the work; the lease dies with it
+                   (default: CLAUDE_PID). Not the pid of a one-off shell.
+  WT_POOL_OFFLINE  1 = never fetch; use the refs already here (same as --offline)
+  WT_POOL_HOOK_WAIT
+                   minutes `hook` waits for a slot when the pool is full (default 10)
+
+Per-machine git config: wtpool.size (default 6), wtpool.dir (default
+<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+
+Exit codes:
+  0  done
+  2  error or refusal (the reason is on stderr)
+  3  every slot is leased (acquire): wait (--wait), reclaim, or ask a holder to
+     release. Do not fall back to `git worktree add`.
+```
+
+#### car worktree clean
+
+```text
+Find stale ad-hoc worktrees of this repo; archive, then remove them with --apply (dry run otherwise)
+
+Never acts on the main checkout, a pool slot, a locked worktree, one a process is running in, one
+with a file changed within --quiet-hours, or a Codex worktree; any worktree a check cannot answer
+for (merged included) is kept. Refuses in a repo that has not turned the pool on and has no pool on
+this machine. Every removed worktree is saved first: tag `archive/wt/<path>-<UTC time>-<sha>` and
+`<parent>/<repo>-archive/<name>/` (status.txt, uncommitted.patch, staged.patch, unstaged.patch,
+untracked.tgz, ignored.tgz). Its branch is deleted with `git branch -d` only when the base already
+contains it.
+
+Usage: car worktree clean [OPTIONS]
+
+Options:
+      --repo <DIR>
+          Any path inside the repository (default: the current directory)
+
+      --apply
+          Act: archive and remove. Without it nothing on disk changes
+
+      --quiet-hours <H>
+          Keep any worktree with a file changed in the last H whole hours
+
+          [default: 48]
+
+      --base <REF>
+          Judge "merged" against this ref (default: origin/HEAD's target, else origin/main)
+
+      --offline
+          Do not fetch first (or WT_POOL_OFFLINE=1)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
+
+Environment:
+  WT_POOL_OWNER    who holds the lease (default: CLAUDE_CODE_SESSION_ID)
+  WT_POOL_PID      a process that lives as long as the work; the lease dies with it
+                   (default: CLAUDE_PID). Not the pid of a one-off shell.
+  WT_POOL_OFFLINE  1 = never fetch; use the refs already here (same as --offline)
+  WT_POOL_HOOK_WAIT
+                   minutes `hook` waits for a slot when the pool is full (default 10)
+
+Per-machine git config: wtpool.size (default 6), wtpool.dir (default
+<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+
+Exit codes:
+  0  done
+  2  error or refusal (the reason is on stderr)
+  3  every slot is leased (acquire): wait (--wait), reclaim, or ask a holder to
+     release. Do not fall back to `git worktree add`.
+```
+
+#### car worktree hook
+
+```text
+Claude Code's WorktreeCreate, WorktreeRemove and SubagentStop hook, wired by the CAR plugin; reads
+the hook's JSON on stdin
+
+In a pool-on repo, WorktreeCreate leases a slot on `worktree-<name>` for owner `<session>/<name>`,
+held by the nearest `claude` process above the hook (refused when there is none), and prints its
+path; WorktreeRemove releases it (refused while it holds work); SubagentStop releases the slot
+leased for `<session>/agent-<id>` and deletes that branch once the base contains it. A full or
+broken pool fails creation; nothing falls back to a worktree outside the pool. In every other repo
+it makes what Claude Code makes with no hook: `.claude/worktrees/<name>` on `worktree-<name>` from
+the default branch, `.worktreeinclude` files copied; removal removes the tree and its branch, and a
+subagent's tree is removed when it stops holding nothing. Stdout is the worktree path alone.
+SubagentStop always exits 0.
+
+Usage: car worktree hook
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
+
+Environment:
+  WT_POOL_OWNER    who holds the lease (default: CLAUDE_CODE_SESSION_ID)
+  WT_POOL_PID      a process that lives as long as the work; the lease dies with it
+                   (default: CLAUDE_PID). Not the pid of a one-off shell.
+  WT_POOL_OFFLINE  1 = never fetch; use the refs already here (same as --offline)
+  WT_POOL_HOOK_WAIT
+                   minutes `hook` waits for a slot when the pool is full (default 10)
+
+Per-machine git config: wtpool.size (default 6), wtpool.dir (default
+<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+
+Exit codes:
+  0  done
+  2  error or refusal (the reason is on stderr)
+  3  every slot is leased (acquire): wait (--wait), reclaim, or ask a holder to
+     release. Do not fall back to `git worktree add`.
+```
+
 ### car project
 
 ```text
@@ -2402,8 +2762,8 @@ Arguments:
 
 Options:
   -y, --yes
-          Skip the interactive prompts. CAR's local host key is then not used, so only a daemon with
-          no host token (such as one started without authentication) builds the agent
+          Skip the interactive prompts. CAR's local host key is then not used, so the daemon refuses
+          to build the agent; run it in your terminal and answer yes instead
 
       --json
           Emit one JSON object; requires --yes so prompts do not share stdout
@@ -2417,14 +2777,17 @@ Options:
 ```text
 Run a registered agent on an input
 
-Usage: car agent run <ID> [INPUT]...
+Usage: car agent run [OPTIONS] <ID> [INPUT]...
 
 Arguments:
   <ID>        The agent id (its project slug)
   [INPUT]...  The input to give it
 
 Options:
-  -h, --help  Print help
+      --scheduled  Run it for its schedule: what the agent's OS schedule launches. Runs only when
+      one of its scheduled times is due, gives it an input naming that time, and records the run
+      (see `declagents.runs`)
+  -h, --help       Print help
 ```
 
 #### car agent list
@@ -2582,9 +2945,9 @@ Commands:
   delete            Delete a secret (idempotent)
   status            Check whether a secret exists, without returning the value
   available         Probe whether the OS secret store is reachable on this host
-  migrate-from-env  Walk known remote-model env vars and copy any non-empty values from process env
-  into the OS keychain. Idempotent — running again only rewrites entries when the env value differs
-  from what's stored
+  migrate-from-env  Import a leftover `~/.car/env` into the secret store and delete it, and copy
+  provider keys set in this shell's environment into the store. Prints one line per entry, by name
+  only
   help              Print this message or the help of the given subcommand(s)
 
 Options:
@@ -2619,7 +2982,7 @@ Arguments:
 
 Options:
       --service <SERVICE>
-      --check-credential   Resolve as a contract-check credential (secret store, then CAR env file)
+      --check-credential   Resolve as a contract-check credential (secret store only)
   -h, --help               Print help
 ```
 
@@ -2667,27 +3030,31 @@ Options:
 #### car secrets migrate-from-env
 
 ```text
-Walk known remote-model env vars and copy any non-empty values from process env into the OS
-keychain. Idempotent — running again only rewrites entries when the env value differs from what's
-stored.
+Import a leftover `~/.car/env` into the secret store and delete it, and copy provider keys set in
+this shell's environment into the store. Prints one line per entry, by name only.
 
-One-time setup for users moving away from `~/.car/env`. After migration, you can `unset
-OPENAI_API_KEY` (etc.) in your shell rc and the keychain entries will be picked up at runtime by
-car-inference.
+CAR does not read `~/.car/env`. The daemon moves it on the first start after an upgrade; run this
+for a file made by hand later. Every entry is written, then read back, and only then is the file
+deleted (no copy is kept). If any entry fails to move the file is left unchanged and the command
+exits non-zero. A key already in the store with a different value is not overwritten unless you pass
+`--replace`.
 
 Usage: car secrets migrate-from-env [OPTIONS]
 
 Options:
       --dry-run
-          Print what would be migrated without writing anything
+          Show which keys would move, by name, without changing anything
+
+      --replace
+          Overwrite a key already in the store when its value differs. When `~/.car/env` and this
+          shell both set a key, the shell's value wins
 
       --service <SERVICE>
           Service to write entries under. Defaults to "car" (the per-app namespace; same one
           car-inference reads at runtime)
 
       --include <ENV_VAR>
-          Additional env-var names to migrate beyond the built-in remote-model defaults
-          (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY). Repeatable
+          Additional env-var names to migrate beyond the provider credential registry. Repeatable
 
   -h, --help
           Print help (see a summary with '-h')
@@ -2882,47 +3249,67 @@ Options:
 #### car permissions status
 
 ```text
-Report current grant state for a domain
+Report current grant state for a domain.
+
+On macOS a check that does not answer within 2 s (an app running but not answering Apple Events)
+reports status `not_responding` and exits 3.
 
 Usage: car permissions status [OPTIONS] <DOMAIN>
 
 Arguments:
   <DOMAIN>
 
+
 Options:
-      --target <TARGET>  macOS Automation only: bundle ID of the target app to control. Ignored for
-      other domains
-  -h, --help             Print help
+      --target <TARGET>
+          macOS Automation only: bundle ID of the target app to control. Ignored for other domains
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 #### car permissions request
 
 ```text
-Trigger a native prompt if the OS supports one
+Trigger a native prompt if the OS supports one.
+
+On macOS this reads the current state without prompting, like `status`: a check that does not answer
+within 2 s reports status `not_responding` and exits 3.
 
 Usage: car permissions request [OPTIONS] <DOMAIN>
 
 Arguments:
   <DOMAIN>
 
+
 Options:
       --target <TARGET>
-  -h, --help             Print help
+
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 #### car permissions explain
 
 ```text
-Human-readable explanation and fix suggestion
+Human-readable explanation and fix suggestion.
+
+On macOS a check that does not answer within 2 s reports status `not_responding`, with a message and
+fix saying what to do, and exits 3.
 
 Usage: car permissions explain [OPTIONS] <DOMAIN>
 
 Arguments:
   <DOMAIN>
 
+
 Options:
       --target <TARGET>
-  -h, --help             Print help
+
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 #### car permissions domains
@@ -3020,6 +3407,12 @@ Commands:
   set-tool       Set an approval mode for one exact agent and exact tool. `always_allow` requires
   that agent to be attached with an eligible live callback
   evaluate-tool  Show whether one exact agent/tool override is active and schema-bound
+  set-observer   Grant (`on`) or withdraw (`off`) one agent's watcher view. An agent sees only its
+  own approvals and host events unless it holds this. It applies on macOS and Windows; on Linux a
+  walled agent cannot call those methods at all, so for a walled agent the grant changes nothing
+  there. While a watcher is granted, a daemon or `car` older than this release reading the same
+  state treats agent-permissions.json as damaged (it asks before every gated call); withdraw the
+  grant before downgrading
   reset-tool     Remove one exact agent/tool approval override
   help           Print this message or the help of the given subcommand(s)
 
@@ -3033,12 +3426,14 @@ Options:
 Set the default approval preset for all agents (`cautious` asks before any edit/full-access,
 `balanced` allows sandboxed edits, `trusting` allows everything without asking)
 
-Usage: car approvals default <PRESET>
+Usage: car approvals default [OPTIONS] <PRESET>
 
 Arguments:
   <PRESET>  One of: cautious | balanced | trusting
 
 Options:
+  -y, --yes   Don't ask. CAR's local host key is then not used, so the daemon refuses the change;
+  use the CAR app, or run it in your terminal and answer yes
   -h, --help  Print help
 ```
 
@@ -3059,7 +3454,7 @@ Options:
 Set an approval mode for one exact agent and exact tool. `always_allow` requires that agent to be
 attached with an eligible live callback
 
-Usage: car approvals set-tool <AGENT> <TOOL> <MODE>
+Usage: car approvals set-tool [OPTIONS] <AGENT> <TOOL> <MODE>
 
 Arguments:
   <AGENT>
@@ -3067,6 +3462,8 @@ Arguments:
   <MODE>   One of: always_allow | require_approval | deny
 
 Options:
+  -y, --yes   Don't ask. CAR's local host key is then not used, so the daemon refuses the change;
+  use the CAR app, or run it in your terminal and answer yes
   -h, --help  Print help
 ```
 
@@ -3085,18 +3482,42 @@ Options:
   -h, --help  Print help
 ```
 
+#### car approvals set-observer
+
+```text
+Grant (`on`) or withdraw (`off`) one agent's watcher view. An agent sees only its own approvals and
+host events unless it holds this. It applies on macOS and Windows; on Linux a walled agent cannot
+call those methods at all, so for a walled agent the grant changes nothing there. While a watcher is
+granted, a daemon or `car` older than this release reading the same state treats
+agent-permissions.json as damaged (it asks before every gated call); withdraw the grant before
+downgrading
+
+Usage: car approvals set-observer [OPTIONS] <AGENT> <STATE>
+
+Arguments:
+  <AGENT>
+  <STATE>  One of: on | off
+
+Options:
+  -y, --yes   Don't ask. CAR's local host key is then not used, so the daemon refuses the change;
+  use the CAR app, or run it in your terminal and answer yes
+  -h, --help  Print help
+```
+
 #### car approvals reset-tool
 
 ```text
 Remove one exact agent/tool approval override
 
-Usage: car approvals reset-tool <AGENT> <TOOL>
+Usage: car approvals reset-tool [OPTIONS] <AGENT> <TOOL>
 
 Arguments:
   <AGENT>
   <TOOL>
 
 Options:
+  -y, --yes   Don't ask. CAR's local host key is then not used, so the daemon refuses the change;
+  use the CAR app, or run it in your terminal and answer yes
   -h, --help  Print help
 ```
 
@@ -3301,7 +3722,9 @@ certificate)
 Usage: car lattice knock [OPTIONS] --purpose <PURPOSE> --project <PROJECT> [MACHINE]
 
 Arguments:
-  [MACHINE]  The discovered CAR: its advertised name (see `car lattice knocks`) or its URL
+  [MACHINE]  The discovered CAR: its advertised name (see `car lattice knocks`) or its URL. When
+  none matches, a peer registered with `a2a.peers.add`, by label, slug or URL: how two daemons on
+  one machine knock each other, since a loopback daemon is not advertised
 
 Options:
       --member <MEMBER>    A colleague's account, as `car lattice directory` lists it: knock through
@@ -3471,7 +3894,7 @@ Commands:
   enroll-code  Print your org's enrollment code and its fingerprint. Give the code to a new member,
   and read them the fingerprint another way than the code
   join         Join your org on this machine: trust the granter keys in an enrollment code, checked
-  against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to $CAR_HOME/env;
+  against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store;
   restart the daemon afterwards. Works without a running daemon
   help         Print this message or the help of the given subcommand(s)
 
@@ -3688,12 +4111,17 @@ Usage: car mail messages [OPTIONS]
 
 Options:
       --accounts <ACCOUNTS>
-      --mailbox <MAILBOX>    Mailbox selector — a `full_name` from `car mail mailboxes`, or a bare
-      leaf name like "Travel". Defaults to INBOX
-      --limit <LIMIT>        Number of rows to return (maximum 500) [default: 50]
-      --since <SINCE>        Only messages received at or after this RFC3339 instant
-      --include-body         Include each message's body inline (bounded per message)
-  -h, --help                 Print help
+      --mailbox <MAILBOX>        Mailbox selector — a `full_name` from `car mail mailboxes`, or a
+      bare leaf name like "Travel". Defaults to INBOX
+      --limit <LIMIT>            Number of rows to return (maximum 500) [default: 50]
+      --since <SINCE>            Only messages received at or after this RFC3339 instant
+      --include-body             Include each message's body inline (bounded per message)
+      --all-mailboxes            Read every mailbox of the selected accounts, merged newest first
+      and deduped by Message-ID. Mailboxes not read in time are listed under `unresolved`. Conflicts
+      with --mailbox
+      --timeout-ms <TIMEOUT_MS>  Bound on each Mail.app read, in milliseconds (1000-120000; default
+      15000). With --all-mailboxes, also the budget after which no further mailbox read starts
+  -h, --help                     Print help
 ```
 
 #### car mail body
@@ -3798,6 +4226,7 @@ Usage: car notes <COMMAND>
 Commands:
   accounts  List Notes.app accounts
   find      Free-text note search
+  read      Read one note's stored HTML body by the id `car notes find` prints. Read-only
   help      Print this message or the help of the given subcommand(s)
 
 Options:
@@ -3828,6 +4257,20 @@ Arguments:
 Options:
       --limit <LIMIT>  [default: 50]
   -h, --help           Print help
+```
+
+#### car notes read
+
+```text
+Read one note's stored HTML body by the id `car notes find` prints. Read-only
+
+Usage: car notes read <ID>
+
+Arguments:
+  <ID>
+
+Options:
+  -h, --help  Print help
 ```
 
 ### car reminders
@@ -4075,8 +4518,25 @@ Options:
 
           [default: ws://127.0.0.1:9100/]
 
+      --upgrade
+          Replace an agent already installed under the same id with this bundle's different version.
+          Without it, installing over an installed agent is refused; the same version is refused
+          either way
+
       --json
           Output as JSON instead of human-readable
+
+  -y, --yes
+          Don't ask. CAR's local host key is then not used, so the daemon refuses the command (it
+          needs the host role). A script that means to act as the host passes --as-host instead; a
+          person runs it in their terminal and answers yes, or uses the CAR app
+
+      --as-host
+          Present CAR's local host key without asking, for an unattended deploy script run by the
+          server's owner. Needs the host-token file, and is refused for a process CAR launched as a
+          supervised agent. That refusal reads environment variables an agent controls, so on Linux
+          the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the
+          key file (car#3706)
 
   -h, --help
           Print help (see a summary with '-h')
@@ -4093,6 +4553,30 @@ Usage: car ls [OPTIONS]
 Options:
       --url <URL>  WebSocket URL of the running car-server daemon [default: ws://127.0.0.1:9100/]
       --json       Output as JSON instead of a human table
+  -h, --help       Print help
+```
+
+### car spend
+
+```text
+Spend on model calls made through CAR. `car spend <agent>` prints one agent's spend this hour, today
+and this month beside its declared caps, when it is at budget and until when, and its cap history
+(the daemon's `spend.status`); inside a supervised agent's environment (`CAR_AGENT_ID` /
+`CAR_AGENT_TOKEN` set) the agent may be left out and the agent's own is printed. `car spend --all`
+prints every principal's spend today, over the last 7 days and this month (the daemon's
+`spend.costs`): agents, workers, labels, the operator and CAR's own background work. Only calls
+routed through CAR are counted
+
+Usage: car spend [OPTIONS] [AGENT]
+
+Arguments:
+  [AGENT]  The agent whose spend and caps to print (`spend.status`). May be left out inside a
+  supervised agent's environment, which prints that agent's own
+
+Options:
+      --all        Every principal's spend, with a total and the server's zone
+      --url <URL>  WebSocket URL of the running car-server daemon [default: ws://127.0.0.1:9100/]
+      --json       Output the daemon's result as JSON instead of a table
   -h, --help       Print help
 ```
 
@@ -4126,6 +4610,14 @@ Arguments:
 
 Options:
       --url <URL>  WebSocket URL of the running car-server daemon [default: ws://127.0.0.1:9100/]
+  -y, --yes        Don't ask. CAR's local host key is then not used, so the daemon refuses the
+  command (it needs the host role). A script that means to act as the host passes --as-host instead;
+  a person runs it in their terminal and answers yes, or uses the CAR app
+      --as-host    Present CAR's local host key without asking, for an unattended deploy script run
+      by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
+      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
+      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
+      file (car#3706)
   -h, --help       Print help
 ```
 
@@ -4141,6 +4633,14 @@ Arguments:
 
 Options:
       --url <URL>  WebSocket URL of the running car-server daemon [default: ws://127.0.0.1:9100/]
+  -y, --yes        Don't ask. CAR's local host key is then not used, so the daemon refuses the
+  command (it needs the host role). A script that means to act as the host passes --as-host instead;
+  a person runs it in their terminal and answers yes, or uses the CAR app
+      --as-host    Present CAR's local host key without asking, for an unattended deploy script run
+      by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
+      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
+      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
+      file (car#3706)
   -h, --help       Print help
 ```
 
@@ -4156,6 +4656,14 @@ Arguments:
 
 Options:
       --url <URL>  WebSocket URL of the running car-server daemon [default: ws://127.0.0.1:9100/]
+  -y, --yes        Don't ask. CAR's local host key is then not used, so the daemon refuses the
+  command (it needs the host role). A script that means to act as the host passes --as-host instead;
+  a person runs it in their terminal and answers yes, or uses the CAR app
+      --as-host    Present CAR's local host key without asking, for an unattended deploy script run
+      by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
+      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
+      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
+      file (car#3706)
   -h, --help       Print help
 ```
 
@@ -4193,6 +4701,14 @@ Arguments:
 
 Options:
       --url <URL>  WebSocket URL of the running car-server daemon [default: ws://127.0.0.1:9100/]
+  -y, --yes        Don't ask. CAR's local host key is then not used, so the daemon refuses the
+  command (it needs the host role). A script that means to act as the host passes --as-host instead;
+  a person runs it in their terminal and answers yes, or uses the CAR app
+      --as-host    Present CAR's local host key without asking, for an unattended deploy script run
+      by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
+      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
+      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
+      file (car#3706)
   -h, --help       Print help
 ```
 
@@ -4205,7 +4721,8 @@ Usage: car schedule <COMMAND>
 
 Commands:
   add        Schedule a command to run on a cadence
-  list       List scheduled commands and whether each is OS-durable
+  list       List every scheduled task record and what runs it (os, daemon, orphaned, or none), with
+  its last run
   remove     Remove a scheduled command: drops any OS schedule and deletes the task
   reconcile  Reconcile OS schedules against the task store, reaping orphans
   help       Print this message or the help of the given subcommand(s)
@@ -4247,6 +4764,13 @@ Options:
       --working-dir <WORKING_DIR>
           Working directory for the command
 
+      --stdout <PATH>
+          File to append the command's stdout to (absolute path). Default:
+          `<CAR_HOME>/logs/tasks/<task-id>.log`
+
+      --stderr <PATH>
+          File to append the command's stderr to (absolute path). Default: the stdout file
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -4254,7 +4778,7 @@ Options:
 #### car schedule list
 
 ```text
-List scheduled commands and whether each is OS-durable
+List every scheduled task record and what runs it (os, daemon, orphaned, or none), with its last run
 
 Usage: car schedule list [OPTIONS]
 
@@ -4283,7 +4807,8 @@ Options:
 Reconcile OS schedules against the task store, reaping orphans.
 
 Run this if schedules were left behind by an interrupted uninstall, or after editing `~/.car/tasks/`
-by hand.
+by hand. Also reinstalls durable command schedules installed before run recording, so their runs are
+recorded.
 
 Usage: car schedule reconcile
 
@@ -4625,6 +5150,9 @@ Options:
       `coder.confirm_contract` takes it) that becomes the item's locked contract
       --base <BASE>                    Build only: the commit the Build starts from, which must be
       on the remote. Defaults to the remote's default branch
+      --model <MODEL>                  The model you did the work with, recorded on the stage as
+      your own statement (CAR did not watch the work). A model identifier such as `claude-opus-5-5`,
+      not prose
       --repo <REPO>                    [default: .]
       --remote <REMOTE>                [default: origin]
   -h, --help                           Print help

@@ -1,7 +1,7 @@
 {% raw %}
 # CAR as an MCP server
 
-> Describes CAR **0.58.0**. Check yours with `car --version`; if it
+> Describes CAR **0.60.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 Wire CAR's graph memory, skill storage, static plan verification, and policy
@@ -39,9 +39,22 @@ to run them. On stdio, delegate to the agent with `car do --json` directly
 instead.
 
 The daemon's `/mcp` endpoint validates the `Origin` header (present +
-non-loopback → `403`) as its only access control — no bearer token. It does
-not widen for a non-default `--mcp-bind`; front it with a reverse proxy if you
-need to expose it beyond loopback.
+non-loopback → `403`) and the `Host` header (any name but `localhost` →
+`403`; IP literals pass, since a literal cannot be rebound). It does not widen for a non-default `--mcp-bind`;
+front it with a reverse proxy if you need to expose it beyond loopback.
+
+With auth on (the default), its memory, skill, resource and assistant
+surfaces also need the daemon's auth token: send `Authorization: Bearer
+<contents of the auth-token file>` — `~/Library/Application
+Support/ai.parslee.car/auth-token` on macOS,
+`$XDG_RUNTIME_DIR/ai.parslee.car/auth-token` (else
+`~/.config/ai.parslee.car/auth-token`) on Linux, or
+`$CAR_HOME/ai.parslee.car/auth-token` when `CAR_HOME` is set. Without it
+those requests are `401`; the peer and Lattice tools and the plan checks
+(`verify`, `simulate`, `equivalent`, `optimize`) still answer. CLIs the
+daemon spawns get their own run credential instead, never this token, and a
+supervised agent may present its own unscoped `CAR_AGENT_TOKEN` (with
+`X-Car-Agent-Id`) to reach its own memory.
 
 ## What this does NOT give you
 
@@ -142,7 +155,9 @@ them.
   },
   "force": false,
   "max_candidates": 8,       // 1-32
-  "tenant_id": "string"
+  "tenant_id": "string",
+  "session_id": "string",    // only entries derived from this session's events; omit for all
+  "exclude_fact_ids": ["string"]
 }
 ```
 
@@ -169,7 +184,7 @@ Each of these reads a `car_ir::ActionProposal` JSON object and runs nothing.
 
 | Tool | Required params | What it answers |
 |---|---|---|
-| `policy_check` | `tool` (+ optional `params`) | Evaluates a proposed tool call against CAR's policy layer *before* it runs: allow/deny plus the rule that decided it. Merges `<CAR_HOME>/policies/` + `.car/policies/` (under the working directory — **neither is walked upward**) with CAR's stateless egress guardrail. |
+| `policy_check` | `tool` (+ optional `params`) | Evaluates a proposed tool call against CAR's policy layer *before* it runs: allow/deny plus the rule that decided it. Merges `<CAR_HOME>/policies/` + every project `.car/policies/` from the working directory up to its repository root (the walk stops at the worktree's `.git`, skips the state root, and outside a repository reads only the working directory's own `.car/`; `car do` and the coder read only the nearest `.car/`) with CAR's stateless egress guardrail, a heuristic, not egress control: it pattern-matches commands and URLs, and a call it does not recognize is not blocked. The guardrail inspects `shell`, `http` and `webfetch` and the host tools mapped onto them: Claude Code's `Bash` (as `shell`) and `WebFetch` (as `webfetch`), and CAR's own `http_request`, `browser`, `browse_navigate`, `browser_await_signin`, `web_fetch`, `run_command` and `pty_start`; the response's `inspected_as` names the tool a call was inspected as. It is `null` for an unmapped tool with neither a `command` nor a `url`; `read_file`, `write_file` and `edit_file` (Claude Code's `Read`, `Write` and `Edit`) are mapped but the egress guardrail does not inspect them; a `policy_load_failed` deny carries no `inspected_as`. Operator rules match the tool name exactly as sent. An unmapped tool carrying a `command` or `url` string is inspected too, but its guardrail findings only warn. Loopback hosts count as allowlisted, but `nc`, `netcat` and `/dev/tcp/` are denied even toward loopback. |
 
 Read `basis`, not just `decision`: `no_rules_configured` means nothing was
 loaded — an allow with nothing behind it — versus `passed_rules`, real rules
@@ -273,8 +288,13 @@ automatically.
 To get the 3 extra assistant tools, point the client at the running daemon's
 HTTP endpoint (`http://127.0.0.1:9102/mcp` by default, `--mcp-bind` /
 `CAR_MCP_BIND` to change it, `disabled` to turn it off) rather than launching
-`car-mcp` per-client. The exact MCP-over-HTTP config stanza is client-specific
-— consult that client's docs for "remote"/"HTTP" MCP servers.
+`car-mcp` per-client, and send the daemon's auth token as `Authorization:
+Bearer <token>` (see above). The exact MCP-over-HTTP config stanza is
+client-specific: Cursor takes `"url"` plus `"headers": {"Authorization":
+"Bearer ${env:CAR_AUTH_TOKEN}"}`, Codex takes `url` plus
+`bearer_token_env_var = "CAR_AUTH_TOKEN"`, and Claude Desktop, whose config
+launches only stdio servers, needs a bridge such as `mcp-remote` with
+`--header`.
 
 ### Isolating memory per client
 
@@ -341,9 +361,12 @@ subcommand used to exit 2, which Claude Code reads as *deny*, so every
 matching call in the session was refused with clap's usage text as the stated
 reason (Parslee-ai/car#993). Note this hook is a `car` subcommand
 (`car_policy::tool_gate` in-process) — it doesn't shell out to `car-mcp` at
-all, despite the MCP server enforcing the same policy engine. `.car/policies/`
-is read from the working directory only and is **not walked upward**, matching
-`car do`.
+all, despite the MCP server enforcing the same policy engine. The hook and
+`policy_check` read every `.car/policies/` from the working directory up to the
+repository root, so a repo-root rule still binds after the agent moves into a
+subdirectory. The walk stops at the worktree's `.git`, skips the state root,
+and outside a repository reads only the working directory's own `.car/`.
+`car do` and the coder read only the nearest `.car/`.
 
 ### The plugin-authoring gotcha this repo has already hit
 

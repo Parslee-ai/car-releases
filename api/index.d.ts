@@ -21,7 +21,7 @@
  * - `inferStream`, `transcribeStream`, `dispatchVoiceTurn` — daemon
  *   streams events over WS notifications
  * - `openSession`, `closeSession`, `registerPolicy(sessionId)` — use
- *   `session.open` / `session.close` JSON-RPC methods
+ *   `session.policy.open` / `session.policy.close` JSON-RPC methods
  * - `stateSnapshot`, `stateKeys` — daemon-side endpoints pending
  *
  * (`registerModel` was re-exposed in #39 — it now proxies to the
@@ -102,6 +102,232 @@ export interface AgentChatTurnResult {
   run_id: string | null;
 }
 
+/** The kind of a `spend.costs` row's meter key. */
+export type SpendKeyKind =
+  | 'agent'
+  | 'worker'
+  | 'label'
+  | 'operator'
+  | 'car'
+  | 'declarative'
+  | 'credential';
+
+/**
+ * One key's row of `spend.costs`. Dollars are rounded up to the cent; the
+ * counts are this month's. Only model calls made through CAR are counted.
+ */
+export interface SpendCostsRow {
+  /** The key's full id: `agent:<id>`, `worker:wk_…`, `label:<orchestrator>/label-<key>`, `operator`, `car:<purpose>`, `declarative:<id>`, `credential:<id>`. */
+  agent: string;
+  kind: SpendKeyKind;
+  today_usd: number;
+  last_7_days_usd: number;
+  /** The open month period: the same figure the key's own page shows. */
+  this_month_usd: number;
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+  /** Calls nobody could price, plus calls to a local model. */
+  cost_not_reported_calls: number;
+  /** `true` for a key with a declared `[spend]` cap (an agent's installed bundle). */
+  capped: boolean;
+  /** The cap this key is at right now, or `null` while it is under every cap (or uncapped). */
+  at_budget: SpendAtBudget | null;
+}
+
+/** One declared spend cap: US dollars per rolling calendar period in the server's zone. */
+export interface SpendCap {
+  /** As declared in the bundle (`2`, not `2.0`). */
+  usd: number;
+  per: 'hour' | 'day' | 'month';
+}
+
+/**
+ * Why a principal is "at budget": the cap that was reached, who holds it
+ * (`agent`; worker trees add `orchestrator`, `name`, `label <key>=<value>`
+ * in workers PR 5), and when the refusing period rolls over.
+ */
+export interface SpendAtBudget {
+  cap: SpendCap;
+  holding: string;
+  /** RFC 3339, in the server's zone. */
+  resets_at: string;
+  /** The server's IANA zone, e.g. `America/New_York`. */
+  zone: string;
+}
+
+/**
+ * One period of `spend.status`. `spent_usd` is rounded up to the cent from
+ * micro-dollars; `left_usd` is `max(0, cap - spent)` rounded down to the cent.
+ * `cap_usd` and `left_usd` are `null` for a period with no declared cap.
+ */
+export interface SpendPeriodStatus {
+  /** RFC 3339 start of the open period, in the server's zone. */
+  start: string;
+  /** RFC 3339 instant the period rolls over. */
+  resets_at: string;
+  spent_usd: number;
+  calls: number;
+  /** Calls nobody could price, plus calls to a local model. */
+  unpriced_calls: number;
+  /** Model calls refused on spend (-32018) in this period. */
+  refused_calls: number;
+  cap_usd: number | null;
+  left_usd: number | null;
+  at_budget: boolean;
+}
+
+/** One `agents.install` that changed an agent's caps (`<CAR_HOME>/spend/agents/<id>.history.jsonl`). */
+export interface SpendCapHistoryEntry {
+  /** RFC 3339, UTC. */
+  at: string;
+  /** The installed bundle version that declared `to`, when it has one. */
+  version?: string;
+  /** Who installed it: `owner` (the host token) until sign-in names the person. */
+  by: string;
+  from: SpendCap[];
+  to: SpendCap[];
+}
+
+/** The spend meter's own health, as `spend.status.meter` and `heal.status.spend_meter` report it. */
+export interface SpendMeterHealth {
+  healthy: boolean;
+  last_error: string | null;
+  clock: 'synchronized' | 'held_until_synchronized' | 'adopted_unsynchronized';
+  zone: string;
+  zone_source: 'TZ' | 'system' | 'utc_fallback';
+}
+
+/**
+ * Params of `spend.status` (`CarRuntime.spendStatus(JSON.stringify({ agent }))`).
+ * A host or operator session must name the agent; a session bound to a
+ * supervised agent (or a credential session) may omit it, or name itself —
+ * naming another agent is refused `-32003` with `data.reason: 'not_your_agent'`
+ * and recorded in that agent's refusal rows.
+ *
+ * The same optional `agent` (a bare agent id or a full meter key such as
+ * `agent:<id>`, `operator`, `car:<purpose>`) is accepted by `events.query` and
+ * `events.cost_by_agent`: with it, both read that principal's durable call
+ * ledger (`inference_metered` and `model_call_refused` rows) instead of the
+ * connection's in-memory log, under the same visibility rule. Without it they
+ * behave as before.
+ */
+export interface SpendStatusParams {
+  agent?: string;
+}
+
+/**
+ * Result of `spend.status` (JSON-parsed): one principal's spend against its
+ * declared caps, computed by the meter from the same ledger rows `spend.costs`
+ * sums. Only model calls made through CAR are counted.
+ */
+export interface SpendStatusResult {
+  /** The bare agent id. */
+  agent: string;
+  /** The server's IANA zone the periods are computed in. */
+  zone: string;
+  /** The zone's current abbreviation, e.g. `EDT`. */
+  zone_label: string;
+  /** `true` when the agent's installed bundle declares `[spend]` caps. */
+  capped: boolean;
+  periods: { hour: SpendPeriodStatus; day: SpendPeriodStatus; month: SpendPeriodStatus };
+  /** The caps as declared, in bundle order; `[]` when uncapped. */
+  declared: SpendCap[];
+  /** The cap currently refusing calls, or `null`. */
+  at_budget: SpendAtBudget | null;
+  /** The installed bundle version the caps came from; `null` when uncapped. */
+  caps_from_version: string | null;
+  /** Every install that changed the caps, oldest first. */
+  cap_history: SpendCapHistoryEntry[];
+  meter: SpendMeterHealth;
+}
+
+/**
+ * The three additive `agents.list` row fields (`agentsList()` /
+ * `CarRuntime.agentsList('{}')`, each row of the returned `ManagedAgent[]`):
+ * `spend_caps` is the installed bundle's `[spend]` caps as declared (`[]` =
+ * no cap), `budget` is `'uncapped' | 'under' | 'at_budget'`, and `at_budget`
+ * is present only while the row's `budget` is `'at_budget'`. `status` keeps
+ * its existing variants: a refusal never stops, pauses or restarts the agent.
+ */
+export interface ManagedAgentSpendFields {
+  spend_caps: SpendCap[];
+  budget: 'uncapped' | 'under' | 'at_budget';
+  at_budget?: SpendAtBudget;
+}
+
+/**
+ * The `model_call_refused` record of a run's trace (`runs.get_trace`):
+ * one model call the spend gate refused (-32018) in a run that then
+ * continued. The run is not marked failed. `cap`, `spent_usd`, `resets_at`
+ * and `zone` travel with `reason: 'budget_reached'` only.
+ */
+export interface ModelCallRefusedRecord {
+  record: 'model_call_refused';
+  /** RFC 3339. */
+  at: string;
+  model: string;
+  reason: 'budget_reached' | 'price_unknown' | 'unpriced_call_in_flight' | 'spend_unrecordable';
+  /** The refusal's `error.message`, e.g. `budget reached until 3:00 PM EDT`. */
+  message: string;
+  cap?: SpendCap;
+  spent_usd?: number;
+  resets_at?: string;
+  zone?: string;
+}
+
+/**
+ * Payload of the `spend.changed` host event (`host.event` with
+ * `kind: 'spend.changed'` and `agent_id` set to the bare agent id, delivered on
+ * `host.subscribe`). Published when a principal enters "at budget" (on the
+ * refusal) and again when the minute tick clears it after the period resets.
+ */
+export interface SpendChangedEvent {
+  /** The principal's full meter key, e.g. `agent:<id>`. */
+  agent: string;
+  at_budget: SpendAtBudget | null;
+  /** `null` only when the meter could not be read at publish time. */
+  periods: { hour: SpendPeriodStatus; day: SpendPeriodStatus; month: SpendPeriodStatus } | null;
+}
+
+/**
+ * Payload of the `agent.scheduled_run_refused` host event (`host.event` with
+ * `kind: 'agent.scheduled_run_refused'` and `agent_id` set to the declarative
+ * agent's id, delivered on `host.subscribe`). Published when the daemon refuses
+ * a scheduled run (`declagents.invoke` with `trigger: 'schedule'`) for want of
+ * host authority, as on a daemon with no host token installed. The launch
+ * also records the time `failed` with the same reason.
+ */
+export interface ScheduledRunRefusedEvent {
+  /** The scheduled time the launch asked for (RFC 3339), or `null` when it named none. */
+  scheduled_for: string | null;
+  /** The refusal, e.g. `this operation requires the host-management role (…; cause: …)`. */
+  reason: string;
+}
+
+/**
+ * Result of `spend.costs` (`CarRuntime.spendCosts('{}')`, JSON-parsed): the
+ * CAR-wide cost view over the one spend meter. Refused (`-32003`
+ * `car_wide_not_allowed`) to an agent-bound or credential session.
+ */
+export interface SpendCostsResult {
+  /** The server's IANA zone the periods are computed in. */
+  zone: string;
+  rows: SpendCostsRow[];
+  /** Every row summed except `label` rows, whose workers' calls are already counted. */
+  total: { today_usd: number; last_7_days_usd: number; this_month_usd: number };
+  /** Every key at a cap right now, each with its full meter key (`agent:<id>`); `[]` when none is. */
+  at_budget: Array<SpendAtBudget & { agent: string }>;
+  meter: {
+    healthy: boolean;
+    last_error: string | null;
+    clock: 'synchronized' | 'held_until_synchronized' | 'adopted_unsynchronized';
+    zone_source: 'TZ' | 'system' | 'utc_fallback';
+    /** All null/empty until the price refresh arrives. */
+    prices: { refreshed_at: string | null; last_refresh_error: string | null; stale: string[] };
+  };
+}
+
 /** Persistent runtime instance with state, memory, tools, and policies. */
 /**
  * Optional settings for `coderStart`. Every field is independently omittable;
@@ -113,7 +339,9 @@ export interface AgentChatTurnResult {
 export interface CoderStartOptions {
   /**
    * Caller-owned OutcomeContract JSON. The daemon validates it, skips model
-   * derivation, and runs it verbatim; not valid for Agent projects.
+   * derivation, and runs it verbatim; not valid for Agent projects. Supplying
+   * it approves none of its network checks: a check that needs network adds
+   * `"network_approved": true`, and an unflagged network check is held.
    */
   contractJson?: string | undefined | null;
   /**
@@ -133,6 +361,13 @@ export interface CoderStartOptions {
   organizationId?: string | undefined | null;
   /** Run as personal, org-less work even where a default org applies. */
   personal?: boolean | undefined | null;
+  /**
+   * For a caller bound to a supervised agent: the `session_id` of the host's
+   * `agents.chat` turn it is answering. Such a caller needs it to run an
+   * `external` or `foreman` engine, and without it runs `auto` on the native
+   * loop. Hosts and unbound callers leave it unset.
+   */
+  chatSessionId?: string | undefined | null;
   /** Subscribe this connection before contract derivation starts. */
   subscribe?: boolean | undefined | null;
   /**
@@ -223,8 +458,61 @@ export interface DaemonRpcError extends Error {
   data?: unknown;
 }
 
+/**
+ * The daemon refused a model call on spend before anything reached a
+ * provider (JSON-RPC code -32018; `docs/proposals/spend-caps.md`, "The
+ * refusal"). It arrives as the rejection of `infer`, `inferStream` (before the
+ * stream opens) or whichever method's model call was refused, and is told
+ * apart by `error.name === 'SpendRefusedError'`; every other daemon error
+ * keeps `name: 'Error'`. `message` is the text the agent reads: `budget
+ * reached until 3:00 PM EDT` (or `… until 12:00 AM EST on Dec 1` on a later
+ * local date), `price unknown for <model>; this agent has a spend cap`, or
+ * `spend could not be recorded`. `reason`, `cap`, `resetsAt` and `zone` are
+ * copied out of `data` for convenience; `data` itself is unchanged and also
+ * carries `holding`, `spent_usd` (budget) or `model` (price unknown, unpriced
+ * call in flight). The
+ * agent process is never stopped or paused: the next call after the period
+ * resets goes through by itself. Only model calls made through CAR are
+ * refused this way.
+ */
+export interface SpendRefusedError extends DaemonRpcError {
+  name: 'SpendRefusedError';
+  code: -32018;
+  reason: 'budget_reached' | 'price_unknown' | 'unpriced_call_in_flight' | 'spend_unrecordable';
+  /** The cap reached (`budget_reached` only); `'shared'` below a worker tree's root. */
+  cap?: SpendCap | 'shared';
+  /** RFC 3339 instant the refusing period rolls over (`budget_reached` only). */
+  resetsAt?: string;
+  /** The server's IANA zone (`budget_reached` only). */
+  zone?: string;
+}
+
+/**
+ * Connect options for `new CarRuntime(options?)`. With neither field set the
+ * runtime connects to the default local daemon, exactly as `new CarRuntime()`.
+ */
+export interface CarRuntimeOptions {
+  /**
+   * Daemon WebSocket URL. Required with `bearer`, where it must be `wss://`
+   * (plain `ws://` only to a loopback host), e.g. `wss://car.example.com/v1/ws`.
+   */
+  url?: string;
+  /**
+   * Outside credential (`car_oc_` followed by 43 base64url characters) for a
+   * daemon's public door. Sent as `Authorization: Bearer` on the WebSocket
+   * upgrade; no `session.auth` is sent and no local credential
+   * (`CAR_AUTH_TOKEN`, the token file, `CAR_AGENT_ID`/`CAR_AGENT_TOKEN`, the
+   * host token) is ever used. Host-management calls are refused locally. A
+   * malformed credential, a missing `url`, or a URL that would carry it in
+   * cleartext throws at construction without echoing the credential. A refused
+   * upgrade rejects with the door's `error` code and `message` (for example
+   * `credential_revoked`).
+   */
+  bearer?: string;
+}
+
 export class CarRuntime {
-  constructor();
+  constructor(options?: CarRuntimeOptions);
 
   /** Release the daemon socket and browser session. A later call reconnects. */
   close(): Promise<void>;
@@ -243,12 +531,13 @@ export class CarRuntime {
   /**
    * Invoke any daemon JSON-RPC method with a JSON-encoded params value.
    * `daemonCall` is the call-by-name escape hatch; use the typed wrappers as the primary API.
+   * In a process launched as a supervised agent (`CAR_AGENT_ID` or `CAR_AGENT_TOKEN` set) the connection authenticates with the agent credential (both variables) and never silently falls back to the daemon-wide token: `CAR_AUTH_TOKEN` is used only if the supervisor put it in the environment, the token file is never read, and an incomplete agent credential is an error naming it. A process that is not an agent is unchanged.
    * The result is returned as JSON. Daemon rejections are `DaemonRpcError`;
    * transport failures reject without a synthetic numeric code.
    */
   daemonCall(method: string, paramsJson: string): Promise<string>;
 
-  /** Host-management-token twin of `daemonCall`; the method allowlist remains enforced. It admits the owner-gated Coder methods (`coder.respond`, `coder.revise_contract`, `coder.confirm_contract`, `coder.refresh_review`, `coder.approve_merge`, `coder.cancel`), but refuses `coder.confirm_contract` and `coder.approve_merge` on an agent build: building an agent needs the CAR app or `car agent new` in your terminal. */
+  /** Host-management-token twin of `daemonCall`; the method allowlist remains enforced. It admits the owner-gated Coder methods (`coder.respond`, `coder.revise_contract`, `coder.confirm_contract`, `coder.refresh_review`, `coder.approve_merge`, `coder.cancel`), but refuses `coder.confirm_contract` and `coder.approve_merge` on an agent build: building an agent needs the CAR app or `car agent new` in your terminal. In a process launched as a supervised agent (`CAR_AGENT_ID` or `CAR_AGENT_TOKEN` set; car#3072) it never presents the host credential: a dual-role method (`lattice.find`/`join`/`leave`/`nodes`, the Coder methods above, `agents.start`/`stop`/`restart`, `agents.invoke_external`, `models.register`) is sent under the agent's own identity for the daemon to judge, and a host-only method is refused with "this command needs the operator (host); a supervised agent can't run it". Host-management methods need a daemon with a host token: one started with `--no-auth`, or whose host-token write failed, has no host and refuses them to every client, including this call and `daemonCall`, with `this operation requires the host-management role (host role unavailable: …; cause: …)`. A Rust embedder that builds the daemon's `ServerState` itself gets host authority by calling `ServerState::install_host_token` once with a token it generates, and presenting that token as `session.auth { host_token }`. */
   daemonCallHostManagement(method: string, paramsJson: string): Promise<string>;
 
   /** List durable permission grants using host-management authority. */
@@ -257,7 +546,15 @@ export class CarRuntime {
   /** Revoke one durable permission grant using host-management authority. */
   agentPermissionsRevokeGrant(paramsJson: string): Promise<string>;
 
-  /** Register a server-initiated JSON-RPC request handler. */
+  /**
+   * Register a server-initiated JSON-RPC request handler. The value the
+   * handler resolves is the response the daemon waits for. For
+   * `agent.peer_message` that response is the acknowledgement and the daemon
+   * waits 5 s for it, then reports `unacknowledged` to the sender (the message
+   * was written, is not redelivered, and may still be handled): resolve at
+   * once and do the work afterwards, keeping long synchronous calls off the
+   * event loop.
+   */
   registerDaemonHandler(
     method: string,
     handler: (paramsJson: string) => Promise<string>,
@@ -303,13 +600,13 @@ export class CarRuntime {
   /** Generated daemon wrapper for `SubscribeToTask` (operator). */
   subscribeToTask(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `a2a.peers.add` (operator). */
+  /** Generated daemon wrapper for `a2a.peers.add` (operator_only). */
   a2aPeersAdd(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `a2a.peers.list` (operator). */
   a2aPeersList(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `a2a.peers.remove` (operator). */
+  /** Generated daemon wrapper for `a2a.peers.remove` (operator_only). */
   a2aPeersRemove(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `a2a.send` (operator). */
@@ -395,6 +692,12 @@ export class CarRuntime {
 
   /** Generated daemon wrapper for `agents.list_external` (operator). */
   agentsListExternal(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.register_basics` (operator_only). */
+  agentsRegisterBasics(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `agents.remove` (agent). */
+  agentsRemove(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `agents.restart` (agent). */
   agentsRestart(paramsJson: string): Promise<string>;
@@ -594,7 +897,7 @@ export class CarRuntime {
   /** Generated daemon wrapper for `events.chain.verify` (operator). */
   eventsChainVerify(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `events.clear` (operator). */
+  /** Generated daemon wrapper for `events.clear` (operator_only). */
   eventsClear(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `events.cost_by_agent` (operator). */
@@ -612,7 +915,7 @@ export class CarRuntime {
   /** Generated daemon wrapper for `events.stats` (operator). */
   eventsStats(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `events.truncate` (operator). */
+  /** Generated daemon wrapper for `events.truncate` (operator_only). */
   eventsTruncate(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `evolution.plan` (operator). */
@@ -644,6 +947,9 @@ export class CarRuntime {
 
   /** Generated daemon wrapper for `goal.suggest` (agent). */
   goalSuggest(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `host.dismiss_approval` (agent). */
+  hostDismissApproval(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `host.subscribe` (operator). */
   hostSubscribe(paramsJson: string): Promise<string>;
@@ -681,6 +987,12 @@ export class CarRuntime {
   /** Generated daemon wrapper for `lattice.find` (owner). */
   latticeFind(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `lattice.human.status` (agent). */
+  latticeHumanStatus(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `lattice.inbox` (owner). */
+  latticeInbox(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `lattice.join` (owner). */
   latticeJoin(paramsJson: string): Promise<string>;
 
@@ -692,6 +1004,12 @@ export class CarRuntime {
 
   /** Generated daemon wrapper for `lattice.release` (owner). */
   latticeRelease(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `lattice.requests` (agent). */
+  latticeRequests(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `lattice.respond` (agent). */
+  latticeRespond(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `lattice.wait` (owner). */
   latticeWait(paramsJson: string): Promise<string>;
@@ -834,10 +1152,10 @@ export class CarRuntime {
   /** Generated daemon wrapper for `multiplayer.abandon` (operator_only). */
   multiplayerAbandon(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.get` (operator_only). */
+  /** Generated daemon wrapper for `multiplayer.get` (agent). */
   multiplayerGet(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `multiplayer.list` (operator_only). */
+  /** Generated daemon wrapper for `multiplayer.list` (agent). */
   multiplayerList(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `multiplayer.merge_check` (operator_only). */
@@ -863,6 +1181,9 @@ export class CarRuntime {
 
   /** Generated daemon wrapper for `notifications.local` (operator). */
   notificationsLocal(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `outcomes.record_external_grade` (operator). */
+  outcomesRecordExternalGrade(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `outcomes.resolve_pending` (operator). */
   outcomesResolvePending(paramsJson: string): Promise<string>;
@@ -951,10 +1272,10 @@ export class CarRuntime {
   /** Generated daemon wrapper for `scheduler.create` (operator). */
   schedulerCreate(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `scheduler.os_install` (operator). */
+  /** Generated daemon wrapper for `scheduler.os_install` (operator_only). */
   schedulerOsInstall(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `scheduler.os_list` (operator). */
+  /** Generated daemon wrapper for `scheduler.os_list` (operator_only). */
   schedulerOsList(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `scheduler.os_reconcile` (operator). */
@@ -963,7 +1284,7 @@ export class CarRuntime {
   /** Generated daemon wrapper for `scheduler.os_render` (operator). */
   schedulerOsRender(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `scheduler.os_uninstall` (operator). */
+  /** Generated daemon wrapper for `scheduler.os_uninstall` (operator_only). */
   schedulerOsUninstall(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `scheduler.run` (operator). */
@@ -1053,10 +1374,16 @@ export class CarRuntime {
   /** Generated daemon wrapper for `speech.prepare` (operator). */
   speechPrepare(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `spend.costs` (operator_only). */
+  spendCosts(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `spend.status` (operator). */
+  spendStatus(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `sync.knowledge` (agent). */
   syncKnowledge(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `tasks.list` (operator). */
+  /** Generated daemon wrapper for `tasks.list` (operator_only). */
   tasksList(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `tasks/cancel` (operator). */
@@ -1161,6 +1488,15 @@ export class CarRuntime {
   /** Generated daemon wrapper for `voice.tts_stream.start` (operator). */
   voiceTtsStreamStart(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `workers.report` (agent). */
+  workersReport(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `workers.spend` (agent). */
+  workersSpend(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `workers.start` (agent). */
+  workersStart(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `workflow.build_automation` (operator). */
   workflowBuildAutomation(paramsJson: string): Promise<string>;
 
@@ -1184,6 +1520,10 @@ export class CarRuntime {
 
   /**
    * Load memory graph from a JSON file. Returns the number of facts loaded.
+   * Reads the `persistMemory` format. The daemon's own snapshot files are
+   * refused (`daemon-shared.json` and any `*.v2.json`, and for a supervised
+   * agent anything but its own graph's file): the daemon loads and saves
+   * those itself. The daemon saves the loaded graph, so it survives a restart.
    *
    * Daemon-side read: `path` is sandboxed under `~/.car/memory/` (the
    * 2026-05 audit boundary). Relative paths land under the base;
@@ -1192,13 +1532,16 @@ export class CarRuntime {
    *
    * **`path` names a file, not a namespace.** This REPLACES the graph the
    * connection is bound to — and by default that is the daemon's SHARED graph,
-   * common to every unbound session and to facts ingested over MCP. So on a
-   * multi-project host this both discards other projects' in-memory facts and
-   * leaves the loaded ones visible to them. Set `CAR_MEMORY_NAMESPACE` in the host process to bind a private graph
-   * (car-releases#79/#80); the shared daemon transport puts it on the
-   * `session.auth` handshake for you.
+   * common to every unbound session and to facts ingested over MCP. Replacing
+   * that one discards every other session's in-memory facts, so the daemon
+   * refuses it unless `replace` is `true` (car-releases#91), and announces a
+   * `memory.shared_graph.replaced` host event when it does. To load your own
+   * memory instead, set `CAR_MEMORY_NAMESPACE` in the host process or call
+   * `setMemoryNamespace()` to bind a private graph (car-releases#79/#80); the
+   * shared daemon transport puts it on the `session.auth` handshake for you.
+   * `replace` has no effect on a private graph, which a load always replaces.
    */
-  loadMemory(path: string): Promise<number>;
+  loadMemory(path: string, replace?: boolean): Promise<number>;
 
   /**
    * Stream one delta of a chat turn back to the daemon as an
@@ -1209,9 +1552,23 @@ export class CarRuntime {
    *
    * `kind` is one of `token` | `tool_call` | `done` | `error`. `delta` carries
    * the text for `token` (and the final text/status for `done`/`error`); omit
-   * it for a bare signal.
+   * it for a bare signal. Matched to the turn by `sessionId` alone; use
+   * `chatTurnEvent` to name the turn.
    */
   chatEvent(sessionId: string, kind: string, delta?: string | undefined | null): Promise<void>;
+
+  /**
+   * `chatEvent` for the turn the daemon named `turnId`: pass the `turn_id`
+   * from the turn's `agent.chat` params, and the daemon matches the frame to
+   * that turn rather than to whichever turn holds `sessionId` when it
+   * arrives, so a turn the host replaced cannot end its successor (car#2668).
+   */
+  chatTurnEvent(
+    sessionId: string,
+    turnId: string,
+    kind: string,
+    delta?: string | undefined | null,
+  ): Promise<void>;
 
   /**
    * Persist memory graph to a JSON file (backward-compatible flat format).
@@ -1242,8 +1599,11 @@ export class CarRuntime {
    * (`adapter`, default `"claude-code"`) in isolated git worktrees, gating each
    * worktree and the integrated union. `verifyCommand` is the per-worktree
    * **regression** check; `unionVerifyCommand` is the integrated-union **goal**
-   * check (falls back to `verifyCommand` when omitted). **Spends real agent
-   * quota.** Returns JSON `{ plan, ran, run? }`.
+   * check (falls back to `verifyCommand` when omitted). `chatSessionId` is for
+   * a caller bound to a supervised agent: the `session_id` of the host's
+   * `agents.chat` turn it is answering, which it needs to call this at all;
+   * such a caller may not pass `verifyCommand` or `unionVerifyCommand`.
+   * **Spends real agent quota.** Returns JSON `{ plan, ran, run? }`.
    */
   foremanRun(
     goal: string,
@@ -1254,6 +1614,17 @@ export class CarRuntime {
     maxAttempts?: number,
     distributed?: boolean,
     workers?: Array<string>
+  ): Promise<string>;
+  foremanRun(
+    goal: string,
+    repo: string | null | undefined,
+    adapter: string | null | undefined,
+    verifyCommand: Array<string> | null | undefined,
+    unionVerifyCommand: Array<string> | null | undefined,
+    maxAttempts: number | null | undefined,
+    distributed: boolean | null | undefined,
+    workers: Array<string> | null | undefined,
+    chatSessionId: string | null
   ): Promise<string>;
 
   // --- Fleet ---
@@ -1339,7 +1710,18 @@ export class CarRuntime {
    */
   unregisterTool(name: string): Promise<number>;
 
-  /** Register CAR's built-in agent utility tools. */
+  /**
+   * Register CAR's built-in agent utility tools (read_file, write_file,
+   * edit_file, list_dir, find_files, grep_files, calculate). Against a daemon
+   * (`agents.register_basics`) they run in the daemon, on its host, and refuse
+   * CAR's own credential and authority files (the `auth-token`/`host-token`
+   * copies, `env`, `secrets/`, the approval journal, `agent-permissions.json`)
+   * plus `peer-identity.key` and host configuration (`agents.json`, agent
+   * manifests, worker specs, `declagents.json`, `tasks/`, `messaging.json`)
+   * by any spelling that resolves to one, and do
+   * not create a new non-ASCII name in CAR's state, run, token or secrets
+   * folder. The user's own files stay reachable.
+   */
   registerAgentBasics(): Promise<void>;
 
   /**
@@ -1399,11 +1781,13 @@ export class CarRuntime {
   closeSession(sessionId: string): Promise<boolean>;
 
   /**
-   * Register a policy enforced in Rust on every action.
+   * Register a policy, checked in Rust before each action this runtime runs.
    * `rule` is one of: "deny_tool", "deny_tool_param", "require_state",
-   * "deny_tool_callback".
-   * `sessionId`, when set, scopes the policy to the named session
-   * (opened via `openSession`). Without it, the policy is global.
+   * "deny_connector". Any other rule is rejected.
+   * `sessionId` is refused with an error: these bindings run against the
+   * daemon, which scopes a policy only through `policy.register { session_id }`
+   * on a session opened with the `session.policy.open` JSON-RPC method.
+   * Without it, the policy is global.
    */
   registerPolicy(
     name: string,
@@ -1488,9 +1872,14 @@ export class CarRuntime {
   ): Promise<number>;
 
   /**
-   * Query facts via graph spreading activation. Returns a JSON array whose
-   * rows include `fact_id` (null for graph nodes without one), `subject`,
-   * `body`, `kind`, `confidence`, `tags`, and `source`.
+   * Query facts via Personalized PageRank over the memory graph. Returns a
+   * JSON array whose rows include `fact_id` (null for graph nodes without
+   * one), `subject`, `body`, `kind`, `confidence`, `score`, `tags`, and
+   * `source`. Matches are weighted by how well they match `query`, so a full
+   * match ranks above a one-word overlap; `confidence` is the hit's share of
+   * PageRank mass in this result, comparable within one call only. `score`
+   * is the hit's own match strength (0..1; 0 for a hit that matches no
+   * query term) and is the field to threshold on.
    */
   queryFacts(query: string, k?: number | null): string;
 
@@ -1529,7 +1918,7 @@ export class CarRuntime {
 
   /**
    * Run proactive memory Phase 1 maintenance over recent daemon telemetry.
-   * `paramsJson` is `{ max_recent?, tenant_id? }`; returns report JSON.
+   * `paramsJson` is `{ max_recent?, tenant_id?, session_id? }`; returns report JSON.
    */
   memoryMaintain(paramsJson: string): Promise<string>;
 
@@ -1870,9 +2259,10 @@ export class CarRuntime {
    *
    * Lets a binding client govern its own session — most usefully by tightening
    * it: dropping to `read_only` makes the runtime escalate any write this
-   * client proposes to a human instead of running it. Raising the tier is
-   * host-gated whenever the daemon runs under a host token, so an agent
-   * connection cannot self-elevate.
+   * client proposes to a human instead of running it. Whenever the daemon
+   * runs under a host token, every tier change, lowering included, needs the
+   * host role; a connection without it is refused, so an agent connection
+   * can neither self-elevate nor change its own tier at all.
    */
   permissionSetTier(tier: string): Promise<string>;
 
@@ -2013,8 +2403,8 @@ export class CarRuntime {
    * means the output was truncated at the token cap. On local Qwen3
    * hybrid-thinking models it is also set to `"thinking_recovered"` when
    * reasoning consumed the whole token budget and the runtime retried
-   * with reasoning suppressed to produce a direct answer, or
-   * `"thinking_truncated"` when even that retry was empty (car-releases#60).
+   * with reasoning suppressed to produce a direct answer (its usage and
+   * latency then count both passes), or `"thinking_truncated"` when even that retry was empty (car-releases#60).
    *
    * `local_last_resort` is present and true ONLY when CAR appended a
    * model installed through CAR (under CAR's models dir or with an install
@@ -2044,13 +2434,12 @@ export class CarRuntime {
    * remedy is to fix the key, not to sign in. Do not derive one field
    * from the other.
    *
-   * **Note:** intent is not exposed on the tracked path until the
-   * positional argument list is converted to an options object —
-   * this method already takes 9 positional parameters and adding
-   * intent would push call sites past readability. For new code,
-   * use {@link inferTrackedWithRequest} which takes a JSON-
-   * stringified `GenerateRequest` and exposes every field
-   * including `intent`.
+   * **Note:** this positional form is intentionally basic and will not
+   * grow sampling or reasoning knobs (`temperature`, `stop`,
+   * `reasoning_effort`, `thinking`, `budget_tokens`) — it already takes 9
+   * positional parameters. Use {@link inferTrackedWithRequest}, which
+   * takes a JSON-stringified `GenerateRequest` and exposes every field;
+   * it is the full path, not a newer alternative (car-releases#107).
    *
    * `imagesJson` is a JSON-encoded array of `ContentBlock` image
    * variants — either
@@ -2078,6 +2467,27 @@ export class CarRuntime {
    * field optional except `prompt`). Exposes every field on the
    * Rust struct including `intent`. Same pattern as
    * {@link verifyProposal}. Closes #107.
+   *
+   * Generation controls live under `params`:
+   * - `stop: string[]` — the output ends before the earliest stop
+   *   sequence (sent natively where the provider takes it, and cut by CAR
+   *   on every backend; `stop_reason` is `"stop_sequence"` when CAR cut it).
+   * - `reasoning_effort: "low" | "medium" | "high" | "xhigh"` — explicit
+   *   effort on remote reasoning models (OpenAI `reasoning_effort` /
+   *   `reasoning.effort`, OpenRouter `reasoning.effort`, Codex
+   *   `reasoning.effort` / `model_reasoning_effort`, Anthropic
+   *   `output_config.effort` or a legacy thinking budget); dropped
+   *   silently on Google, Vertex, Bedrock, Parslee-managed lanes
+   *   (`parslee/*`), local and non-reasoning models, except gpt-oss on
+   *   vllm-mlx, which takes an explicit level as its chat template's
+   *   `reasoning_effort`. Overrides the level derived from `budget_tokens`
+   *   (below 4096 low, below 16384 medium, otherwise high).
+   * - `thinking: "auto" | "on" | "off"` — Qwen3 only; does nothing on
+   *   remote models.
+   *
+   * `usage.reasoning_tokens` is present when the provider reports it
+   * (OpenAI chat and Responses, non-streaming) and is a subset of
+   * `completion_tokens`.
    *
    * `client_ref` is an opaque correlation token echoed verbatim in the
    * `inference.runner.invoke` payload and otherwise ignored by CAR. A
@@ -2173,8 +2583,11 @@ export class CarRuntime {
   /**
    * Web search. The daemon resolves the backend: the signed-in Parslee
    * account's hosted search when available, else a bring-your-own
-   * `TAVILY_API_KEY`. Returns JSON `{ query, source, results: [{title, url,
-   * snippet, score, published_date}] }`.
+   * `TAVILY_API_KEY`, else a keyless DuckDuckGo search. Returns JSON
+   * `{ query, source, results: [{title, url, snippet, score, published_date}] }`.
+   * A DuckDuckGo search the provider throttles (HTTP 202, 403 or 429, or its
+   * challenge page), or one made while CAR is backing off from it, rejects
+   * with an error rather than resolving with empty results.
    */
   search(query: string, maxResults?: number | null): Promise<string>;
 
@@ -2236,6 +2649,13 @@ export class CarRuntime {
 
   /** Remove only a receipt-backed CAR-managed artifact. Returns result JSON. */
   removeModel(modelId: string): Promise<string>;
+  /**
+   * Remove a receipt-backed CAR-managed artifact. Returns result JSON.
+   * `force: true` also removes an artifact CAR holds no install receipt for —
+   * a link, or an interrupted install (links into the Hugging Face cache, no
+   * weights) — at the model's managed path. Shared cache blobs are never deleted.
+   */
+  removeModel(modelId: string, force?: boolean): Promise<string>;
 
   /** Adopt an already-usable local artifact into CAR ownership. */
   adoptModel(modelId: string): Promise<string>;
@@ -2287,9 +2707,13 @@ export class CarRuntime {
    * the built-in catalog and is populated via curated registry data.
    * `cost` is the model's declared prices — `{ input_per_mtok,
    * output_per_mtok, cache_read_input_per_mtok, cache_write_input_per_mtok,
-   * pricing_tiers, size_mb, ram_mb }` — in USD per 1M tokens, with
-   * `pricing_tiers` as `[{ min_prompt_tokens, ...prices }]` prompt-size
-   * overrides (highest threshold not above the prompt wins). Every price is
+   * pricing_tiers, audio_per_minute?, per_1k_characters?, size_mb, ram_mb }`
+   * — in USD per 1M tokens, with `pricing_tiers` as
+   * `[{ min_prompt_tokens, ...prices }]` prompt-size overrides (highest
+   * threshold not above the whole prompt, cached tokens included, wins).
+   * `audio_per_minute` and `per_1k_characters` are speech prices (USD per
+   * minute of audio, per 1,000 characters) that will price speech calls once
+   * those calls are metered; they are omitted when unset. Every price is
    * nullable and `null` means **unpriced, not free**: a local model declares
    * no prices, and a caller that reads that as `0` publishes a fabricated
    * cost. The managed `parslee/…` alias rows carry the same prices as the
@@ -2325,6 +2749,17 @@ export class CarRuntime {
    * mutability on the `UnifiedRegistry`. Register before
    * starting the daemon's inference path, or restart the daemon
    * after a batch of registrations.
+   *
+   * A reserved credential (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, the AWS
+   * keys, the other names `car keys` stores, and the credentials CAR stores
+   * for itself, in any case) may be sent only to its provider's own host
+   * unless the operator registers the row. An unsupervised runtime on the
+   * daemon's machine presents the local host credential and is the operator;
+   * a runtime in a process launched as a supervised agent (`CAR_AGENT_ID` or
+   * `CAR_AGENT_TOKEN` set) never does, and is refused such a row, with an error naming the remedy: a gateway-specific
+   * credential name in `api_key_env`, or `car models register`. Only this
+   * method presents the host credential: the generated `modelsRegister`
+   * wrapper and `daemonCall("models.register", …)` make the ordinary call.
    *
    * Returns JSON `{id, registered, path, note}`.
    */
@@ -2519,7 +2954,7 @@ export class CarRuntime {
    * JSON may carry `network_approved: true` and
    * `approved_credentials: string[]`. Credential approval is limited to names
    * declared by that exact check; changing its name, command, or declarations
-   * drops carried approval. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
+   * drops carried approval. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderConfirmContract(
     sessionId: string,
@@ -2570,14 +3005,18 @@ export class CarRuntime {
    * billing,models}` where billing is `"metered" | "subscription" |
    * "unknown" | null`; derivation usage is separate from execution-loop usage.
    * After independent verification starts, `verification` carries
-   * `{round,grades,probes,isolation,audit?}`. Delivery requires every grade to
-   * be `PASS` and a clean audit whose served family differs from the builder.
+   * `{round,grades,probes,isolation,audit?,not_checked?,kept_on_this_mac?}`.
+   * Delivery requires every grade to be `PASS` and a clean audit whose served
+   * family differs from the builder. A Build an Agent session may instead carry
+   * no audit and `not_checked` (why it was saved without an independent check);
+   * with `kept_on_this_mac: true` (an agent that keeps everything on this Mac)
+   * it also has no grades, and delivery needs neither.
    */
   coderGet(sessionId: string): Promise<string>;
 
   /**
    * Answer a `user_input_requested` event, or queue native steering with steer=true.
-   * Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
+   * Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderRespond(sessionId: string, text: string): Promise<string>;
   coderRespond(sessionId: string, text: string, steer: boolean | null): Promise<string>;
@@ -2592,7 +3031,7 @@ export class CarRuntime {
    * reply is `{state: "reported", branch: null}`. A plain `approve: true` on
    * a finding, or `acceptFinding` on a diff, is refused. Successful delivery
    * replies include `excluded_artifacts` with the exact records used by the
-   * committed staging pass. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
+   * committed staging pass. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderApproveMerge(
     sessionId: string,
@@ -2618,7 +3057,7 @@ export class CarRuntime {
    * `message` names what already happened. Callers that cancel unconditionally
    * on shutdown depend on that — rejecting would turn a quiet exit into a
    * protocol error whenever the session raced to terminal first.
-   * Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
+   * Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   /** `reason` names a non-operator cause and is recorded as `cancelled: <reason>`; omit it only when a person cancelled. */
   coderCancel(sessionId: string, reason?: string | undefined | null): Promise<string>;
@@ -2640,7 +3079,7 @@ export class CarRuntime {
    * sessions) — plus `needs_you` (`"contract" | "question" | "approval" | "auth" |
    * null`), `needs_you_label` (the daemon-owned wording, so every client says
    * the same thing), `question_prompt`, `auth_message`, `auth_wait_secs`,
-   * `state` may be `"verifying"`. `failure_kind` (`"checks_red" | "stalled" | "no_progress" | "cancelled" | "inference_unavailable" |
+   * `state` may be `"verifying"`. `failure_kind` (`"checks_red" | "already_satisfied" | "stalled" | "no_progress" | "cancelled" | "inference_unavailable" |
    * "model_not_found" | "engine_fallback_then_failed" | "delivery_failed" | "interrupted" |
    * "budget_exhausted" | "auth_required" | "configuration" | "infrastructure" | "verification" | "error"`
    * when failed), `worktree` (only when it still exists on disk),
@@ -2665,7 +3104,7 @@ export class CarRuntime {
    * Returns `{state: "running", review_refresh: true}`; the outcome arrives on
    * the event stream. Passing checks return the session to `needs_approval`
    * with a new diff; failing checks fail it and keep the worktree. Delivery
-   * still needs a separate `coderApproveMerge`. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
+   * still needs a separate `coderApproveMerge`. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderRefreshReview(sessionId: string): Promise<string>;
 
@@ -2679,7 +3118,7 @@ export class CarRuntime {
    * message}`. **Check `revised` before trusting `contract`**: on a redraft
    * that does not validate, the previous contract comes back byte-identical
    * with `revised: false` and a `message` explaining why, and the daemon emits
-   * a `contract_revision_rejected` event. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call.
+   * a `contract_revision_rejected` event. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call.
    */
   coderReviseContract(sessionId: string, request: string): Promise<string>;
 
@@ -2731,10 +3170,25 @@ export class CarRuntime {
   coderDiscussClose(discussionId: string): Promise<string>;
 
   /**
+   * Hide one of the caller's saved conversations from the default list, or
+   * bring it back with `archived = false` (default `true`). Nothing is
+   * removed: the row stays in `coderDiscussList().saved` with
+   * `archived: true`, and the conversation still reopens. Another
+   * principal's id, or an unknown one, is refused as unavailable. Returns
+   * `{ ok: true, archived }`.
+   */
+  coderDiscussArchive(discussionId: string, archived?: boolean): Promise<string>;
+
+  /**
    * The caller's principal's discussions: `{discussions: [{discussion_id,
-   * repo, created_at, turns, answering}], saved: [{discussion_id, repo,
-   * created_at}]}`. Also the capability probe — a daemon predating this surface
-   * answers JSON-RPC `-32601`.
+   * repo, created_at, turns, answering, work_context}], saved: [{discussion_id,
+   * repo, created_at, work_context, open, archived}]}`. `saved` lists every saved
+   * conversation, the open ones too (`open: true`) and archived ones
+   * (`archived: true`; the binding asks the daemon for them). For the
+   * default view with archived conversations hidden, call
+   * `daemonCall("coder.discuss.list", "{}")`, or filter on `archived`. Also
+   * the capability probe — a daemon predating
+   * this surface answers JSON-RPC `-32601`.
    */
   coderDiscussList(): Promise<string>;
 
@@ -2745,7 +3199,11 @@ export class CarRuntime {
    * `~/.car/projects/`. `kind` is `"app"` (code) or `"agent"` (an in-daemon
    * declarative agent). For an edit, `existingAgentId` identifies the agent to
    * replace and `builderDraftJson` contains the seven answers plus
-   * `template_id`. Returns the `CoderProject` JSON.
+   * `template_id`, and optionally `mail_access`, `local_only` (keep
+   * everything the agent reads on this Mac: it runs only on models on this
+   * Mac, its build calls no verifier or auditor model, and Parslee never
+   * stands in for its saved model) and
+   * `working_folder`. Returns the `CoderProject` JSON.
    */
   projectCreate(name: string, kind?: string | undefined | null): Promise<string>;
   projectCreate(name: string, kind?: string | undefined | null, existingAgentId?: string | undefined | null, builderDraftJson?: string | undefined | null): Promise<string>;
@@ -2759,7 +3217,8 @@ export class CarRuntime {
    * product entitlements, and Studio reachability. Read-only. Returns JSON.
    * Resolves `{authenticated: false, hint, error?}` when signed out; rejects
    * with the underlying failure when Parslee could not answer the session
-   * check (a rate limit, an outage, or no session answer) or denied this
+   * check (a rate limit, an outage, or no session answer), refused the stored
+   * token while renewing it was temporarily unavailable, or denied this
    * signed-in account access (HTTP 403).
    */
   parsleeCapabilities(): Promise<string>;
@@ -2770,9 +3229,13 @@ export class CarRuntime {
    */
   parsleeM365GenerateDocument(contentBrief: string, outputFilePath: string, documentType?: string | undefined | null, title?: string | undefined | null, author?: string | undefined | null): Promise<string>;
 
-  /** List registered in-daemon declarative agents. */
+  /**
+   * List registered in-daemon declarative agents. Each row carries
+   * `registration_id` once the registry has assigned one: new when the id
+   * is registered anew, kept across a rebuild, rename or revert.
+   */
   declagentList(): Promise<string>;
-  /** One declarative agent's spec by id, plus daemon-derived `registry_path`. */
+  /** One declarative agent's spec by id (with its `registration_id`), plus daemon-derived `registry_path`. */
   declagentGet(id: string): Promise<string>;
   /** Unregister a declarative agent. */
   declagentRemove(id: string): Promise<string>;
@@ -2784,7 +3247,11 @@ export class CarRuntime {
   declagentRunScenarios(id: string): Promise<string>;
   /**
    * Run a declarative agent on an input with its saved inference selection.
-   * Returns `{ output, turns, tool_calls, model_served?, error? }` JSON.
+   * Returns `{ output, agent_said?, turns, tool_calls, model_served?, model?, stood_in?, error?, goal? }`
+   * JSON; `stood_in` (`{ for_model, on_model, notice }`) is set when Parslee
+   * served a turn in place of the agent's unavailable saved model. `agent_said`
+   * holds the final answer, with `output` empty, when the run failed in a way
+   * that answer can't speak for.
    */
   declagentInvoke(id: string, input: string): Promise<string>;
   /**
@@ -2879,6 +3346,24 @@ export class CarRuntime {
    * on explicit-model and cold-start paths where no ranking occurred.
    * `intentJson.strict_exclusions` makes an exhausted `exclude_models` list
    * return no route instead of selecting an excluded last resort.
+   * `intentJson.on_device_only` routes only to models CAR runs on this machine
+   * (MLX, Candle GGUF, a CAR-managed vLLM-MLX, Apple's on-device model; not an
+   * Ollama or external vLLM-MLX endpoint) and returns no route when none is
+   * left; generation with it refuses a requested model elsewhere.
+   * `intentJson.never_download` routes only to models usable without a
+   * download (a local model must already be installed) and returns no route
+   * when none is left; generation with it refuses a requested model that is
+   * not installed, naming the `car models pull` command that installs it.
+   *
+   * `reliability` is a catalog prior (published benchmark, else the curated
+   * `frontier`/`balanced` tier tag, else conservative-unknown) shrunk toward
+   * the model's graded-outcome quality as evidence accumulates; a model with
+   * no history sits exactly at its prior. To feed a graded result back, keep
+   * the `trace_id` from `inferTracked` and send `outcomes.resolve_pending`
+   * within 900 seconds of the call ending; for a model CAR did not serve, use
+   * `recordExternalGrade`. Each candidate lists the outside grades it pooled
+   * under `external_grades`. The prior ladder and the outcome channels are in
+   * the `models.route` section of the WebSocket protocol reference.
    */
   routeModel(prompt: string, intentJson?: string | null): Promise<string>;
 
@@ -2896,6 +3381,23 @@ export class CarRuntime {
    * (unlike `modelStats`, the live in-memory profiles).
    */
   outcomeScoreboard(): Promise<string>;
+
+  /**
+   * Record a graded result for a model the daemon did not serve, such as an
+   * outside head-to-head (`outcomes.record_external_grade`). `gradeJson` is
+   * `{ model_id, task, quality, n?, source, allow_unknown_model? }`: `quality`
+   * in `[0, 1]` is the mean over `n` cases (default 1, at most 100), `task` is
+   * `generate | embed | classify | code | reasoning`, `source` names the
+   * grader. Returns JSON `{ model_id, known_model, task, source, source_key,
+   * n, source_quality, source_observations, source_evidence }`; a supervised
+   * agent's source is stored as `agent:<id>/<source>` (`source_key`). Routing
+   * pools grades into `reliability` capped at 8 cases per source, 8 per
+   * reporter and 16 in all; a source not updated for 90 days stops counting.
+   * A refusal (unknown model, bad bounds, a ninth current source, over 30
+   * reports a minute, a failed write to disk) is JSON-RPC `-32019` with
+   * `data.reason`.
+   */
+  recordExternalGrade(gradeJson: string): Promise<string>;
 
   // --- Execution ---
 
@@ -2917,20 +3419,32 @@ export class CarRuntime {
   toolCancel(handle: string): Promise<boolean>;
 
   /** Structured audit query over the event log (G2). `queryJson` is an
-   * EventQuery object (kinds/actionId/proposalId/since/until/dataMatches/limit);
-   * returns `{count, events}` as a JSON string, most-recent-first.
+   * EventQuery object
+   * (`kinds`/`action_id`/`proposal_id`/`since`/`until`/`data_matches`/`limit`;
+   * `actionId`, `proposalId` and `dataMatches` are accepted too; sending both
+   * spellings of one field is a "duplicate field" error); returns
+   * `{count, events}` as a JSON string, most-recent-first. Reads only this
+   * connection's session log, not other connections'. The exception: for a
+   * host or orchestrator session the daemon first copies `worker_started` /
+   * `worker_starts_omitted` events into that log
+   * (docs/websocket-protocol/workers.md).
    * `ActionFailed.data` includes `params_digest`, `expected_effects`, and
    * `error_class` (`timeout|rejected_by_policy|tool_error|validation|unknown`),
    * never raw parameters. `ActionSucceeded.data` includes the first two. */
   eventQuery(queryJson: string): Promise<string>;
 
-  /** Get/set the event-log retention policy (G2). Pass a
-   * `{maxEvents, maxAgeSecs}` JSON string to install it, or omit to read the
-   * current policy. Returns a JSON string. */
+  /** Get/set this connection's event-log retention policy (G2). Pass a
+   * `{max_events, max_age_secs}` JSON string to install it (`maxEvents` and
+   * `maxAgeSecs` are accepted too; sending both spellings of one field is a
+   * "duplicate field" error), or omit to read the current policy.
+   * Returns a JSON string. Separately, the daemon deletes finished per-client
+   * journals at startup once they are older than 30 days or beyond the 1,024
+   * newest; that limit is fixed, not set by this policy. */
   eventRetention(policyJson?: string): Promise<string>;
 
-  /** Per-agent token/cost report (G3), folded from metered inference events.
-   * Returns a JSON array of `{agent, calls, tokensIn, tokensOut, costUsd}`. */
+  /** Per-agent token/cost report (G3), folded from this connection's metered
+   * inference events. Returns a JSON array of
+   * `{agent, calls, tokens_in, tokens_out, cost_usd}`. */
   eventCostByAgent(): Promise<string>;
 
   /** Turn on tamper-evident hash chaining for the session event log (A9).
@@ -2938,7 +3452,7 @@ export class CarRuntime {
    * hash. Idempotent. */
   enableEventLogHashChaining(): Promise<void>;
 
-  /** Verify the session event log's tamper-evidence chain (A9). Returns
+  /** Verify this connection's session event log's tamper-evidence chain (A9). Returns
    * `{"verified": n}` (chained events verified) or `{"tampered_at": i}`
    * (index of the first interior edit/deletion/reorder) as a JSON string.
    * Head/tail truncation is not detectable (no anchored head hash). */
@@ -2962,6 +3476,14 @@ export class CarRuntime {
   healStatus(): Promise<string>;
   /** Run one self-healing repair sweep now. May open a pull request; never merges. */
   healRun(): Promise<string>;
+  /**
+   * `chatSessionId` is for a caller bound to a supervised agent: the
+   * `session_id` of the host's `agents.chat` turn it is answering, which it
+   * needs to start a sweep. `item` (`owner/repo#number`) runs that one item
+   * with the attended configuration, setting aside its backoff and its
+   * `needs-human` label.
+   */
+  healRun(chatSessionId: string | null, item?: string | null): Promise<string>;
 /** Self-heal status as JSON: cadence, `auto_fix_enabled`, `max_concurrent`,
    * `max_per_day`, `max_rounds_per_key`, optional `auto_fix_refusal_reason`,
    * last tick, source route/refusal,
@@ -2976,7 +3498,8 @@ export class CarRuntime {
    * `auto_fix_exhausted`, `auto_fix_in_progress`, and
    * `last_auto_fix_attempt` (including `exit_code` and `failure_class`). Remote
    * deduplication adds `auto_fix_awaiting_review`, `auto_fix_parked`,
-   * `remote_pr_number`, and `remote_pr_url`.
+   * `remote_pr_number`, and `remote_pr_url`. A detection handed to the
+   * repair loop carries `heal_issue` (`{repo, number, url}`).
    * `queryJson` carries optional `kind`, `severity`,
    * `since`, `offset`, and `limit` (max 500). */
   selfhealDetections(queryJson?: string): Promise<string>;
@@ -2992,7 +3515,8 @@ export class CarRuntime {
   /** Run one non-overlapping detection tick and default-on auto-fix hook. */
   selfhealRun(): Promise<string>;
 
-  /** Execution log counts and approximate retained native bytes. Returns JSON. */
+  /** This connection's execution log counts and approximate retained native
+   * bytes. Returns JSON. */
   eventLogStats(): Promise<string>;
 
   /** Keep only the newest events/spans in this runtime's execution log. Returns JSON. */
@@ -3061,7 +3585,14 @@ export class CarRuntime {
     extraArgs?: string[] | null,
   ): Promise<string>;
 
-  /** Close any persistent browser session attached to this runtime. */
+  /**
+   * Close any persistent browser session attached to this runtime.
+   *
+   * Shuts Chromium down and resets the session: the next `browserRun`
+   * launches a fresh browser with the options it passes (`headed`,
+   * `extraArgs`), and navigate/observe work against it as in a new
+   * process. Navigating to `about:blank` instead of closing is not needed.
+   */
   browserClose(): Promise<void>;
 
   // `browserRun`/`browserClose` above are this runtime's OWN
@@ -3147,35 +3678,79 @@ export class CarRuntime {
   permissionDomains(): string;
 
   /**
-   * Returns JSON `{ domain, status, target_bundle_id }`. `status` is one of
+   * Returns JSON `{ domain, status, target_bundle_id }`. `domain` is one of
+   * `browser` | `contacts` | `calendar` | `mail` | `accessibility` |
+   * `screen_capture` | `automation` | `camera` | `microphone` | `health_read` |
+   * `photos` | `reminders` | `full_disk_access`. `status` is one of
    * `granted` | `denied` | `not_determined` | `restricted` | `not_applicable` |
-   * `restart_required` | `signature_changed` | `unknown`. The `calendar` domain
-   * additionally reports a real, non-prompting EventKit query and can return
-   * `write_only` (macOS-14 write-only calendar grant).
+   * `restart_required` | `signature_changed` | `unsupported` |
+   * `not_responding` | `unknown`. `unsupported` means the state could not be
+   * read without prompting ("can't tell") and is distinct from
+   * `not_determined` ("never asked"): on macOS `health_read`, `automation`
+   * with no target, `automation`/`photos`/`reminders` while the target app
+   * is not running, and `calendar`/`contacts` when CAR's helper for them
+   * cannot answer. On macOS the check answers within 2 s;
+   * `not_responding` means it did not (usually an Automation target running
+   * but not answering Apple Events, whose access may already be granted —
+   * quit and reopen that app). `calendar` and `contacts` are real,
+   * non-prompting queries; `calendar` can also return `write_only` and
+   * `contacts` `limited`. `photos` and `reminders` report the Automation grant
+   * for Photos.app / Reminders.app, which those integrations drive.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `permissionStatusAsync`.
+   * Each permission probe is bounded at 2 s on macOS.
    */
   permissionStatus(domain: string, targetBundleId?: string | null): string;
 
-  /** Triggers the OS permission prompt; returns the resulting status. */
+  /**
+   * Returns JSON `{ domain, status, target_bundle_id }` with the same `status`
+   * values as `permissionStatus`. Where the OS supports a prompt this asks;
+   * on macOS it does not prompt and reads the current state like
+   * `permissionStatus`, so it can also report `not_responding` after 2 s.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `permissionRequestAsync`.
+   * Each permission probe is bounded at 2 s on macOS.
+   */
   permissionRequest(domain: string, targetBundleId?: string | null): string;
 
-  /** Returns JSON describing what the permission unlocks and how to revoke it. */
+  /**
+   * Returns JSON `{ domain, status, message, fix, target_bundle_id }` with the
+   * same `status` values as `permissionStatus`. On macOS a check that does not
+   * answer within 2 s reports `not_responding`, with a `message` and `fix`
+   * saying what to do.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `permissionExplainAsync`.
+   * Each permission probe is bounded at 2 s on macOS.
+   */
   permissionExplain(domain: string, targetBundleId?: string | null): string;
 
   // -------------------------------------------------------------------------
   // Native account discovery (system Settings → Internet Accounts on macOS)
   // -------------------------------------------------------------------------
 
-  /** Returns JSON array of accounts known to the OS. */
+  /**
+   * Returns JSON array of accounts known to the OS.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `accountsListAsync`.
+   */
   accountsList(): string;
 
-  /** Open the OS's native account-management UI for an account or the root pane. */
+  /**
+   * Open the OS's native account-management UI for an account or the root pane.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `accountsOpenAsync`.
+   */
   accountsOpen(accountId?: string | null): string;
 
   // -------------------------------------------------------------------------
   // Calendar / Contacts / Mail / Messages integrations (delegated to OS providers)
   // -------------------------------------------------------------------------
 
-  /** Returns JSON array of calendars discovered through the OS provider. */
+  /**
+   * Returns JSON array of calendars discovered through the OS provider.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `calendarListAsync`.
+   */
   calendarList(): string;
 
   /**
@@ -3188,6 +3763,15 @@ export class CarRuntime {
    * `accepted`|`declined`|`tentative`|`pending`|… (`EKParticipant.participantStatus`)
    * and `role` is `required`|`optional`|`chair`|`non_participant`|`unknown` — so a
    * consumer can tell a firm commitment from a tentative RSVP.
+   *
+   * `external_id?` is the calendar server's identity for the item
+   * (`EKCalendarItem.calendarItemExternalIdentifier`; Graph's `iCalUId`), so
+   * one meeting accepted on two accounts can be matched where the per-store
+   * `id` differs. Key on `(external_id, start)`: occurrences of a recurring
+   * EventKit event share it, and EventKit can omit it or change it until the
+   * event has synced to its server.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `calendarEventsAsync`.
    */
   calendarEvents(
     startRfc3339: string,
@@ -3200,7 +3784,9 @@ export class CarRuntime {
    * `{ calendar_id, title, start, end, all_day?, notes?, location?, url? }`
    * with RFC3339 timestamps. Returns JSON-encoded EventMutationResult; its
    * embedded `event` carries the same enriched shape as `calendarEvents`
-   * (attendee objects with RSVP status + event `status`).
+   * (attendee objects with RSVP status + event `status` + `external_id?`).
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `calendarCreateEventAsync`.
    */
   calendarCreateEvent(inputJson: string): string;
 
@@ -3209,32 +3795,58 @@ export class CarRuntime {
    * `{ event_id, title?, start?, end?, all_day?, notes?, location?, url? }`.
    * Absent fields leave existing values; empty string for
    * notes/location/url clears that field. Returns JSON-encoded
-   * EventMutationResult.
+   * EventMutationResult; its embedded `event` carries the same enriched
+   * shape as `calendarEvents` (including `external_id?`).
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `calendarUpdateEventAsync`.
    */
   calendarUpdateEvent(inputJson: string): string;
 
-  /** Delete an event by host-assigned id. Returns JSON-encoded EventMutationResult. */
+  /**
+   * Delete an event by host-assigned id. Returns JSON-encoded EventMutationResult.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `calendarDeleteEventAsync`.
+   */
   calendarDeleteEvent(eventId: string): string;
 
-  /** Returns JSON array of contact containers (sources). */
+  /**
+   * Returns JSON array of contact containers (sources).
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `contactsContainersAsync`.
+   */
   contactsContainers(): string;
 
-  /** Returns JSON array of contacts matching `query`. */
+  /**
+   * Returns JSON array of contacts matching `query`.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `contactsFindAsync`.
+   */
   contactsFind(
     query: string,
     limit?: number | null,
     containerIdsCsv?: string | null,
   ): string;
 
-  /** Returns JSON array of mail accounts known to the OS provider. */
+  /**
+   * Returns JSON array of mail accounts known to the OS provider.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `mailAccountsAsync`.
+   * Mail reads drive Mail.app and can take seconds (`mailInbox` measured ~10 s), bounded by the 15 s default read timeout.
+   */
   mailAccounts(): string;
 
   /**
    * Returns JSON inbox snapshot
-   * `{ available, backend, reason?, summaries: InboxSummary[] }` — per-account
-   * unread/total counts, not message rows. Use `mailMessages` for rows.
+   * `{ available, backend, reason?, summaries: InboxSummary[], unresolved?: { account_id, reason }[] }`
+   * — per-account unread/total counts, not message rows. Use `mailMessages`
+   * for rows. An account whose INBOX cannot be read is listed in
+   * `unresolved` instead of `summaries`; `unresolved` is omitted when every
+   * account read.
    * `accountIdsCsv` is an optional comma-separated filter; omit to query all
    * known accounts.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `mailInboxAsync`.
+   * Mail reads drive Mail.app and can take seconds (`mailInbox` measured ~10 s), bounded by the 15 s default read timeout.
    */
   mailInbox(accountIdsCsv?: string | null): string;
 
@@ -3252,13 +3864,17 @@ export class CarRuntime {
    *
    * An `accountIdsCsv` that matches no account returns `available: false`
    * with a reason, not an empty list.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `mailMailboxesAsync`.
+   * Mail reads drive Mail.app and can take seconds (`mailInbox` measured ~10 s), bounded by the 15 s default read timeout.
    */
   mailMailboxes(accountIdsCsv?: string | null): string;
 
   /**
    * Read message rows, newest first. `queryJson` is a `MessageQuery`:
    * `{account_ids?: string[], mailbox?: string | null, limit?: number,
-   * since?: string, include_body?: boolean}`. `limit` may not exceed 500.
+   * since?: string, include_body?: boolean, all_mailboxes?: boolean,
+   * timeout_ms?: number}`. `limit` may not exceed 500.
    * Every field defaults, and
    * `mailbox: null` means INBOX — so `"{}"` reproduces the pre-existing
    * INBOX-only read.
@@ -3274,10 +3890,30 @@ export class CarRuntime {
    * `"travel"` comes back stamped `"Travel/2026"`), so rows match
    * `mailMailboxes` output. Mail.app rows also carry `message_id`, the RFC
    * 5322 Message-ID header exactly as Mail exposes it; it is `null` if Mail
-   * does not expose the header and on Microsoft Graph rows. An unresolvable
+   * does not expose the header and on Microsoft Graph rows. A Mail.app row
+   * whose body `include_body` asked for but did not get carries
+   * `body_unavailable`, a sentence saying why (on an INBOX read from Mail's
+   * Envelope Index, the one 10 s budget for the index body lookups was spent;
+   * the message was not found or could not be read; Mail did not answer; or
+   * its Message-ID did not match); it is absent otherwise. An unresolvable
    * mailbox or an unmatched
    * `account_ids` returns `available: false` with a reason, never an empty
    * list.
+   *
+   * Each row's `recipients` is the To line only; `cc: string[]` is the CC
+   * line (empty when there is none). `all_mailboxes: true` (with `mailbox`
+   * unset — both together is an invalid-params error) reads every mailbox of
+   * the selected accounts, merged newest first in the backend and deduped by
+   * `message_id` within each account (one row per account that holds the
+   * message); mailboxes not read in time are listed in
+   * `unresolved: [{account_id, mailbox, reason, timed_out}]`, omitted when
+   * none were skipped. `timeout_ms` (1000–120000, default 15000) bounds each
+   * Mail.app read and, for `all_mailboxes`, the budget after which no
+   * further mailbox read starts. A Mail.app read that does not finish in time
+   * throws with error code `timeout`.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `mailMessagesAsync`.
+   * Mail reads drive Mail.app and can take seconds (`mailInbox` measured ~10 s), bounded by the 15 s default read timeout.
    */
   mailMessages(queryJson: string): string;
 
@@ -3285,19 +3921,40 @@ export class CarRuntime {
    * Fetch one message body by the `id` from a `mailMessages` row. Returns
    * `{ available, backend, reason?, id, content_type, body, truncated }`;
    * bodies are cut at 100,000 characters with `truncated: true`.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `mailMessageBodyAsync`.
+   * Mail reads drive Mail.app and can take seconds (`mailInbox` measured ~10 s), bounded by the 15 s default read timeout.
    */
   mailMessageBody(messageId: string): string;
 
   /**
-   * Send mail. `sendRequestJson` is `{to, subject, body, ...}` per the
-   * provider contract. Returns JSON `{ok, message_id?}`.
+   * Send or draft mail. `sendRequestJson` is `{account_id, to, cc?, bcc?,
+   * subject, body, draft_only?}`; `draft_only: true` saves a draft in
+   * `account_id`'s Drafts instead of sending. Returns JSON `{available,
+   * backend, reason?, sent, message_id}`: `sent: false` with a `reason`
+   * (e.g. `sender_override_failed: …` or `drafts_unavailable: …`, saying
+   * what to change in Mail's account settings) when Mail will not use
+   * `account_id`'s address, or (for a draft) reports that account turned off
+   * or lists Drafts mailboxes for other accounts but none for it — nothing
+   * is sent or drafted from another account.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `mailSendAsync`.
+   * Sending drives Mail.app through a script and can take seconds.
    */
   mailSend(sendRequestJson: string): string;
 
-  /** Returns JSON array of Messages.app services/accounts. */
+  /**
+   * Returns JSON array of Messages.app services/accounts.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `messagesServicesAsync`.
+   */
   messagesServices(): string;
 
-  /** Returns JSON array of recent Messages.app chats. */
+  /**
+   * Returns JSON array of recent Messages.app chats.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `messagesChatsAsync`.
+   */
   messagesChats(limit?: number | null): string;
 
   /**
@@ -3306,54 +3963,249 @@ export class CarRuntime {
    * include_body?: boolean}`. `limit` may not exceed 500. Returns
    * `{available, backend, reason?, messages}`;
    * an unreadable database is unavailable, not an empty conversation.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `messagesReadAsync`.
    */
   messagesRead(queryJson: string): string;
 
   /**
    * Send a message through Messages.app. `sendRequestJson` is
    * `{recipient, body, service_id?}`.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `messagesSendAsync`.
    */
   messagesSend(sendRequestJson: string): string;
 
-  /** Returns JSON array of Notes.app accounts. */
+  /**
+   * Returns JSON array of Notes.app accounts.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `notesAccountsAsync`.
+   * Drives the app through a JXA script, which can take seconds and is bounded at 15 s.
+   */
   notesAccounts(): string;
 
-  /** Search Notes.app notes. */
+  /**
+   * Search Notes.app notes.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `notesFindAsync`.
+   * Drives the app through a JXA script, which can take seconds and is bounded at 15 s.
+   */
   notesFind(query: string, limit?: number | null): string;
 
-  /** Returns JSON array of Reminders.app lists. */
+  /**
+   * Read one Notes.app note by the id `notesFind` returns. Read-only.
+   * Returns `{available, backend, reason?, id, name?, folder?, modified?,
+   * body?, truncated}`: `body` is the note's stored HTML (cut at 100,000
+   * UTF-16 code units, with `truncated: true`). A missing note is `available: false`.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `notesReadAsync`.
+   * Drives the app through a JXA script, which can take seconds and is bounded at 15 s.
+   */
+  notesRead(id: string): string;
+
+  /**
+   * Returns JSON array of Reminders.app lists.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `remindersListsAsync`.
+   * Drives the app through a JXA script, which can take seconds and is bounded at 15 s.
+   */
   remindersLists(): string;
 
-  /** Returns JSON array of incomplete reminders. */
+  /**
+   * Returns JSON array of incomplete reminders.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `remindersItemsAsync`.
+   * Drives the app through a JXA script, which can take seconds and is bounded at 15 s.
+   */
   remindersItems(limit?: number | null): string;
 
-  /** Returns JSON array of Photos.app albums. */
+  /**
+   * Returns JSON array of Photos.app albums.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `photosAlbumsAsync`.
+   * Drives the app through a JXA script, which can take seconds and is bounded at 15 s.
+   */
   photosAlbums(): string;
 
-  /** Returns JSON array of Safari bookmarks. */
+  /**
+   * Returns JSON `{ available, backend, reason?, bookmarks, skipped }`: Safari
+   * bookmarks on macOS, Chromium (Chrome/Edge/Brave) elsewhere. `skipped`
+   * counts entries left out because they could not be read, among the entries
+   * visited before `limit` was reached; a refused read (no Full Disk Access)
+   * and an unparseable file give different `reason`s.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `bookmarksListAsync`.
+   */
   bookmarksList(limit?: number | null): string;
 
-  /** Returns JSON standard account-backed file locations. */
+  /**
+   * Returns JSON standard account-backed file locations.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `filesLocationsAsync`.
+   */
   filesLocations(): string;
 
-  /** Returns JSON OS keychain availability. */
+  /**
+   * Returns JSON OS keychain availability.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `keychainStatusAsync`.
+   */
   keychainStatus(): string;
 
   // -------------------------------------------------------------------------
   // Wearable / activity (HealthKit + Fitbit/Garmin/Oura/etc.)
   // -------------------------------------------------------------------------
 
-  /** Returns JSON `{available, reason?, providers?}`. */
+  /**
+   * Returns JSON `{available, reason?, providers?}`.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `healthStatusAsync`.
+   */
   healthStatus(): string;
 
-  /** Times are RFC3339. Returns JSON array of sleep sessions. */
+  /**
+   * Times are RFC3339. Returns JSON array of sleep sessions.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `healthSleepAsync`.
+   */
   healthSleep(startRfc3339: string, endRfc3339: string): string;
 
-  /** Times are RFC3339. Returns JSON array of workouts. */
+  /**
+   * Times are RFC3339. Returns JSON array of workouts.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `healthWorkoutsAsync`.
+   */
   healthWorkouts(startRfc3339: string, endRfc3339: string): string;
 
-  /** Dates are YYYY-MM-DD. Returns JSON array of daily activity summaries. */
+  /**
+   * Dates are YYYY-MM-DD. Returns JSON array of daily activity summaries.
+   *
+   * Blocks the JS event loop for the whole call; on a server or any request path use `healthActivityAsync`.
+   */
   healthActivity(startYmd: string, endYmd: string): string;
+
+  // -------------------------------------------------------------------------
+  // Non-blocking (`…Async`) OS integration methods (car-releases#97)
+  // -------------------------------------------------------------------------
+  // Each takes the same arguments and resolves to the same JSON as the
+  // synchronous method of the same name above, which runs on the JS thread
+  // and blocks the event loop for the whole call (`mailInbox` was measured
+  // at ~10 s). These run the call on a background thread instead, so
+  // timers, I/O and other requests keep being served, and several can run
+  // concurrently. Argument errors (e.g. a bad RFC3339 timestamp) reject.
+
+  /** Non-blocking `permissionStatus`: same arguments and result, off the JS thread. */
+  permissionStatusAsync(domain: string, targetBundleId?: string | null): Promise<string>;
+
+  /** Non-blocking `permissionRequest`: same arguments and result, off the JS thread. */
+  permissionRequestAsync(domain: string, targetBundleId?: string | null): Promise<string>;
+
+  /** Non-blocking `permissionExplain`: same arguments and result, off the JS thread. */
+  permissionExplainAsync(domain: string, targetBundleId?: string | null): Promise<string>;
+
+  /** Non-blocking `accountsList`: same arguments and result, off the JS thread. */
+  accountsListAsync(): Promise<string>;
+
+  /** Non-blocking `accountsOpen`: same arguments and result, off the JS thread. */
+  accountsOpenAsync(accountId?: string | null): Promise<string>;
+
+  /** Non-blocking `calendarList`: same arguments and result, off the JS thread. */
+  calendarListAsync(): Promise<string>;
+
+  /** Non-blocking `calendarEvents`: same arguments and result, off the JS thread. */
+  calendarEventsAsync(
+    startRfc3339: string,
+    endRfc3339: string,
+    calendarIdsCsv?: string | null,
+  ): Promise<string>;
+
+  /** Non-blocking `calendarCreateEvent`: same arguments and result, off the JS thread. */
+  calendarCreateEventAsync(inputJson: string): Promise<string>;
+
+  /** Non-blocking `calendarUpdateEvent`: same arguments and result, off the JS thread. */
+  calendarUpdateEventAsync(inputJson: string): Promise<string>;
+
+  /** Non-blocking `calendarDeleteEvent`: same arguments and result, off the JS thread. */
+  calendarDeleteEventAsync(eventId: string): Promise<string>;
+
+  /** Non-blocking `contactsContainers`: same arguments and result, off the JS thread. */
+  contactsContainersAsync(): Promise<string>;
+
+  /** Non-blocking `contactsFind`: same arguments and result, off the JS thread. */
+  contactsFindAsync(
+    query: string,
+    limit?: number | null,
+    containerIdsCsv?: string | null,
+  ): Promise<string>;
+
+  /** Non-blocking `mailAccounts`: same arguments and result, off the JS thread. */
+  mailAccountsAsync(): Promise<string>;
+
+  /** Non-blocking `mailInbox`: same arguments and result, off the JS thread. */
+  mailInboxAsync(accountIdsCsv?: string | null): Promise<string>;
+
+  /** Non-blocking `mailMailboxes`: same arguments and result, off the JS thread. */
+  mailMailboxesAsync(accountIdsCsv?: string | null): Promise<string>;
+
+  /** Non-blocking `mailMessages`: same arguments and result, off the JS thread. */
+  mailMessagesAsync(queryJson: string): Promise<string>;
+
+  /** Non-blocking `mailMessageBody`: same arguments and result, off the JS thread. */
+  mailMessageBodyAsync(messageId: string): Promise<string>;
+
+  /** Non-blocking `mailSend`: same arguments and result, off the JS thread. */
+  mailSendAsync(sendRequestJson: string): Promise<string>;
+
+  /** Non-blocking `messagesServices`: same arguments and result, off the JS thread. */
+  messagesServicesAsync(): Promise<string>;
+
+  /** Non-blocking `messagesChats`: same arguments and result, off the JS thread. */
+  messagesChatsAsync(limit?: number | null): Promise<string>;
+
+  /** Non-blocking `messagesRead`: same arguments and result, off the JS thread. */
+  messagesReadAsync(queryJson: string): Promise<string>;
+
+  /** Non-blocking `messagesSend`: same arguments and result, off the JS thread. */
+  messagesSendAsync(sendRequestJson: string): Promise<string>;
+
+  /** Non-blocking `notesAccounts`: same arguments and result, off the JS thread. */
+  notesAccountsAsync(): Promise<string>;
+
+  /** Non-blocking `notesFind`: same arguments and result, off the JS thread. */
+  notesFindAsync(query: string, limit?: number | null): Promise<string>;
+
+  /** Non-blocking `notesRead`: same arguments and result, off the JS thread. */
+  notesReadAsync(id: string): Promise<string>;
+
+  /** Non-blocking `remindersLists`: same arguments and result, off the JS thread. */
+  remindersListsAsync(): Promise<string>;
+
+  /** Non-blocking `remindersItems`: same arguments and result, off the JS thread. */
+  remindersItemsAsync(limit?: number | null): Promise<string>;
+
+  /** Non-blocking `photosAlbums`: same arguments and result, off the JS thread. */
+  photosAlbumsAsync(): Promise<string>;
+
+  /** Non-blocking `bookmarksList`: same arguments and result, off the JS thread. */
+  bookmarksListAsync(limit?: number | null): Promise<string>;
+
+  /** Non-blocking `filesLocations`: same arguments and result, off the JS thread. */
+  filesLocationsAsync(): Promise<string>;
+
+  /** Non-blocking `keychainStatus`: same arguments and result, off the JS thread. */
+  keychainStatusAsync(): Promise<string>;
+
+  /** Non-blocking `healthStatus`: same arguments and result, off the JS thread. */
+  healthStatusAsync(): Promise<string>;
+
+  /** Non-blocking `healthSleep`: same arguments and result, off the JS thread. */
+  healthSleepAsync(startRfc3339: string, endRfc3339: string): Promise<string>;
+
+  /** Non-blocking `healthWorkouts`: same arguments and result, off the JS thread. */
+  healthWorkoutsAsync(startRfc3339: string, endRfc3339: string): Promise<string>;
+
+  /** Non-blocking `healthActivity`: same arguments and result, off the JS thread. */
+  healthActivityAsync(startYmd: string, endYmd: string): Promise<string>;
 }
 
 // BEGIN GENERATED daemon wrappers: HostClient
@@ -3383,6 +4235,9 @@ export class HostClient {
   /** Generated host wrapper for `agent_permissions.set_default`. */
   agentPermissionsSetDefault(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `agent_permissions.set_observer`. */
+  agentPermissionsSetObserver(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `agent_permissions.set_tool`. */
   agentPermissionsSetTool(paramsJson: string): Promise<string>;
 
@@ -3394,9 +4249,6 @@ export class HostClient {
 
   /** Generated host wrapper for `agents.message.pending`. */
   agentsMessagePending(paramsJson: string): Promise<string>;
-
-  /** Generated host wrapper for `agents.remove`. */
-  agentsRemove(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `agents.upsert`. */
   agentsUpsert(paramsJson: string): Promise<string>;
@@ -3455,14 +4307,35 @@ export class HostClient {
   /** Generated host wrapper for `concierge.maintain`. */
   conciergeMaintain(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `credentials.issue`. */
+  credentialsIssue(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `credentials.list`. */
+  credentialsList(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `credentials.refusals`. */
+  credentialsRefusals(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `credentials.revoke`. */
+  credentialsRevoke(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `declagents.pause`. */
+  declagentsPause(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `declagents.remove`. */
   declagentsRemove(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `declagents.revert`. */
   declagentsRevert(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `declagents.runs`. */
+  declagentsRuns(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `declagents.set_enabled`. */
   declagentsSetEnabled(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `declagents.set_schedule`. */
+  declagentsSetSchedule(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `diagnostics.secret_store_activity`. */
   diagnosticsSecretStoreActivity(paramsJson: string): Promise<string>;
@@ -3538,12 +4411,6 @@ export class HostClient {
 
   /** Generated host wrapper for `lattice.relay.probe`. */
   latticeRelayProbe(paramsJson: string): Promise<string>;
-
-  /** Generated host wrapper for `lattice.requests`. */
-  latticeRequests(paramsJson: string): Promise<string>;
-
-  /** Generated host wrapper for `lattice.respond`. */
-  latticeRespond(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `messaging.config.get`. */
   messagingConfigGet(paramsJson: string): Promise<string>;
@@ -3631,6 +4498,12 @@ export class HostClient {
 
   /** Generated host wrapper for `tasks.unschedule`. */
   tasksUnschedule(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ui.sign_in`. */
+  uiSignIn(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ui.sign_out`. */
+  uiSignOut(paramsJson: string): Promise<string>;
 
 }
 // END GENERATED daemon wrappers: HostClient
@@ -3878,10 +4751,16 @@ export function registerVoiceEventHandler(
  * `{accepted:true}` immediately, and fires this handler.
  *
  * `handlerFn(paramsJson)` receives `{"session_id":"...","prompt":"...",
- * "attachments":[...]?,"context":{...}?}` as a JSON string. Run one
- * conversational turn — keep a per-`session_id` message thread, run the
- * agent loop, and stream the reply back via `CarRuntime.chatEvent` — then
- * return. It is fire-and-forget (the ack already went back), so a rejected
+ * "attachments":[...]?,"context":{...}?,"history":[...]?,"history_omitted":n?,
+ * "cwd":"..."?}` as a JSON string. Run one conversational turn — keep a
+ * per-`session_id` message thread, run the agent loop, and stream the reply
+ * back via `CarRuntime.chatEvent` — then return. `history` is the chat's earlier
+ * turns (`{ role: "user" | "assistant", content }`, oldest first), sent when
+ * the host's chat moved to a new session: seed the thread of a session you
+ * have none for from it, and ignore it for one you already have.
+ * `history_omitted` counts older messages the host and daemon left out. `cwd`,
+ * when present, is the absolute folder the host's conversation works in;
+ * resolve the turn's relative paths there. It is fire-and-forget (the ack already went back), so a rejected
  * Promise is logged, not surfaced to the host. Process-wide setter,
  * symmetric to `registerVoiceEventHandler`; pair with
  * `unregisterChatHandler` to clear.
@@ -4390,8 +5269,9 @@ export function reapStaleAgents(
  * tool invocation (a `data` part `{ "tool": "...", "parameters": {...} }`)
  * route back to the handler installed via `registerToolHandler`. This is
  * the canonical path for host-language agents to project themselves
- * over A2A. Default `false` preserves the legacy fresh-Runtime
- * behaviour (only `register_agent_basics` tools, dispatch in Rust).
+ * over A2A. Default `false` serves a fresh runtime that registers no
+ * tools at all: the listener has no credential, so any local process
+ * can reach it, and a file tool there would write as CAR's user (car#3643).
  *
  * A purely *conversational* `message/send` (free text, no tool `data`
  * part) is routed to the host's `agent.chat` handler — the daemon
@@ -4402,10 +5282,9 @@ export function reapStaleAgents(
  *
  * `allow_non_loopback_bind` (boolean, default `false`) is required to bind
  * anything but loopback. This listener serves NO authentication — there
- * is no auth parameter, and its router is `NoAuth` — and without
- * `share_session_runtime` its runtime registers the agent-basics
- * filesystem tools, so a reachable bind publishes `write_file` /
- * `edit_file` to anyone who can route to the port. A wildcard bind
+ * is no auth parameter, and its router is `NoAuth` — so a reachable
+ * bind publishes whatever it serves (with `share_session_runtime`, the
+ * session's tools) to anyone who can route to the port. A wildcard bind
  * (`0.0.0.0:...`) is refused too. To be reachable by other CAR daemons
  * you want the peer-authenticated, messaging-only listener `car-server`
  * already runs by default, not this.
@@ -4545,6 +5424,14 @@ export function equivalent(proposal1Json: string, proposal2Json: string): boolea
  * backward-incompatible JSON-RPC change — independent of the package semver.
  */
 export function protocolVersion(): number;
+
+/**
+ * Oldest wire protocol version this binding speaks. The binding sends the range
+ * `protocolVersionMin()..=protocolVersion()` in `server.handshake`, and the
+ * daemon settles on the highest version both sides speak; only a daemon whose
+ * range shares no version with this one refuses the connection.
+ */
+export function protocolVersionMin(): number;
 
 /**
  * Version of THIS `car-runtime` npm package — the client library that talks to
@@ -5520,7 +6407,9 @@ export function listOsSchedules(): string;
 /**
  * Reap orphaned OS-level schedules — uninstall every CAR-managed launchd/cron
  * entry whose task is gone from `~/.car/tasks/` or whose trigger is no longer
- * schedulable. Returns the reconcile report `{ removed, kept, errors }`.
+ * schedulable — and reinstall durable command schedules installed before run
+ * recording so they fire through `car schedule run-recorded`. Returns the
+ * reconcile report `{ removed, kept, errors, reinstalled }`.
  */
 export function reconcileOsSchedules(): string;
 /** Parse the supported cadence phrase grammar without inference.
@@ -5528,12 +6417,27 @@ export function reconcileOsSchedules(): string;
 export function suggestSchedule(phrase: string, timezone?: string | null): string;
 /** Schedule a deterministic command on a cadence, hiding the OS backend (#72).
  *  specJson = { name, program, args?, cadence: { intervalSecs? | cron? },
- *  durable?, workingDir?, env?, permissionTier? }.
- *  Returns { id, durable, backend: "launchd"|"cron"|"schtasks"|"daemon", task }. */
+ *  durable?, workingDir?, env?, timeoutSecs?, stdoutPath?, stderrPath? }
+ *  (snake_case spellings are accepted too). A durable task's OS job fires
+ *  through `car schedule run-recorded --digest <hex>`, which runs only the
+ *  command the job was installed with, records every run on the task
+ *  (`last_run_at`, `run_count`, `executions`) and appends the command's stdout
+ *  and stderr to `stdoutPath` / `stderrPath` (absolute; default
+ *  `<CAR_HOME>/logs/tasks/<id>.log`, stderr sharing the stdout file).
+ *  Returns { id, durable, backend: "launchd"|"cron"|"schtasks"|"daemon",
+ *  stdout_path, stderr_path, task }. */
 export function scheduleTask(specJson: string): string;
-/** List deterministic (command) scheduled tasks with their resolved backend. */
+/** List every scheduled task record and what runs it. Each row is
+ *  { id, name, kind: "command"|"agent"|"dream"|"prompt"|"unreadable", program, args,
+ *  trigger, schedule, durable, backend: "os"|"daemon"|"orphaned"|"none", enabled,
+ *  status, last_run_at, run_count, last_exit_code, stdout_path, stderr_path }.
+ *  `orphaned` = a durable task whose OS job is gone, so nothing runs it. An
+ *  `unreadable` row is a task file that could not be parsed; it carries `file`
+ *  and `error` instead of a command. */
 export function listScheduledTasks(): string;
-/** Unschedule a deterministic task — remove any OS schedule + delete from the store. */
+/** Unschedule a deterministic task — remove any OS schedule + delete from the store.
+ *  Returns { id, os_removed, deleted, orphaned } (`orphaned`: the task was durable
+ *  but its OS job was already gone). */
 export function unscheduleTask(idOrLabel: string): string;
 
 /** Run a task once using the registered agent runner. */
@@ -5693,7 +6597,8 @@ export function a2ADispatch(rt: CarRuntime, method: string, paramsJson: string):
  *
  * Wire shape matches the daemon's `agents.list` JSON-RPC method
  * exactly so a host can swap between in-process and WS transports
- * without reshaping payloads.
+ * without reshaping payloads. Each row also carries the spend fields
+ * typed as `ManagedAgentSpendFields` (`spend_caps`, `budget`, `at_budget`).
  */
 export function agentsList(): Promise<string>;
 
@@ -5709,7 +6614,7 @@ export function agentsList(): Promise<string>;
 export function agentsHealth(): Promise<string>;
 
 /**
- * Add or replace an agent's spec. Persists `~/.car/agents.json`.
+ * Add or replace an agent's spec. Persists `~/.car/agents/<id>/manifest.toml` (and the legacy `~/.car/agents.json` only where it already exists).
  * The agent is NOT auto-started — call `agentsStart` (or
  * `auto_start: true` will pick it up on the next boot via the
  * supervisor's `start_all`).
@@ -5725,13 +6630,19 @@ export function agentsHealth(): Promise<string>;
  *   //     once at upsert and stores the absolute path in `command`.
  *   "args": ["server.js"],
  *   "cwd": "/path/to/project",       // optional
- *   "env": { "K": "V" },             // merged on top of parent's env
+ *   "env": { "K": "V" },             // applied on top of the reduced base env
  *   "restart": "on_failure",         // never | on_failure | always
  *   "max_restarts": 10,
  *   "backoff_secs": 5,
  *   "auto_start": true,              // included by start_all on boot
- *   "method_allowlist": ["mail.accounts", "mail.messages"]
+ *   "method_allowlist": ["mail.accounts", "mail.messages"],
  *                                      // optional; absent = unrestricted
+ *   "secrets": ["ANTHROPIC_API_KEY"], // optional; names fetched from CAR's
+ *                                      // secret store into the agent's env
+ *   "delegate_for": ["human:matt"]    // optional; the people this agent may
+ *                                      // answer for on the Lattice (a human
+ *                                      // delegate, car-releases#109). The
+ *                                      // operator's grant: omit it to revoke
  * }
  * ```
  *
@@ -5758,6 +6669,13 @@ export function agentsUpsert(specJson: string): Promise<string>;
  * adopted (the supervisor only spawns command-shaped externals
  * in this phase).
  *
+ * An agent already installed under the manifest's id is never
+ * replaced unasked: the install rejects, changing nothing, naming
+ * the installed agent and version. The same version is always
+ * rejected as "this version is already installed". To replace it
+ * with a different version, add `"upgrade": true` beside the
+ * manifest's own top-level keys in `manifestJson` (car#3264).
+ *
  * Returns JSON
  * `{report: {missingOptional: [{namespace, feature}]}, agent: ManagedAgent|null}`.
  */
@@ -5766,7 +6684,10 @@ export function agentsInstall(manifestJson: string): Promise<string>;
 /**
  * Remove an agent's spec. Stops the running child first if it's up.
  * Idempotent — `{removed: false}` when nothing matched.
- * Returns JSON `{removed: boolean}`.
+ * Returns JSON `{removed: boolean, log_scrub_error?: string}`;
+ * `log_scrub_error` is present when the secrets delivered to the agent could
+ * not be removed from its log files. Rejects, removing nothing, when that
+ * stop is declined (see `agentsStop`).
  */
 export function agentsRemove(id: string): Promise<string>;
 
@@ -5774,28 +6695,50 @@ export function agentsRemove(id: string): Promise<string>;
  * Spawn the agent's child if not already running. No-op when
  * already `Running` or `Starting`. Resets `restart_count`.
  * Returns JSON `ManagedAgent`.
+ *
+ * On Linux, when this process supervises agents itself (no daemon holds the
+ * registry), an agent that runs walled (every agent but CAR's own assistant)
+ * is not started: a walled agent needs a helper process of the CAR daemon's
+ * own binary, which a Node host cannot provide. Its status becomes `errored`
+ * with a reason saying so. Run it under `car-server` instead.
  */
 export function agentsStart(id: string): Promise<string>;
 
 /**
  * Stop the agent and prevent the supervisor from respawning it.
  * `signal` is `"term"` (SIGTERM with grace, default) or `"kill"`
- * (SIGKILL immediately). Returns JSON `ManagedAgent`.
+ * (SIGKILL immediately). Returns JSON `ManagedAgent`. Rejects with a
+ * "stop of agent <id> declined" error when an adopted agent's pid could not
+ * be verified as its process (an unreadable start token): it stays running
+ * and supervised and keeps its pid file. The token read is transient: retry
+ * the stop. If the SIGKILL was withheld, the error says the SIGTERM may
+ * already have been sent, and the exit it causes leaves the agent stopped
+ * rather than restarted. Windows records no token, so it never declines. When a SIGKILL's exit is not observed
+ * in time, the returned agent is stopped but keeps its `pid`.
  */
 export function agentsStop(id: string, signal?: string | null): Promise<string>;
 
 /**
  * Stop then start. Equivalent to `agentsStop` followed by
- * `agentsStart`. Returns JSON `ManagedAgent`.
+ * `agentsStart`. Returns JSON `ManagedAgent`. Rejects with the declined
+ * error, restarting nothing, when the stop is declined.
  */
 export function agentsRestart(id: string): Promise<string>;
 
 /**
  * Block until a managed agent reaches one of `targetsJson` (a JSON string array
- * of statuses like `["running"]` or `["stopped","errored"]`; default
- * `["running"]`) or `timeoutSecs` (default 30) elapses, polling every `pollMs`
- * (default 200). Returns the matching `ManagedAgent` JSON; rejects on timeout or
- * unknown id.
+ * of statuses like `["running"]` or `["stopped","errored"]`, or `["ended"]` for
+ * stopped or errored; default `["running"]`) or `timeoutSecs` (default 30)
+ * elapses, polling every `pollMs` (default 200). Returns the matching
+ * `ManagedAgent` JSON; rejects on timeout or unknown id. A worker's row also
+ * carries how it ended: `end_reason` (`finished`, `stopped_by`,
+ * `orchestrator_stopped`, `timed_out`, `kept_crashing`,
+ * `interrupted_by_restart`, `restart_refused`, `environment_failed`, or
+ * `null`), CAR's `end_message`, `last_error`
+ * (`{ kind: "exit" | "signal" | "timed_out" | "kept_crashing" | "spawn_failed" |
+ * "environment_failed", exit_code?, signal? }` or `null`) and its last structured
+ * `report` (or `null`), plus `end_record_error` when the end could not be
+ * written to disk and is held in memory. None of them is text the worker wrote.
  */
 export function agentsWait(
   id: string,
@@ -5819,9 +6762,8 @@ export function agentsWait(
  *   stream to scroll back.
  *
  * Each stream is read via a bounded backward seek (at most an 8 MiB
- * tail), not a whole-file slurp, since agent logs are append-only and
- * never rotated. A log larger than the ceiling is truncated to its last
- * 8 MiB and `more` is forced `true`.
+ * tail across its runs), not a whole-file slurp. A stream larger than the
+ * ceiling is truncated to its last 8 MiB and `more` is forced `true`.
  *
  * Returns JSON `{ lines: string[], stdout: string[], stderr: string[],
  * stdoutTotal: number, stderrTotal: number, stdoutPath: string,
@@ -5829,6 +6771,21 @@ export function agentsWait(
  * stdout-then-stderr combined view for back-compat. `stdoutTotal` /
  * `stderrTotal` count lines in the scanned tail (exact within the
  * ceiling).
+ *
+ * Each start of the agent (a run) writes files of its own, and a stream
+ * reads as the kept runs one after another, oldest first; `stdoutPath` /
+ * `stderrPath` name the newest finished run's redacted file, never a
+ * running run's raw file. Secret values delivered to the
+ * agent are replaced with `[redacted]`: in memory for the run still
+ * writing, and in the redacted file each finished run leaves. A stream's
+ * first page (`offset` 0) can end with extra lines starting `[car: `
+ * naming what is not shown: a run's files withheld because no daemon could
+ * vouch that it held the values to redact them, a run an earlier daemon
+ * left that is not yet recovered, or an adopted run whose values this
+ * daemon does not hold. These lines are on top of `n`, are not counted in
+ * `stdoutTotal`/`stderrTotal`, and in `lines` they end the stdout part, so
+ * they can sit in the middle of the combined list. Not redacted: a value in
+ * a form no text match finds (car#3637).
  */
 export function agentsTailLog(id: string, n?: number | null, stream?: string | null, offset?: number | null): Promise<string>;
 
@@ -5955,6 +6912,11 @@ export function agentsHealthExternal(
  *                                      // --mcp-config; daemon callers
  *                                      // auto-fill from car-server's
  *                                      // bound /mcp URL. "" opts out.
+ *     "mcp_bearer"?: string,           // your own bearer token for that
+ *                                      // endpoint, sent as Authorization:
+ *                                      // Bearer (never echoed back). The
+ *                                      // daemon's own endpoint gets a
+ *                                      // minted run credential instead.
  *     "attachments"?: [               // images attached to the prompt
  *       { "path": string,             // abs path on the daemon's fs
  *         "media_type"?: string }     // advisory; the runner derives

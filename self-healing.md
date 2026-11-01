@@ -7,8 +7,13 @@ there is no LLM judge in the detection or routing path.
 
 ## Deterministic detectors
 
-The daemon runs five pure detectors: `metrics_alerts.v1`, `agent_gave_up.v1`,
-`agent_log_errors.v1`, `recurring_tool_failure.v1`, and `capability_miss.v1`.
+The daemon runs six pure detectors: `metrics_alerts.v1`, `agent_gave_up.v1`,
+`agent_log_errors.v1`, `agent_protocol_skew.v1`, `recurring_tool_failure.v1`,
+and `capability_miss.v1`. `agent_protocol_skew.v1` reads the handshake the
+daemon recorded for each supervised agent: a refused handshake (the agent's
+client shares no wire-protocol version with the daemon) is critical, and an
+agent that connected on an older protocol version or a different package build
+is a warning (car-releases#104).
 `agent_log_errors.v1` closes two supervisor blind spots:
 
 - **Healthy-but-erroring:** the process remains `running`, but its bounded
@@ -17,8 +22,10 @@ The daemon runs five pure detectors: `metrics_alerts.v1`, `agent_gave_up.v1`,
   traceback header. INFO/WARN/unlevelled lines remain routine even when they say
   “failed”. Signatures normalize timestamps, UUIDs, long hex ids, numbers, and
   whitespace before counting.
-- **Silently idle:** the process remains `running`, but the activity-log mtime is
-  older than the configured threshold. Deduplication uses only the monotone
+- **Silently idle:** the process remains `running`, but its newest write to
+  either stdout or stderr is older than the configured threshold. Both streams
+  count: Python's `logging` and `car do --serve` write only to stderr, and a
+  stdout-only time reported such agents idle while they were logging. Deduplication uses only the monotone
   `hour` / `day` / `week` / `month` age bucket, never a raw minute count or tick
   time. A measured zero bytes on both stdout and stderr is listed by the
   supervisor but produces no detection because no activity was observed.
@@ -28,8 +35,15 @@ stream sizes, and activity metadata explicitly on each supervisor snapshot.
 
 Detection is **ledger-first**. CAR does not use a model to decide whether a
 signal is worth fixing, restart an agent, merge code, or grant itself new
-authority. Every tick appends detections and its summary to the owner-private
-`<CAR_HOME>/selfheal/detections.jsonl` ledger. Operator dismissals and bounded
+authority. Every tick appends its summary to the owner-private
+`<CAR_HOME>/selfheal/detections.jsonl` ledger. A detection is appended when it
+is first seen and again only when something other than its observation
+timestamps changes, so an unchanged signal adds no row however long
+it stays active; `selfheal.detections` still reports its `last_observed_at` as
+the latest tick that saw it, read from each tick record's `observed_keys`. A
+metric alert's evidence is its message, which carries the measured value, so a
+cost or error-rate alert whose value moves between ticks is a changed signal
+and is appended each time it moves. Operator dismissals and bounded
 coder attempts are append-only records too; history is not deleted. Only the
 eligible `recurring_tool_failure.v1` path has an auto-fix template in v1; every
 other detector remains watch-only.
@@ -205,11 +219,54 @@ The routing policy has two intended arms:
 `CAR_SELFHEAL_INTERVAL_SECS` changes cadence only. It does not bypass the source
 check, enable filing, or select another implementation.
 
+## Detector to repair loop
+
+The repair loop (`car heal`, `docs/websocket-protocol/heal.md`) fixes labelled
+issues: a coder session in its own worktree, a multi-model review panel, and a
+pull request that is never merged by CAR. The detector feeds it by filing its
+fixable detections as those issues. On each tick, when all three hold:
+
+- the route is `local` (a validated `Parslee-ai/car` checkout);
+- the repair loop is enabled (`<CAR_HOME>/heal.toml` names a target and a review
+  panel);
+- one of its targets has `repo = "Parslee-ai/car"` and a checkout;
+
+the tick files each active, undismissed `recurring_tool_failure` or
+`capability_miss` detection as an issue on that repository, labelled with the
+target's opt-in label. The body is the local issue document below, behind a
+`<!-- car-fix-signature: <dedup-key> -->` marker. At most one new issue is filed
+per tick. An open issue already carrying a key's marker is adopted instead of
+duplicated, and a `heal_issue` ledger record makes either outcome durable, so a
+key is handed over once. `selfheal.detections` reports it as `heal_issue`
+(`{repo, number, url}`) and `car selfheal list` prints the issue URL.
+
+Agent-health and metric kinds are not filed: they describe other programs, or
+spend and load, which a coder session in the CAR repository cannot change.
+Nothing is filed to any other repository, the public releases tracker included,
+so detector evidence stays within the source repository's access boundary. The
+issue is authored by the operator's `gh` account, so the repair loop tiers it as
+`maintainer`: it may seed a session, its body is data, and it never sources an
+outcome contract.
+
+One coder per key. While the repair loop qualifies, it owns every fileable key
+the detector's own auto-fix (above, which has no review panel) has not already
+started, filed or still queued, so auto-fix does not take the rest of the queue
+while filing drains it one per tick. A key auto-fix already started stays with
+auto-fix and is not filed. `car selfheal fix` refuses a handed-over key and
+names its issue. A detection that cannot be filed (its document is gone, the
+repository lacks the label, GitHub refuses the call) is skipped and logged, and
+the next one is tried; a body over 60,000 characters is truncated.
+
+A hand-off is durable and does not expire: closing the issue does not hand the
+key back, so a defect that recurs after its issue closed needs a new detection
+key or an operator. Dismissing a detection does not close its issue.
+
 ## Consuming local issues
 
 CAR ships the detector, private issue-document writer, query API, and dismissal
-API. It does **not** ship a consumer that watches those documents, creates work
-in a maintainer's backlog, or acts on a detection. A source-present maintainer
+API. Beyond the hand-off above, it does **not** ship a consumer that watches
+those documents, creates work in a maintainer's backlog, or acts on a
+detection. A source-present maintainer
 must attach and operate that consumer; “fleet-harvested” describes Parslee's
 private consumer, not behavior included in CAR.
 

@@ -521,12 +521,14 @@ rt.registerPolicy('require_tests', 'require_state', null, 'tests_passed', null, 
 | `key` | yes | state key |
 | `value_json` | yes | required JSON value, encoded as a string |
 
-#### `deny_tool_callback` (NAPI only)
-Reject when a JS callback returns truthy. Requires `registerAgentRunner` to have stored the callback first. Use sparingly — synchronous policy callbacks are a hot-path cost.
+#### `deny_connector`
+Reject every tool of a remote MCP connector. Connector tools are named `mcp_<slug>_<tool>`, so one rule covers the whole connector.
 
 | Param | Required | Notes |
 |-------|----------|-------|
-| `target` | yes | tool name to gate |
+| `target` | yes | connector slug |
+
+No other rule kind is accepted by `registerPolicy` / `register_policy` / `policy.register`. There is no callback rule: `deny_tool_callback` is not accepted, because a callback cannot ride the daemon's JSON-RPC wire.
 
 ### Declarative project rules (`.car/policies/*.toml`)
 
@@ -537,11 +539,11 @@ Which `.car` depends on who is loading:
 | Loader | Directory | Scope |
 |--------|-----------|-------|
 | The daemon, per session | `~/.car/policies/*.toml` | the operator's rules — the daemon serves whatever project a client happens to be in, so its rule set cannot be per-project |
-| `car do` / the assistant | `<working directory>/.car/policies/*.toml` | project-scoped; the working directory is `--dir` if given, otherwise `std::env::current_dir()` |
+| `car do` / the assistant | `.car/policies/*.toml` in the nearest `.car/` from the working directory up to the git worktree root | project-scoped; the working directory is `--dir` if given, otherwise `std::env::current_dir()` |
 
-> ⚠️ **There is no walk-up for `car do`.** It joins `.car/policies` onto its working directory and looks there, once. Invoked from a subdirectory of a repo, the repo-root `.car/policies/` is not loaded — and this fails **open**: no warning, no error, the rules just do not apply. Run from the project root or pass `--dir <project root>`.
+> **Discovery stops at the git worktree root.** `car do` looks for `.car/` from its working directory up to the repository root, so a run started in a subdirectory is governed by the repo-root `.car/policies/`. Nothing above the repository root is read, and CAR's own state root (`~/.car`, or `$CAR_HOME`) is never read as a project. Outside a git repository only the working directory's own `.car/` applies.
 >
-> This is inconsistent with neighbouring `.car/` discovery, and worth knowing because the other docs say the opposite: `.car/connectors.toml` walks up from cwd (`car-connectors::team_connectors_path`), and the cookbook's project-directory chapter describes `.car/` discovery in general as walking up from cwd. Policies do not.
+> `.car/connectors.toml` (`car-connectors::team_connectors_path`) has the same bound: the nearest team file from the working directory up to the repository root, and never the one in the state root. Outside a repository only the working directory's own `.car/connectors.toml` applies, as for policies.
 
 Loading is strict. A missing `policies/` directory is not an error (most projects have none), but a present-but-malformed file **fails the session** — a security rule that fails to parse must surface rather than be silently skipped. The daemon refuses the WebSocket connection; `car do` prints the error and exits 2. In both cases the message names the offending file.
 

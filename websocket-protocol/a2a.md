@@ -35,18 +35,33 @@ per-method result. Embedders wanting to plug in a custom
 `with_a2a_store` / `with_a2a_runtime` before constructing
 `ServerState`.
 
+When no `with_a2a_runtime` is supplied, the embedded dispatcher's default
+runtime carries the agent-basics file tools, and they refuse CAR's own
+credential and authority files exactly as a session's do after
+[`agents.register_basics`](agents.md#agentsregister_basics): the `auth-token`
+and `host-token` copies, `env`, `secrets/`, `approvals.jsonl` and
+`agent-permissions.json` under the state root (the approval journal is the one
+`with_approval_journal` names, when set), by any spelling that resolves to one
+of them, plus `peer-identity.key`, CAR's host configuration (`agents.json`,
+`agents/<id>/manifest.toml`, `workers/<handle>/spec.toml`, `declagents.json`,
+`tasks/`, `messaging.json`) and
+a new non-ASCII name in CAR's state, run, token or secrets folder. The user's
+own files are not protected by it.
+
 ### a2a
 
 Lifecycle for the in-process Agent2Agent (A2A) v1.0 listener. Same `car-a2a` HTTP service `car-server --a2a-bind` exposes, but driven over JSON-RPC so embedders can spin it up from their own daemon without the CLI flag. Process-global state holds the bound listener and join handle so a later `a2a.stop` / `a2a.status` reaches the right server.
 
 The same lifecycle is reachable from the FFI bindings as `startA2AServer` / `stopA2AServer` / `a2AServerStatus` (NAPI — each takes the `CarRuntime` first; napi-rs camelCases `a2a` → `A2A`) and `start_a2a_server` / `stop_a2a_server` / `a2a_server_status` (PyO3), wired through `car-ffi-common::a2a`. JSON-RPC and FFI share the same process-global state, so a server started over JSON-RPC can be queried from the bindings and vice versa.
 
-The spawned `car_engine::Runtime` is fresh — engine builtins via `register_agent_basics()`, no shared state with the per-WebSocket session runtime or the embedder's `CarRuntime`. Sharing state with the caller's runtime is future work.
+By default the spawned `car_engine::Runtime` is fresh and **registers no tools**: no shared state with the per-WebSocket session runtime or the embedder's `CarRuntime`, and none of the agent-basics file tools. The listener has no credential, so any local process can reach it on loopback, a walled agent on Linux included; a file tool there would write as CAR's user, outside that agent's wall (car#3643). Without `share_session_runtime` it still serves its Agent Card (no skills), conversational messages (the `"Acknowledged."` stub) and A2A task state, but a tool call finds no tool. Pass `share_session_runtime: true` to serve the calling session's runtime instead (see below); that runtime's file tools, if the session registered them, refuse CAR's own credential and authority files exactly as [`agents.register_basics`](agents.md#agentsregister_basics) describes.
+
+**Browser requests are refused.** Binding to loopback is not an authentication boundary against the operator's own browser: any page they have open can POST to `127.0.0.1`, and a rebound DNS name makes that page same-origin with the listener. So the listener's JSON-RPC and stream routes refuse a request carrying a non-loopback `Origin` (`403`, `{"error":"origin not allowed"}`), and on a loopback bind a request whose `Host` is not a loopback name (`403`, `{"error":"host not allowed"}`). A loopback `Origin` or `Host` is `localhost`, anything in `127.0.0.0/8`, or `[::1]`, on any port; the opaque `null` origin is refused. A request with **no** `Origin` is served — a browser always sends one cross-origin, and CLI and SDK callers send none. The `Origin` check applies on every bind; the `Host` check only on a loopback bind. There, a `Host` whose host part (case-insensitive, port ignored) equals that of an explicitly supplied `public_url` is also served, so a tunnel or reverse proxy that forwards the public host name keeps working; one that rewrites `Host` to the loopback address needs no `public_url` for this. A listener started with `allow_non_loopback_bind` does not check `Host`, since a legitimate remote caller sends its own. The Agent Card routes (`/.well-known/agent-card.json`, `/.well-known/agent.json`) stay public, as A2A requires. The `Origin` rule and the loopback set are shared with the daemon's MCP endpoint and dashboard (`car_a2a::loopback`); the MCP endpoint's own `Host` check is looser and also accepts any IP literal. It adds no credential: the listener is still `NoAuth`.
 
 #### `a2a.start`
 - **Params**: `{ bind: string, public_url?: string, agent_name?: string, agent_description?: string, organization?: string, organization_url?: string, share_session_runtime?: boolean, allow_non_loopback_bind?: boolean }`
 - **Returns**: `{ bound: string }`
-- Errors if a server is already running, the bind fails, or `bind` is malformed. `bind` accepts `host:port` (use `127.0.0.1:0` to ask the kernel for an ephemeral port, then read it back from `bound`). `public_url` defaults to `http://<bound>`; everything else has reasonable defaults.
+- Errors if a server is already running, the bind fails, or `bind` is malformed. `bind` accepts `host:port` (use `127.0.0.1:0` to ask the kernel for an ephemeral port, then read it back from `bound`). `public_url` defaults to `http://<bound>`; an explicitly supplied one also widens which `Host` a loopback bind accepts (see *Browser requests are refused* above). Everything else has reasonable defaults.
 - **`agent_name` defaults to the user's chosen assistant name** (see
   [`assistant.identity.*`](assistant.md#assistant)) when they have set one, and to
   `"Common Agent Runtime"` when they have not. A conversational A2A message
@@ -58,13 +73,13 @@ The spawned `car_engine::Runtime` is fresh — engine builtins via `register_age
   `agent_name` always wins.
 - **`share_session_runtime`** (default `false`): when `true`, the A2A dispatcher uses *this* WS session's runtime, so tools the session registered (`tools.register`) appear on the Agent Card's `skills` and a peer `message/send` is served by this session:
   - a message carrying an explicit tool invocation (a `data` part `{ "tool", "parameters" }`) routes to the session's `tools.execute` callback;
-  - a purely **conversational** message (free text, no tool `data` part) routes to the session's **`agent.chat`** handler — the daemon reverse-calls `agent.chat` on this session, aggregates the streamed `agent.chat.event` deltas (5s to ack, then a 180s cap on the full reply), and returns the reply as the A2A agent message (car-releases#65). A session that doesn't handle `agent.chat` never acks, so the call falls back to the `"Acknowledged."` acknowledgement after the ~5s ack timeout.
+  - a purely **conversational** message (free text, no tool `data` part) routes to the session's **`agent.chat`** handler — the daemon reverse-calls `agent.chat` on this session, aggregates the streamed `agent.chat.event` deltas (5s to ack, then a 180s cap on the full reply), and returns the reply as the A2A agent message (car-releases#65). When either limit runs out the daemon also sends the session `agent.chat.cancel` for that turn, so it does not keep running, or wait on an approval card, after the caller has been answered. A session that doesn't handle `agent.chat` never acks, so the call falls back to the `"Acknowledged."` acknowledgement after the ~5s ack timeout.
   With `share_session_runtime: false` (or started off a non-WS path), a conversational message keeps the `"Acknowledged."` acknowledgement — CAR's runtime executes proposals but does not itself plan.
 - **`allow_non_loopback_bind`** (default `false`): required to bind anything other
   than loopback. This listener serves **no authentication** — there is no auth
-  parameter, and its router is `NoAuth` — and with `share_session_runtime: false`
-  its runtime registers the agent-basics filesystem tools, so a reachable bind
-  publishes `write_file`/`edit_file` to anyone who can route to the port. A
+  parameter, and its router is `NoAuth` — so a reachable bind publishes whatever
+  it serves (with `share_session_runtime: true`, the session's tools) to anyone
+  who can route to the port. A
   wildcard bind (`0.0.0.0:…`) is refused too, being the most reachable of all.
   The same explicit-opt-in rule `a2a.peers.add` and `a2a.send` already apply to
   their endpoints. **If you want to be reachable by other CAR daemons, you do
@@ -95,6 +110,7 @@ The spawned `car_engine::Runtime` is fresh — engine builtins via `register_age
 - `a2a.peers.add` — **Params** `{ url: string, label?: string, allowUntrusted?: boolean }`. **Returns** the `PeerEntry` `{ slug, url, label? }`. Validates `url` is http(s), canonicalizes it (trailing-slash/default-port dedup), derives a unique identifier-safe `slug` from its host (the `organization` segment of that peer's skill identifiers), rejects a duplicate URL. **Trust gate** (SSRF guard, mirrors `a2a.send`): a non-loopback `url` is refused unless `allowUntrusted` is true — registering a peer means discovery will issue an outbound GET to it.
 - `a2a.peers.list` — **Params** `{}`. **Returns** `{ peers: PeerEntry[] }`.
 - `a2a.peers.remove` — **Params** `{ slug: string }`. **Returns** `{ removed: boolean }`.
+- **Operator-only.** `a2a.peers.add` and `a2a.peers.remove` refuse a session bound to a supervised agent (`not available to supervised agents`); `a2a.peers.list` does not. `lattice.knock` falls back to this registry for its target when no discovered CAR matches, so an agent that could write it could choose what the host knocks on.
 
 
 {% endraw %}

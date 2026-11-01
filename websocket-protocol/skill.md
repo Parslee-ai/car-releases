@@ -13,7 +13,7 @@ Skills are learned procedures stored as graph nodes with trigger context. See `d
 #### `skill.find`
 - **Params**: `{ persona?: string, url?: string, task?: string, max_results?: number = 1 }`
 - **Returns**: `[ { name, code, platform, description, stats, match_score }, ... ]`
-- Spreading-activation match against trigger edges.
+- Spreading-activation match against trigger edges. Global and domain skills are scored the same way and ranked together, and at most `max_results` come back, whatever their scope. With the default of 1, a call that names no `max_results` gets the single best skill.
 
 #### `skill.report`
 - **Params**: `{ skill_name: string, outcome: "success" | string }`

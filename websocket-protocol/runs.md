@@ -21,14 +21,29 @@ connection is entitled to the run's owning `agent_id`. A supervised agent
 owns its runs after authenticating with its own credentials:
 `session.auth { token: CAR_AGENT_TOKEN, agent_id: CAR_AGENT_ID }`. That
 agent-bound session can list and replay only that same `agent_id`; it does
-**not** need the host token for its own history, and its token never grants
-access to another agent's runs. The wider alternative is the
+**not** need the host token for its own history, and its per-agent token never
+grants access to another agent's runs (but see the accepted risk below). Two wider alternatives exist. The
+**machine operator** is a session that proved the daemon token itself
+(`session.auth { token }` with no `agent_id`: the local dashboard and the
+`car` CLI) and is still unbound — no agent identity, no organization work
+context, no inference-consumer binding or id. It can **read** (`runs.list`,
+`runs.get_trace`, `runs.subscribe`) any agent's runs (Parslee-ai/car#3007). It
+is read-only: `runs.cancel` still accepts only the owning agent, the host
+role, or a signed-in dashboard session. A session bound to an agent or an organization, and an auth-disabled
+daemon's anonymous connection, do not qualify. **Accepted risk:** any process
+on this machine, under any OS account, can obtain the daemon token and read all
+run history (list, replay, subscribe); an unscoped supervised agent on the Mac
+holds it too (`CAR_AUTH_TOKEN`), so such an agent can read any agent's runs. Agents with a
+`method_allowlist` or work context, and every agent on Linux, are not given it. This is a product
+owner decision (2026-10-17), accepted until per-person login replaces
+the shared token. Withholding the token from scoped agents shipped in
+Parslee-ai/car#3191 (car#3008). The
 **host-management role** (authenticated via `session.auth { host_token }`
-with the per-launch host token). Merely having called `host.subscribe` is
+with the per-launch host token) is the other. Merely having called `host.subscribe` is
 **not** sufficient — that check let any authenticated local connection
 self-elevate and read every agent's run traces (Parslee-ai/car#254); the
 host token, readable only from the `0600` `host-token` file and never
-served over HTTP, is now required. A caller-supplied `agent_id` / `run_id`
+served over HTTP, is required for the host role. A caller-supplied `agent_id` / `run_id`
 is **not** a transparent key — an unentitled request is rejected, not
 served (an `agent_id` can't be used to enumerate another agent's runs).
 
@@ -130,9 +145,12 @@ existence/owner oracle on the write path either).
 - **Params**: exactly `{ run_id, idempotency_key, reason }`; all strings are
   required and non-empty. Unknown fields are rejected. The key is limited to
   128 bytes and the reason to 1024 bytes.
-- The connection must negotiate `runs.cancel.v1` and authenticate either as
-  the run's owning agent or as the host-management client. Unknown and
-  unauthorized run ids return the same error.
+- The connection must negotiate `runs.cancel.v1` and authenticate as the
+  run's owning agent, as the host-management client, or as a signed-in
+  dashboard session (`session.auth { browser_ticket }`, see
+  [ui](ui.md)). A dashboard session may cancel any live run; its receipt's
+  `principal` is `dashboard:<key id>`. It never gets the host-only recovery of
+  an orphaned run. Unknown and unauthorized run ids return the same error.
 - CAR first persists a body-free `cancellation_requested` row containing the
   SHA-256 of the exact UTF-8 reason, then cancels the exact active callback
   (`tools.cancel` with its `action_id` and `request_id`) and/or inference. A
@@ -357,6 +375,17 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
   - `{ record: "turn", ... }` — one captured action turn (`RunTurn`).
     `cursor` is the run's model/action turn count immediately **after** this
     record was appended (1-based); the next turn event's cursor is this `+ 1`.
+  - `{ record: "model_call_refused", at, model, reason, message, cap?,
+    spent_usd?, resets_at?, zone? }` — a model call the spend meter refused
+    (error `-32018`, see [spend](spend.md#spend)): `reason` is
+    `budget_reached | price_unknown | unpriced_call_in_flight |
+    spend_unrecordable`, `message` the
+    refusal's text (`budget reached until 3:00 PM EDT`), and for
+    `budget_reached` `cap` is `{ usd, per }`, `spent_usd` the spend at that
+    moment and `resets_at` / `zone` when the cap resets. It is one step of a
+    run that continued: the run stays open and is not marked failed, `status`
+    does not change, and `cursor` does not advance. `car … trace` prints it
+    as `Model call refused: <message> — <model> — <at>`.
   - `{ record: "ended", ... }` — the terminal record (a reported
     `Outcome` or an `Incomplete` marker). `cursor` carries the final turn
     count; `status` flips to `completed` / `incomplete`.
@@ -422,7 +451,18 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
   `agent_id`; a host-management session may replay any agent's run. An
   unauthorized rejection never leaks the run's prompts/outputs. (An
   unknown `run_id` returns the not-found marker without revealing whether
-  the id exists, since there is no owner to authorize against.)
+  the id exists, since there is no owner to authorize against.) A signed-in
+  dashboard session may also read any run's trace.
+- **Read-side scrub.** Every `runs.get_trace` and `runs.subscribe` reply, and
+  every live `runs.trace.event` frame, passes through the log redactor before
+  it is sent, on every session. A string is shown as `[redacted]` when it
+  holds a credential-shaped value (a provider key or token shape), a value of
+  a key-named variable in the daemon's environment, a value this daemon
+  process resolved from the secret store since it started, or a daemon, host
+  or agent token. The redactor does not sweep the keychain: a stored key the
+  daemon has not resolved since its last start, and that has no credential
+  shape, is not recognized. Scrubbing at write time, which closes that gap, is
+  tracked in car#3645.
 - **WS-only** — no FFI binding. The FFI parity table is unchanged.
 
 

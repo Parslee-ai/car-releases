@@ -26,11 +26,22 @@ and choose **Open Dashboard…** to bring the window back.
 The icon's shape tells you the status at a glance; a different shape
 means CAR wants your attention (usually an approval — see step 5).
 
-## 3. Sign in
+## 3. Set up a way to run a model
 
-The first time, CAR opens a **sign-in window** (Parslee). Follow it
-through your browser and come back. This connects CAR to your account
-so it can do real work.
+The first time, CAR opens a short **setup window**. CAR needs one way
+to run a model, and you can pick any of three:
+
+- **Sign in with Parslee** (recommended). Follow the sign-in through
+  your browser and come back. Your Parslee account includes cloud
+  models, so agents can run right away.
+- **A local model** that runs entirely on this Mac, private and
+  offline. Setup links you to where you install one.
+- **Your own provider key** (OpenAI, Anthropic, OpenRouter or another
+  provider CAR supports). Add it on a model's row in the Models
+  library.
+
+Signing in is optional. If you finish setup without it, CAR Chat uses
+the local model or key you set up.
 
 > If sign-in says *"Your CAR background service is out of date"*, the
 > installer didn't finish replacing an older copy — reinstall the
@@ -120,7 +131,8 @@ that touch the real world go through you.
 - **Quit** — menu-bar icon → *Quit CAR*. Quitting stops CAR
   entirely; relaunch it from Applications or Spotlight.
 
-That's it. Install, sign in, start a chat, ask. Approve the things
+That's it. Install, sign in (or set up a local model or your own key),
+start a chat, ask. Approve the things
 that matter. No terminal, ever.
 
 {% endraw %}

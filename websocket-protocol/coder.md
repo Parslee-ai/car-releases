@@ -162,6 +162,12 @@ operator Cargo home. Protected checks for one repository therefore serialize,
 cannot observe one another's Cargo-home writes, and retain the registry source
 pathname Cargo needs to reuse trusted target fingerprints. A lock wait that
 exhausts the check's own budget is an infrastructure failure, not a red check.
+A shorter lock wait comes out of the limit the check runs under (its
+`timeout_secs`, else `max_check_timeout_secs`); seeding the home and copying the
+tree do not. A check that then times out under that reduced limit is starved,
+not judged: a baseline result reports `deadline_clamped: true`, and a
+`run_check` result carries `"deadline_clamped": true`. One that times out on its
+full own limit is a real red.
 Builder children are always write-denied the stable Cargo-home path; only the
 protected check process receives the exact temporary carve-out. On Linux hosts
 without CoW, the existing cold empty or full-copy behavior remains, now at the
@@ -235,7 +241,9 @@ gets one fresh verification pass. If it is raised UNPROVEN again, the existing
 headless stuck stop ends the session instead of cycling through the builder.
 
 All-PASS rounds continue to a read-only audit. Its serving model must attest a
-vendor different from the builder's actually served vendor, and it is never an
+vendor different from every writer's actually served vendor (each model in
+`authored_by`, plus an external CLI whose edits the native loop repaired),
+recorded as `verification.audit.builder_families`, and it is never an
 Anthropic model. Each finding has `kind: "defect" | "challenge" | "note"`.
 For legacy replies, missing `kind` plus a non-empty trimmed `reproduction`
 means `defect`; otherwise it means `note`. Explicit notes never execute a
@@ -269,12 +277,24 @@ withdrawals remove nothing. Follow-ups are stably deduplicated and stop when no
 question remains, no request is new, or three rounds have run.
 
 `coder.get` exposes the current `verification: {round, grades, probes,
-isolation, audit?, challenge_reverifications}` receipt, including notes,
-withdrawals, remaining unresolved questions, and each challenge outcome/reason
-with the round that re-verified it. `coder.approve_merge`, checkout delivery,
-branch delivery, and headless PR publication re-check that every grade is PASS,
-isolation is sandboxed, the audit has neither defects nor unanswered
-challenges, and its vendor differs from the builder. Notes, valid withdrawals,
+isolation, audit?, not_checked?, kept_on_this_mac?, challenge_reverifications}` receipt, including
+notes, withdrawals, remaining unresolved questions, and each challenge
+outcome/reason with the round that re-verified it. `not_checked` is set, with
+no `audit`, only on a Build an Agent session that had no auditor (see
+`auditor_model`), or whose builder draft has `local_only: true`. For the
+latter, `kept_on_this_mac: true` is also set and there are no `grades`: the
+delivered tree is frozen as usual, but no verifier or auditor model is
+called; with the build's own spec writing, repair and test cases also routed
+only to models on this Mac (see `declagents.invoke`), nothing the agent's test
+cases read leaves the Mac. The agent's own test cases, which the build
+requires to pass, are its only check. `coder.approve_merge`, checkout delivery, branch delivery,
+and headless PR publication re-check that every grade is PASS, isolation is
+sandboxed, and either the audit has neither defects nor unanswered challenges
+and its vendor is none of `verification.audit.builder_families` (every writer's
+vendor; an attestation saved before that field existed is checked against
+`builder_family`), or, for a Build an Agent session
+only, there is no audit and `not_checked` is set (with `kept_on_this_mac`,
+there are no grades to re-check). Notes, valid withdrawals,
 and unresolved sensitivity questions remain recorded but do not block delivery.
 
 The legacy live fixture intentionally no longer delivers: its kindless
@@ -319,7 +339,7 @@ auditor_model = "auto"                                   # Kimi K3 via OpenRoute
 max_session_wall_secs = 0                                # 0 = unlimited; positive values are explicit caps
 max_agent_build_wall_secs = 600                          # Agent-build ceiling; 0 keeps contract value
 max_check_timeout_secs = 0                               # 0/unset = no per-check ceiling
-silence_window_secs = 900                                # 0 disables the silence watchdog
+silence_window_secs = 900                                # 0 disables; 1-29 raised to 30
 no_progress_turn_limit = 30                              # 0 disables the no-progress rule
 max_replay_events = 2000                                 # reconnect replay per live session; 0 = unlimited
 max_sessions = 200                                       # session-snapshot retention; 0 = unlimited
@@ -360,7 +380,17 @@ max_shared_cache_age_days = 30                           # baseline targets + pr
 - `verifier_model` — pins each fresh independent-verifier round. When omitted,
   the verifier uses the builder model but receives an empty conversation and
   only the frozen intent, outcomes, and verifier tools. It never receives the
-  builder plan, tool-call ids, repository instructions, or diff narrative.
+  builder plan, tool-call ids, repository instructions, or diff narrative. An
+  Agent project's verifier is never pinned to the model that wrote its spec:
+  when omitted it uses the session's `model`, else routes automatically.
+  Whichever it is, the verifier, like every other model call a coder session
+  makes, runs only on a model that is usable now: a remote model with its
+  credential, or a local model that is already installed. Automatic routing
+  never picks a model it would have to download, and a pinned model that is
+  not installed is refused. With none, the session fails at once, with an
+  error naming the model it would have used and the
+  `car models pull <name>` command that installs it; nothing is downloaded
+  (car#3718; the requests carry `IntentHint.never_download`).
 - `auditor_model` — selects the read-only cross-vendor auditor. `"auto"` tries
   Kimi K3 through OpenRouter (`openrouter/moonshotai/kimi-k3`, vendor
   `moonshot`) first, then Google, then any other non-OpenAI OpenRouter family,
@@ -371,19 +401,72 @@ max_shared_cache_age_days = 30                           # baseline targets + pr
   auditor it had, while a signed-in operator with no key still gets one: an
   Anthropic builder is audited by GPT-5.4, an OpenAI builder by Gemini 3.1 Pro.
   **`"auto"` never selects a local auditor** (MLX, Apple Foundation, or any
-  other on-device model) under any key configuration; a local auditor runs only
-  when `auditor_model` names it explicitly. **Anthropic models are never
+  other on-device model) under any key configuration, judged by the model's
+  source rather than its id, so a downloaded model registered under a name like
+  `google/my-gemma` is still never picked; a local auditor runs only when
+  `auditor_model` names it explicitly. **Anthropic models are never
   eligible**, in any form — an `anthropic/*` API key, an
   `openrouter/anthropic/*` model, a Parslee alias that resolves to Claude, or
   the `claude` CLI and Claude subscription: `"auto"` skips them, an explicit
   `auditor_model` naming one is refused with an error that says so, and a
   response served by one is refused. API-backed candidates require their key
   in the daemon process's environment, so `OPENROUTER_API_KEY` must be visible
-  to the daemon for the preferred auditor; when nothing is eligible the refusal
-  names `OPENROUTER_API_KEY` as the missing key and a Parslee sign-in
-  (`car auth login`) as the no-key alternative. **A Parslee route's vendor is
+  to the daemon for the preferred auditor (a key saved only in the macOS
+  keychain does not count). Under `"auto"`, a `parslee/openrouter/*` route the
+  gateway answers with "no upstream configured" (HTTP 503) rules out every
+  `parslee/openrouter/*` candidate and the next candidate is tried when one
+  remains; today every personal-key candidate ranks ahead of every Parslee
+  route, so in practice none does. Each candidate's opening call is made once,
+  under the usual retry policy for a retryable failure (up to three attempts).
+  An explicit `auditor_model` is never replaced. **When `"auto"` has no
+  auditor** — nothing eligible, or every eligible one unserved — a Build an
+  Agent session (an Agent project) is not failed: if every outcome passed, it
+  reaches `needs_approval` with `verification.not_checked` set to "No second AI
+  model was available to review it." and no `verification.audit`, and approval
+  registers the agent with `verification: { status: "not_checked", reason }`
+  (see `declagents.get`). The same holds under `"auto"` when no auditor can
+  be chosen because the builder's vendor is unknown (the model that wrote the
+  spec is not in the catalog, its row has no known vendor, or no model was
+  recorded at all), with `verification.not_checked` set to "The AI model that
+  built it couldn't be identified, so CAR couldn't choose a model from a
+  different company to review it." An Agent project's builder is the model
+  the router served for the spec that passed, whether or not a model was
+  chosen, and `authored_by` lists every model that wrote or repaired the
+  spec. When the model that wrote the passing spec reported no name and an
+  earlier attempt's did, `authored_by` keeps the earlier writer and ends with
+  `unknown-builder`, so that writer's vendor is still excluded and the
+  unknown one is treated as an unplaceable builder; when no attempt's writer
+  reported a name, the build records no builder. Any other session whose builder cannot
+  be placed, including a Build an Agent session with an explicit
+  `auditor_model`, ends at the start of verification, before any outcome is
+  graded, with `failure_kind: "verification"` and a plain error saying CAR
+  could not tell which model did the work or which company makes it. A Build an Agent session whose builder draft has
+  `local_only: true` never looks for an auditor or calls the verifier: it
+  reaches `needs_approval` with `verification.not_checked` set to "It keeps
+  everything on this Mac, so no AI model outside it reviewed the build.",
+  `verification.kept_on_this_mac: true` and no `audit`, and registers the
+  agent with that reason. Such a build is refused before any model call, ending
+  with `failure_kind: "configuration"` and an error that names the
+  keep-on-this-Mac setting and ends `Install a model on this Mac, pick one, or
+  edit the agent to turn off "Keep everything this agent reads on this Mac".`,
+  when the model chosen to build it or the agent's saved model is not on this
+  Mac, or when no model on this Mac can build it. A `coder.projects.create`
+  edit sent without `builder_draft` keeps the agent's stored draft, so the
+  setting survives a rebuild. Any other session fails with a reason naming what
+  is missing. When nothing is eligible it ends with `failure_kind:
+  "configuration"`, naming `OPENROUTER_API_KEY` stored with `car keys set openrouter`
+  and a Parslee sign-in (`car auth login`) as the no-key alternative, or that a
+  key from the builder's own vendor cannot audit it; scorers count it, as they
+  counted the earlier `verification` ending. When every eligible auditor was a
+  Parslee route the gateway does not serve, it ends with `failure_kind:
+  "inference_unavailable"` naming that gateway, which scorers exclude, as they
+  excluded the earlier `infrastructure` ending. Either way self-heal gives the
+  item its failure backoff, because the failure followed a full build, and
+  its comment says the contract passed but no independent auditor was
+  available. A
+  headless `car code-task` run books both as `config_error`. **A Parslee route's vendor is
   its upstream, as the curated catalog records it**, never the Parslee
-  aggregator: that upstream must differ from the builder's and must not be
+  aggregator: that upstream must differ from every writer's vendor and must not be
   Anthropic. Its credential is the operator's Parslee sign-in, judged the way
   the inference registry judges it (signed in, the gateway serving OpenRouter
   routes, the credential not rejected), not an environment key; the token
@@ -397,16 +480,24 @@ max_shared_cache_age_days = 30                           # baseline targets + pr
   recorded upstream, and a builder on a capability route is placed as OpenAI
   by assumption (what those routes have served), not by a catalog record.
   ChatGPT/Claude subscriptions, `openai-codex/*`, CLI transports and any
-  non-Parslee OAuth transport are never eligible. Delivery requires the
-  served model's vendor, not merely its requested alias, to differ from the
-  builder's served vendor. For an `external:<agent_id>` or `foreman:<agent_id>`
+  non-Parslee OAuth transport are never eligible. **The builder's vendor is
+  every vendor that wrote the change**: each model in `authored_by` counts,
+  not only the last, so a change one vendor wrote and another repaired is
+  audited by neither, and a writer the catalog cannot place is refused as an
+  unplaceable builder is. Delivery requires the served model's vendor, not
+  merely its requested alias, to be none of them. `verification.audit`
+  records the last writer's vendor as `builder_family` and every writer's
+  vendor as `builder_families`; an attestation persisted before
+  `builder_families` existed lacks it and is checked against `builder_family`.
+  When every configured auditor comes from a writer's vendor, the refusal
+  names each of those vendors. For an `external:<agent_id>` or `foreman:<agent_id>`
   session with an empty `authored_by`, the builder's vendor comes from what the
   CLI ran: models its stream reported (Claude Code's `system`/`init` `model`
   and assistant `message.model`, `<synthetic>` skipped), else the session's
   `model` pin for a single-session external run, else the CLI's own vendor
   (`claude-code` Anthropic, `codex` OpenAI, `gemini` Google). That last rung
   applies only when the CLI ran without its user's configuration
-  (`isolate_external_network`, or a bound session): Codex reports no model and
+  (`isolate_external_network`, or an org-bound session): Codex reports no model and
   its `config.toml` can route it to any provider, so an unpinned, un-isolated
   Codex session is refused. A reported model absent from the catalog is placed
   by its name (`claude-opus-5-5`); Bedrock/Vertex-style ids such as
@@ -414,15 +505,22 @@ max_shared_cache_age_days = 30                           # baseline targets + pr
   be placed, spans two vendors, or contradicts the CLI's vendor is refused, as
   is an unknown CLI that reported nothing, and a distributed foreman run, whose
   fleet workers' streams this host never sees. Those models are not added to
-  `authored_by`. Known gap: when foreman's union is repaired by the native
-  loop, the native model alone decides the builder's vendor.
+  `authored_by`. When foreman's verified union is red and the native loop
+  repairs on top of it, or an external CLI ran at least one round before its
+  engine became unavailable and the native loop took over, that CLI is
+  recorded on the session as a co-writer: its vendor, placed by the same rules
+  and refused the same way when it cannot be placed, is excluded beside every
+  native writer's. A later hand-over folds into that record rather than
+  replacing it. When the CLI served a later round after the native loop wrote
+  an earlier one (`engine_ran` is the CLI and `authored_by` is non-empty), its
+  vendor is excluded beside the native writers' too.
 - `max_session_wall_secs` / `max_agent_build_wall_secs` — end-to-end wall
   clocks. The ordinary coder fallback ladder defaults to `0` (unlimited); a
   positive value is an explicit cap whose `budget_exhausted` reason names the
   elapsed time and cap. An Agent-project build defaults to a 600-second
-  operator ceiling across
-  credential discovery, spec generation, every repair attempt, and every
-  scenario. A confirmed contract may lower that Agent-build deadline, but it
+  operator ceiling for each build attempt, across its credential discovery,
+  spec generation, check and scenarios; a repair after a failed check starts a
+  new attempt with its own 600 seconds. A confirmed contract may lower that Agent-build deadline, but it
   cannot remove or raise a positive ceiling. An Agent-build value of `0` is the
   operator's explicit choice to keep the contract's positive timeout, with a
   missing or zero contract timeout meaning unlimited; ordinary-session `0`
@@ -443,11 +541,30 @@ max_shared_cache_age_days = 30                           # baseline targets + pr
   `CAR_LOCAL_DECODE_TIMEOUT_SECS` (300 seconds by default) plus prefill;
   in-process Candle, off Apple Silicon, is bounded only by `max_tokens`; and
   FoundationModels whenever the framework call returns.
+  Independent verification runs on the same clock, for an Agent-project build
+  and for an ordinary session with a positive cap. When the deadline passes
+  during verification, it is stopped the way a cancel stops it: the in-flight
+  verifier or auditor model call is dropped (with the same in-process residual),
+  a running check's process tree is killed, and a scenario re-run is dropped
+  with its pending approval prompt withdrawn. A blocking copy already preparing
+  a check's tree (seeding its caches or writing the graded tree) is not
+  interrupted: it finishes on its own thread, writing only under the session's
+  coder cache directory, as it does when a cancel lands at that moment. The
+  session then ends as `failed` with `failure_kind: "budget_exhausted"` and a
+  `budget_exhausted` event, and its workspace is kept. An Agent-project
+  build's reason says that checking the agent ran out of time and names the
+  limit each build attempt shares with its check (the session loop starts a
+  new deadline for a repair after a failed check); any other session's reason
+  says verification ran out of time, names the cap, and says there is no
+  verdict on the code. Verification that finishes before the deadline keeps
+  its decision; one that finishes after it, or starts after it, is reported
+  timed out.
 - `max_check_timeout_secs` — optional operator ceiling for one outcome-contract
   check. Unset or `0` means no ceiling. A check's own `timeout_secs`, when
   present, is still honored; when both exist, the lower explicit cap wins.
 - `silence_window_secs` — maximum time without runtime-owned progress. Default
-  `900`; `0` disables it. It is the ordinary coder's only default time-based
+  `900`; `0` disables it; `1`-`29` is raised to the `30` second floor with a
+  logged warning (sandboxed start-up can take about 5 s under load). It is the ordinary coder's only default time-based
   stop. For external and foreman engines, a streamed CLI line is output but is
   not progress; a change in that CLI worker's pinned worktree is progress (the
   runtime checks the same Git status-plus-diff fingerprint used by the native
@@ -495,8 +612,32 @@ may be `stalled` or `no_progress`. Human mode prints `check i/N: name`.
   keeps the store directory and lock file: unlinking an open lock would let a
   second process lock a new inode while the original user still holds the old
   one.
+- Builder Cargo homes (car#3396) — every builder run gets a private Cargo home
+  and builder state under `~/.cache/car-coder/<id>` (`$XDG_CACHE_HOME/car-coder`
+  when that is set). There is no setting for this. A coder session keeps its
+  home across turns and removes it when the session finishes. A multiplayer
+  contract run (`<item>-submit-<pid>-<n>` or `<item>-check-<pid>-<n>`) removes
+  its home when the run ends, pass or fail. At daemon boot, after orphan
+  adoption and before snapshot retention, a sweep removes the ones a crash left
+  behind, under two rules only: a coder session id whose snapshot in this
+  state dir is terminal and whose lease no process holds, and a contract-run
+  label whose process is gone. Everything else is kept, including a session id
+  with no snapshot here. That covers a second daemon with its own `CAR_HOME`,
+  which shares the cache but not the state dir. The sweep runs before retention
+  because retention unlinks the snapshots it decides by. Snapshot retention
+  (below), at boot and in the live sweep, also removes each collected session's
+  home before its snapshot, and keeps the snapshot for the next sweep when the
+  home cannot be removed or the cache exists but cannot be resolved (a symlink
+  whose target is missing, at the cache or any directory above it). One case
+  cannot be told apart: an `XDG_CACHE_HOME` that names a path inside an
+  unmounted volume with no symlink on the way, or a symlink pointing straight
+  at a mount point that is empty while unmounted, looks exactly like a cache
+  that was never created, so retention collects those sessions and their homes
+  stay on the volume. A cache relocated behind a symlink is resolved once
+  and then removed through it. A nonzero boot removal is logged at `info`.
 - `max_sessions` / `max_session_age_days` (car#1310) — retention for the coder
-  state dir, GC'd at daemon boot (right after orphan adoption, beside the
+  state dir, GC'd at daemon boot (after the builder Cargo home sweep, which
+  runs after orphan adoption; beside the
   equivalent `[runs]` pass for run traces) **and thereafter amortized onto
   `coder.start`, at most hourly** (car#1346's sibling, car#1339). Boot-only
   meant the effective bound was `max_sessions` plus everything created since
@@ -603,14 +744,37 @@ engine's model name is not forwarded to CAR's planning router because it belongs
 to the external CLI's namespace. A saved `coder.discuss.start` model choice
 also controls conversation replies and supplies the default for linked native tasks.
 
-- **Params**: `{ repo?: string, project?: string, intent: string, contract?: OutcomeContract, contract_source?: "supplied"|"derived", subscribe?: boolean, headless?: boolean, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, distributed?: boolean, browser?: boolean, lattice?: { project: string, capabilities: string[], display_name?: string }, isolate_external_network?: boolean, workers?: string[], repair_invokes?: number, transient_retries?: number, model?: string, discussion_id?: string, base?: string, trust_source_repo?: string, organization_id?: string, personal?: boolean }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. `contract_source` defaults to `"supplied"`; `"derived"` requires `contract` and records the caller-provided contract as model-derived, so its checks start with network denied and no approved credentials and receive the same headless holding behavior as daemon derivation. Unknown values and `"derived"` without `contract` are invalid params. `subscribe` defaults to `false`; when true, the daemon registers the calling connection for the new session before derivation starts, so `outcomes_step`, `outcome_dropped`, and `outcomes_written` notifications can arrive while the start RPC is pending. Those notifications carry the new `session_id`, letting the caller reconnect if the eventual response is lost. A later `coder.subscribe` on that same connection is idempotent and does not replay those events. `headless` defaults to `false`. When true, no person is available at the terminal: an action the existing policy allows still runs without entering the approval gate, an approval-required action is denied immediately with a headless explanation, and `ask_user` returns an immediate error. If its connection closes after the session id was published but before contract confirmation, the daemon keeps the session detached for its `silence_window_secs` (900 seconds by default; `0` disables expiry). `coder.subscribe { reattach_headless_start: true }` on a new authenticated connection reclaims the starter role and receives a pending start result. If no client returns, the existing disconnect reason cancels the session when that window expires. A disconnect before the session id is published still cancels because the caller has no resumable identity. A headless session watched by another client is not cancelled, and confirmation ends starter ownership; non-headless sessions are unchanged. Neither path emits `UserInputRequested` or waits for the 600-second answer window. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. `contract` is not valid for an Agent project because its synthetic scenario contract is the build definition. For an Agent project, the request's own `model` (not a `~/.car/coder.toml` default, so a host offering "Automatic" gets automatic routing) pins spec generation and every scenario run, and `coder.list` rows carry it as `requested_model` so a host can tell which model a live build was started with; if that model does not answer, the build stops at once with a `configuration` failure reading "<model> isn't available right now. Pick another model and try again." instead of retrying until the deadline. Unpinned, spec generation and scenario runs route with `require_ready`, so they never pick a model whose weights would have to be downloaded first while a ready one exists. An agent build from a project with a `builder_draft` produces an agent that keeps a working folder (see `declagents.invoke`): it is offered `append_spreadsheet_row` and `fill_word_template`, plus `mail_inbox`, `mail_search` and `mail_message_body` when the draft's `mail_access` is true (never a Mail write); it is not offered the Parslee platform tools (they write to a connected drive, not the folder), the shell, or a goal check; the build makes the folder first, on every path, and a folder that cannot be made or saved in fails the build at once with a `configuration` failure; and every scenario of every attempt runs in its own fresh throwaway copy of the folder, so nothing an earlier test case or a failed attempt wrote can let a later one pass; a folder too big or too deep to copy whole (more than 1,000 files, 64 MB or 16 levels) fails the build with a message saying so, and a test case whose spreadsheet or Word tool failed without a later success fails whatever its answer says. Its initial `agent_scenarios_pass.timeout_secs` comes from `[coder] max_agent_build_wall_secs` (600 by default). A confirmed card may shorten the Agent-build deadline but cannot remove or extend it past a positive configured ceiling; a configured `0` instead keeps a positive contract timeout and treats a missing or zero contract timeout as unlimited. The effective value enforces one deadline across generation, repair, and scenarios. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `0`, meaning unlimited.) `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis. `browser` defaults to `false`. With `engine: "auto"`, true selects the native coder loop; an explicitly external or foreman engine is refused because it cannot receive CAR's in-process tools. When true, the native coder loop receives the assistant's lazy Chromium tools (`browse_navigate`, `browse_click`, `browse_type`, `browse_scroll`, `browse_keypress`, `browse_wait`, `browse_observe`, `browser_await_answer`, `browser_await_signin`, `browser_record_start`, `browser_record_stop`). The option is a session-scoped approval for those exact full-access names, but it does not override an Agent Permissions `Deny` or any built-in/project policy rule. Every attempted call is recorded as the ordinary `tool_call` / `tool_result` pair. Each coder browser owns a fresh isolated profile, independent of assistant and standing-session profiles and of `CAR_BROWSER_PROFILE_DIR`. Cookies and sign-ins do not persist across coder sessions; the profile is deleted when its browser is dropped. When false or omitted, the browser tools are neither attached nor advertised. `lattice` joins the run to the CAR Lattice (see `lattice.join`) for as long as it executes: the daemon opens an `mcp:<peer-id>` peer identity for the run, declares the given project and capabilities with runtime `car-coder` (display name `mcp-<prefix>`, like any MCP session, unless supplied; the runtime is shown to the operator only), and offers the native loop the tools `lattice_wait` (at most 120 s per call), `lattice_find`, `lattice_nodes`, `peer_message`, `peer_inbox`, `lattice_claim`, `lattice_release`, and `lattice_claims` at the `read_only` tier, so the coder can be found by capability, answer questions, request reviews, and claim work beside Claude Code, Codex, and CAR agents. A verification round keeps the same identity. When the run ends the identity is closed, which drops its profile and unread inbox and releases its claims. Like `browser`, `lattice` makes `auto` select the native loop and refuses an explicitly external or foreman engine, which cannot receive the tools — run that CLI against the daemon's `/mcp` endpoint to make it a node instead. An invalid declaration fails `coder.start`. A join that fails at run time (for example, a `display_name` that collides with an agent that attached after the start) is logged by the daemon and the run continues without peer tools; it is not reported on the session event stream. The identity is released however the run ends — completion, `coder.cancel`, a watchdog abort, or a panic — and the peer tools refuse to act once it has. Omitted keeps the run invisible to nodes. `isolate_external_network` defaults to `false`; when true, an `external:<agent_id>` engine runs with no route off the machine — no web search or fetch tool, no browser, computer-use or app connectors, no MCP servers (CAR's own endpoint included), and a shell without network — via `agents.invoke_external`'s `isolate_network`. Codex and Claude Code support it; an engine that cannot guarantee it (Gemini, mini-swe-agent) refuses with a setup failure rather than running with the web. `car coder-ab` sets it for the external arm unless `--allow-external-web` is passed. An isolated session never runs a foreman farm-out: an explicit `foreman:<agent_id>` or `distributed` request is refused, and `auto` that resolves to foreman runs the same CLI as one isolated external session. `trust_source_repo` is an operator-authored GitHub URL or `owner/name` used only by replay clients; omit it for live sessions, which are trusted only from the canonical `repo` or resolved `project` path. `organization_id` runs the session in one organization a signed-in login holds and `personal: true` runs org-less work; passing both is invalid params. Omitted, the session binds the repository's `.car/config.toml` `[organization] id`, else the person's default org (`auth.default_context.*`), else runs personal (`car_context::resolve`). A default that cannot be used refuses the start and names the fix (`personal: true`): a `distributed` run (fleet workers do not carry an organization yet), a default no signed-in login holds any more, or a membership check that fails (offline, revoked). Nothing falls back to personal silently. A bound session may use the native engine or an external CLI that can run without its user's own configuration, which is Codex: a bound external session always runs with `agents.invoke_external`'s `isolate_config`, so the CLI loads none of its user's MCP servers, plugins, app connectors, settings or memory (which would carry org work into personal state) but keeps the web; `isolate_external_network` still removes the web when asked for. It is also given no CAR MCP endpoint, because that endpoint serves the personal memgine. Codex runs isolated (either way) only with a login an isolated home can carry (`CODEX_API_KEY`, or a file-stored `auth.json`); without one, a run naming Codex refuses at start with that remedy and `auto` runs native. Under `auto` a bound session that resolves to another external CLI runs Codex instead, or the native engine when no such Codex is available; bare `external` takes Codex or refuses; one that names `external:claude-code`, Gemini or mini-swe-agent refuses, naming `external:codex`, the native engine and `personal: true` — unless `isolate_external_network` was asked for, which runs Claude Code fully isolated as before. A foreman farm-out cannot be isolated, so a bound `auto` that resolves to foreman runs one external session, and an explicit bound `foreman:` refuses. `distributed` with a named or declared org is refused. A repository's org is a hard constraint: naming another org or `personal` there fails the start with a message naming the fix, as do an org no signed-in login holds and an unreadable repository declaration. Credentials are read only when an org is named or a default org is set. The decision runs before any repository, memory or provider work, and a bound session carries its context through inference, admission and recovery (`work_context` in the reply and on `coder.get`). Work that already has an owner keeps it, and passing `organization_id` or `personal` for it is refused: a conversation's retained task keeps the context in its own task snapshot (even in a repository that has since declared an org), a conversation keeps the context it recorded when it opened (subject to the repository's org), and a caller attached as an agent bound to a context keeps that context. A conversation saved before ownership was recorded binds nothing, so its runs resolve as above. An agent with no organization of its own runs personal work, never the person's default org, and naming an org is refused. Under a `PARSLEE_ACCESS_TOKEN` environment bearer, a named org or a declaring repository is refused rather than run personal.
-- **Returns**: `{ session_id, state: "contract_proposed", engine, requested_engine, engine_ran, worktree, base, contract: { description, allow_credentials?, protected_paths?: string[], editable_paths?: string[], checks: [{ name, command, credentials?, expect_exit_zero, output_contains?, timeout_secs?, baseline?, differential? }] }, outcomes_path: string, outcome_groups: [{ group: "page" | "artifact" | "machine", outcomes: [{ id: string, text: string, check: string, network_approved: boolean, approved_credentials?: string[] }] }], outcome_count: number, dropped_outcomes: [{ kept: string, dropped: string, group: "page" | "artifact" | "machine", reason: string }], baseline, baseline_gates_nothing, journal_path, model, browser, repo_trust: RepoTrust }` — `id` is stable for the frozen outcome and defaults to an empty string when an older record is read. `credentials` declares uppercase environment names a check needs; declaration grants nothing. A supplied contract is operator-authored and approves its declarations. Model-derived and model-revised outcomes keep `approved_credentials` empty. Every local check and coder-model shell scrubs inherited credential names; only an exact approved check receives resolved values, secret store first and `$CAR_HOME/env` second. The model shell has no injection path. `allow_credentials` defaults to `false` and only removes `DenyCredentialAccess` from check command inspection; it does not grant an environment credential. `protected_paths` adds committed files, directories, or globs to the start-commit check surface; check commands add the committed test-logic paths they name through the same parser used by `car coder-ab`. Files a check command names through `source`/`.`, `BASH_ENV=`, bash `--rcfile`/`--init-file`, or a node `-r`/`--require`/`--import`/`--loader`/`--experimental-loader` preload are protected even when they are not test logic; list a sourced product library in `editable_paths` for the builder's edits to it to count. `editable_paths` opts matching protected files into builder edits: checks run the builder's copy, but the change remains recorded as allowed. Files absent from the start commit are outside both lists' captured surface. A check's optional `timeout_secs` is an explicit wall-clock cap; absent means it runs until it exits, unless the silence watchdog kills it for producing no output. `baseline: true` marks a capture-only check, run once at session start with its output kept as a before-value; `differential: { baseline: "<capture name>", expect: "changed" | "unchanged" | { "delta_within": { "min"?, "max"? } } }` makes the runtime compare the check's output against that capture at every later evaluation (car#1067). These fields are additive with defaults; empty path and credential collections and false `allow_credentials` are omitted when serialized. — `journal_path` is the `car_eventlog` JSONL this session journals its actions to (subject to the coder state dir's retention — see `max_session_age_days` above; consume it before the session ages out) (per-tool `action_id`, `ActionFailed`/`TurnCompleted`/…), so a caller (e.g. `car coder-ab`) can attribute the run's failure mechanisms via `harness_adapt::diagnose` without guessing the state dir. `browser` echoes the effective opt-in. `model` is the **effective** native-loop pin (the per-session request, else the config, else `null` = adaptive routing). `requested_engine` echoes the requested engine before resolution; `engine_ran` is always `null` in this initial reply.
+- **Params**: `{ repo?: string, project?: string, intent: string, contract?: OutcomeContract, contract_source?: "supplied"|"derived", subscribe?: boolean, headless?: boolean, engine?: "auto"|"native"|"external[:<agent_id>]"|"foreman[:<agent_id>]", max_iterations?: number, distributed?: boolean, browser?: boolean, lattice?: { project: string, capabilities: string[], display_name?: string }, isolate_external_network?: boolean, workers?: string[], repair_invokes?: number, transient_retries?: number, model?: string, discussion_id?: string, base?: string, trust_source_repo?: string, organization_id?: string, personal?: boolean, chat_session_id?: string }` — **exactly one of `repo` (a raw git path) or `project` (a managed-project slug)**. `contract_source` defaults to `"supplied"`; `"derived"` requires `contract` and records the caller-provided contract as model-derived, so its checks start with network denied and no approved credentials and receive the same headless holding behavior as daemon derivation. A check object in a `"supplied"` start contract may add `network_approved: true`, which approves network for that exact check name and command; supplying the contract approves none of its network checks by itself (it is ignored under `"derived"`). Unknown values and `"derived"` without `contract` are invalid params. `subscribe` defaults to `false`; when true, the daemon registers the calling connection for the new session before derivation starts, so `outcomes_step`, `outcome_dropped`, and `outcomes_written` notifications can arrive while the start RPC is pending. Those notifications carry the new `session_id`, letting the caller reconnect if the eventual response is lost. A later `coder.subscribe` on that same connection is idempotent and does not replay those events. `headless` defaults to `false`. When true, no person is available at the terminal: an action the existing policy allows still runs without entering the approval gate, an approval-required action is denied immediately with a headless explanation, and `ask_user` returns an immediate error. If its connection closes after the session id was published but before contract confirmation, the daemon keeps the session detached for its `silence_window_secs` (900 seconds by default; `0` disables expiry). `coder.subscribe { reattach_headless_start: true }` on a new authenticated connection reclaims the starter role and receives a pending start result. If no client returns, the existing disconnect reason cancels the session when that window expires. A disconnect before the session id is published still cancels because the caller has no resumable identity. While another client is subscribed when the window expires, the session is not cancelled; the daemon checks again each window and cancels it within one window of the last subscriber leaving (a subscription left by a connection that has since closed does not count). Confirmation ends starter ownership; non-headless sessions are unchanged. Neither path emits `UserInputRequested` or waits for the 600-second answer window. A `project` session delivers to the project's `main` on approve (no `car/coder/<id>` branch); an `agent`-kind project synthesizes a scenario contract and runs the coder→agent build loop. `contract` is not valid for an Agent project because its synthetic scenario contract is the build definition. For an Agent project, the request's own `model` (not a `~/.car/coder.toml` default, so a host offering "Automatic" gets automatic routing) pins spec generation and every scenario run, and `coder.list` rows carry it as `requested_model` so a host can tell which model a live build was started with; if that model does not answer, the build stops at once with a `configuration` failure reading "<model> isn't available right now. Pick another model and try again." instead of retrying until the deadline. Unpinned, spec generation and scenario runs route with `require_ready`, so they never pick a model whose weights would have to be downloaded first while a ready one exists. An agent build from a project with a `builder_draft` produces an agent that keeps a working folder (see `declagents.invoke`): it is offered `append_spreadsheet_row` and `fill_word_template`, plus `mail_inbox`, `mail_search` and `mail_message_body` when the draft's `mail_access` is true (never a Mail write); it is not offered the Parslee platform tools (they write to a connected drive, not the folder), the shell, or a goal check; the build makes the folder first, on every path, and a folder that cannot be made or saved in fails the build at once with a `configuration` failure; and every scenario of every attempt runs in its own fresh throwaway copy of the folder, so nothing an earlier test case or a failed attempt wrote can let a later one pass; a folder too big or too deep to copy whole (more than 1,000 files, folders and links, 64 MB or 16 levels) fails the build with a message saying so, and a test case whose spreadsheet or Word tool failed without a later success fails whatever its answer says. Its initial `agent_scenarios_pass.timeout_secs` comes from `[coder] max_agent_build_wall_secs` (600 by default). A confirmed card may shorten the Agent-build deadline but cannot remove or extend it past a positive configured ceiling; a configured `0` instead keeps a positive contract timeout and treats a missing or zero contract timeout as unlimited. The effective value enforces one deadline across generation, repair, and scenarios. (`engine` defaults to `auto`; `max_iterations` defaults to `~/.car/coder.toml`'s `default_max_iterations`, then `0`, meaning unlimited.) `model` pins the inference model for this session (e.g. `"parslee/reasoning"` for gpt-5.5), overriding `~/.car/coder.toml`'s `model`; blank/omitted = the config default, then adaptive routing. The pin applies to **whichever engine runs the session**: the native loop reasons on it, and an `external:<agent_id>` session passes it to the CLI (`codex -m`, `claude --model`, `gemini -m`). It previously reached only the native loop, so `--engine external:codex --model X` silently ran codex on its own configured default — which left the paired A/B's "both arms on the same backbone" invariant an unverified assumption rather than something the runtime enforced. The pin reaches the daemon-run coder over the wire, so a paired A/B (`car coder-ab`) can put both arms on one backbone without the daemon needing the pin in its own environment. `repair_invokes` and `transient_retries` tune the **external** engine's two budgets, both defaulting to the engine's own values: `repair_invokes` is the *hypothesis* budget (fresh repair invocations after a red pass — recurrence escalation needs >= 2 to reach the model at all, since round 1 establishes a failure signature, round 2 is the first that can repeat it, and round 3 the first that can be told), while `transient_retries` is the *availability* budget (re-invocations after the CLI process itself died mid-run). They are deliberately separate counters: sharing one lets a single flaky timeout consume a replan the coder needed for an actual hypothesis. `browser` defaults to `false`. With `engine: "auto"`, true selects the native coder loop; an explicitly external or foreman engine is refused because it cannot receive CAR's in-process tools. When true, the native coder loop receives the assistant's lazy Chromium tools (`browse_navigate`, `browse_click`, `browse_type`, `browse_scroll`, `browse_keypress`, `browse_wait`, `browse_observe`, `browser_await_answer`, `browser_await_signin`, `browser_record_start`, `browser_record_stop`). The option is a session-scoped approval for those exact full-access names, but it does not override an Agent Permissions `Deny` or any built-in/project policy rule. Every attempted call is recorded as the ordinary `tool_call` / `tool_result` pair. Each coder browser owns a fresh isolated profile, independent of assistant and standing-session profiles and of `CAR_BROWSER_PROFILE_DIR`. Cookies and sign-ins do not persist across coder sessions; the profile is deleted when its browser is dropped. When false or omitted, the browser tools are neither attached nor advertised. `lattice` joins the run to the CAR Lattice (see `lattice.join`) for as long as it executes: the daemon opens an `mcp:<peer-id>` peer identity for the run, declares the given project and capabilities with runtime `car-coder` (display name `mcp-<prefix>`, like any MCP session, unless supplied; the runtime is shown to the operator only), and offers the native loop the tools `lattice_wait` (at most 120 s per call), `lattice_find`, `lattice_nodes`, `peer_message`, `peer_inbox`, `lattice_claim`, `lattice_release`, and `lattice_claims` at the `read_only` tier, so the coder can be found by capability, answer questions, request reviews, and claim work beside Claude Code, Codex, and CAR agents. A verification round keeps the same identity. When the run ends the identity is closed, which drops its profile and unread inbox and releases its claims. Like `browser`, `lattice` makes `auto` select the native loop and refuses an explicitly external or foreman engine, which cannot receive the tools — run that CLI against the daemon's `/mcp` endpoint to make it a node instead. An invalid declaration fails `coder.start`. A join that fails at run time (for example, a `display_name` that collides with an agent that attached after the start) is logged by the daemon and the run continues without peer tools; it is not reported on the session event stream. The identity is released however the run ends — completion, `coder.cancel`, a watchdog abort, or a panic — and the peer tools refuse to act once it has. Omitted keeps the run invisible to nodes. `isolate_external_network` defaults to `false`; when true, an `external:<agent_id>` engine runs with no route off the machine — no web search or fetch tool, no browser, computer-use or app connectors, no MCP servers (CAR's own endpoint included), and a shell without network — via `agents.invoke_external`'s `isolate_network`. Codex and Claude Code support it; an engine that cannot guarantee it (Gemini, mini-swe-agent) refuses with a setup failure rather than running with the web. `car coder-ab` sets it for the external arm unless `--allow-external-web` is passed. An isolated session never runs a foreman farm-out: an explicit `foreman:<agent_id>` or `distributed` request is refused, and `auto` that resolves to foreman runs the same CLI as one isolated external session. `trust_source_repo` is an operator-authored GitHub URL or `owner/name` used only by replay clients; omit it for live sessions, which are trusted only from the canonical `repo` or resolved `project` path. `organization_id` runs the session in one organization a signed-in login holds and `personal: true` runs org-less work; passing both is invalid params. Omitted, the session binds the repository's `.car/config.toml` `[organization] id`, else the person's default org (`auth.default_context.*`), else runs personal (`car_context::resolve`). A default that cannot be used refuses the start and names the fix (`personal: true`): a `distributed` run (fleet workers do not carry an organization yet), a default no signed-in login holds any more, or a membership check that fails (offline, revoked). Nothing falls back to personal silently. An org-bound session (one bound to a work context, not to an agent) may use the native engine or an external CLI that can run without its user's own configuration, which is Codex: a bound external session always runs with `agents.invoke_external`'s `isolate_config`, so the CLI loads none of its user's MCP servers, plugins, app connectors, settings or memory (which would carry org work into personal state) but keeps the web; `isolate_external_network` still removes the web when asked for. It is also given no CAR MCP endpoint, because that endpoint serves the personal memgine. Codex runs isolated (either way) only with a login an isolated home can carry (`CODEX_API_KEY`, or a file-stored `auth.json`); without one, a run naming Codex refuses at start with that remedy and `auto` runs native. Under `auto` an org-bound session that resolves to another external CLI runs Codex instead, or the native engine when no such Codex is available; bare `external` takes Codex or refuses; one that names `external:claude-code`, Gemini or mini-swe-agent refuses, naming `external:codex`, the native engine and `personal: true` — unless `isolate_external_network` was asked for, which runs Claude Code fully isolated as before. A foreman farm-out cannot be isolated, so an org-bound `auto` that resolves to foreman runs one external session, and an explicit org-bound `foreman:` refuses. `distributed` with a named or declared org is refused. A repository's org is a hard constraint: naming another org or `personal` there fails the start with a message naming the fix, as do an org no signed-in login holds and an unreadable repository declaration. Credentials are read only when an org is named or a default org is set. The decision runs before any repository, memory or provider work, and an org-bound session carries its context through inference, admission and recovery (`work_context` in the reply and on `coder.get`). Work that already has an owner keeps it, and passing `organization_id` or `personal` for it is refused: a conversation's retained task keeps the context in its own task snapshot (even in a repository that has since declared an org), a conversation keeps the context it recorded when it opened (subject to the repository's org), and a caller attached as an agent bound to a context keeps that context. A conversation saved before ownership was recorded binds nothing, so its runs resolve as above. An agent with no organization of its own runs personal work, never the person's default org, and naming an org is refused. Under a `PARSLEE_ACCESS_TOKEN` environment bearer, a named org or a declaring repository is refused rather than run personal.
+- **Returns**: `{ session_id, state: "contract_proposed", engine, requested_engine, engine_ran, worktree, base, contract: { description, allow_credentials?, protected_paths?: string[], editable_paths?: string[], checks: [{ name, command, credentials?, expect_exit_zero, output_contains?, timeout_secs?, baseline?, differential? }] }, outcomes_path: string, outcome_groups: [{ group: "page" | "artifact" | "machine", outcomes: [{ id: string, text: string, check: string, network_approved: boolean, approved_credentials?: string[] }] }], outcome_count: number, dropped_outcomes: [{ kept: string, dropped: string, group: "page" | "artifact" | "machine", reason: string }], baseline, baseline_gates_nothing, journal_path, model, browser, repo_trust: RepoTrust }` — `id` is stable for the frozen outcome and defaults to an empty string when an older record is read. `credentials` declares uppercase environment names a check needs; declaration grants nothing. A supplied contract is operator-authored and approves its declarations. Model-derived and model-revised outcomes keep `approved_credentials` empty. Every local check and coder-model shell scrubs inherited credential names; only an exact approved check receives resolved values, from the secret store only. The model shell has no injection path. `allow_credentials` defaults to `false` and only removes `DenyCredentialAccess` from check command inspection; it does not grant an environment credential. `protected_paths` adds committed files, directories, or globs to the start-commit check surface; check commands add the committed test-logic paths they name through the same parser used by `car coder-ab`. Files a check command names through `source`/`.`, `BASH_ENV=`, bash `--rcfile`/`--init-file`, or a node `-r`/`--require`/`--import`/`--loader`/`--experimental-loader` preload are protected even when they are not test logic; list a sourced product library in `editable_paths` for the builder's edits to it to count. `editable_paths` opts matching protected files into builder edits: checks run the builder's copy, but the change remains recorded as allowed. Files absent from the start commit are outside both lists' captured surface. A check's optional `timeout_secs` is an explicit wall-clock cap; absent means it runs until it exits, unless the silence watchdog kills it for producing no output. `baseline: true` marks a capture-only check, run once at session start with its output kept as a before-value; `differential: { baseline: "<capture name>", expect: "changed" | "unchanged" | { "delta_within": { "min"?, "max"? } } }` makes the runtime compare the check's output against that capture at every later evaluation (car#1067). These fields are additive with defaults; empty path and credential collections and false `allow_credentials` are omitted when serialized. — `journal_path` is the `car_eventlog` JSONL this session journals its actions to (subject to the coder state dir's retention — see `max_session_age_days` above; consume it before the session ages out) (per-tool `action_id`, `ActionFailed`/`TurnCompleted`/…), so a caller (e.g. `car coder-ab`) can attribute the run's failure mechanisms via `harness_adapt::diagnose` without guessing the state dir. `browser` echoes the effective opt-in. `model` is the **effective** native-loop pin (the per-session request, else the config, else `null` = adaptive routing). `requested_engine` echoes the requested engine before resolution; `engine_ran` is always `null` in this initial reply.
 - Provisions the worktree, resolves the engine (auto = complexity assessment + detected-CLI preference, default claude-code → codex → gemini but overridable via `~/.car/coder.toml`'s `engine_preference`, delegating foreman-first for broad tasks), and derives the contract with a bounded model repair loop. Contract derivation has no fixed 120-second timeout; the silence watchdog stops a derivation that makes no runtime-owned progress. Foreman's gates split regression vs goal (#275): each subtask worktree runs a build-system regression check detected from the repo (`cargo check` / `go build ./...` / `swift build`; unknown build systems decline to single-session), while the integrated union runs the contract's plain exit-zero checks as the goal leg (`sh -lc "<check> && …"`). Output-substring checks are enforced only by the coder's final contract evaluation. Synchronous — expect seconds while the model drafts the contract.
 - **Repository trust result:** the start result and every serialized session
   record (`coder.get` and each `coder.list` row) include
   `repo_trust: { trusted: boolean, basis: "repository_path"|"github_owner"|"github_repo"|"none"|"config_unreadable", key: string|null, subject: string|null, reason: string, sandbox_gap: string|null }`.
   Older session JSON defaults this object to untrusted. The daemon pins it at
   start; resume never re-evaluates it.
+- **Who may run an outside engine (car#2445):** `external` and `foreman`
+  start an outside coding CLI on the person's subscription. A connection bound
+  to a supervised agent may ask for one only while answering a chat a host
+  started with that agent, the rule `agents.invoke_external` uses: it passes
+  that turn's `session_id` as `chat_session_id`, and the connection must be
+  the agent's current attachment. Otherwise the start is refused with an error
+  that says so, and `auto` (which can resolve to Foreman) runs on the `native`
+  engine instead. The outside CLI starts only at `coder.confirm_contract`, so
+  the turn is checked again there: the agent can confirm such a run only while
+  that turn is still running and from the same connection, and a run restored
+  after a daemon restart cannot be confirmed by the agent at all. A host may
+  still confirm it. A run that has started is not stopped when the turn ends.
+  `native` is open to every caller. Such a connection may never run the
+  `foreman` engine on a `contract` it supplied, inside a host's chat or not:
+  Foreman's gates run those checks without the approval the agent's own
+  `shell` calls go through, so the start is refused with an error naming the
+  `native` engine, and `auto` with a supplied contract runs native. A supplied
+  contract on `native` runs in the check sandbox as before. The same holds at
+  `coder.confirm_contract`: an agent confirming a Foreman run (including
+  `auto` resolved to Foreman) with an edited `contract` is refused; a host may
+  confirm with one. Hosts and
+  connections not bound to an agent ignore `chat_session_id` and keep every
+  engine.
 - The generic handler wall clock applies only until `coder.start` registers the
   session. Derivation and baseline checks are then silence-supervised, so
   healthy work may run past `CAR_HANDLER_TIMEOUT`. A terminal session whose
@@ -638,10 +802,17 @@ also controls conversation replies and supplies the default for linked native ta
   was kept and why the other outcome was dropped.
 - A supplied `contract` is validated before a session or worktree is created.
   Validation problems are returned together. A valid supplied contract skips
-  every derivation lane (`contract_derivation` is absent), is recorded with
-  `outcomes.source: "supplied"`, and keeps every check — including network
-  checks — operator-approved (`network_approved: true`) without applying the
-  model/network filter. Its declared credentials are also operator-approved.
+  every derivation lane (`contract_derivation` is absent) and is recorded with
+  `outcomes.source: "supplied"`. Supplying a contract does not approve its
+  network checks: a check is network-approved (`network_approved: true` in its
+  outcome) only when its own check object carried `network_approved: true`,
+  and a recognized network check without that flag is held under Not verified
+  like a derived one, where `coder.confirm_contract` can approve it. The other
+  source of network for a check is repository trust: on macOS, a repository
+  the operator trusts (the session's pinned `coder-trust.toml` decision) gives
+  every builder shell and contract check dependency network, whatever the
+  per-check flags say; Linux does not turn trust into a network grant. Its
+  declared credentials are operator-approved.
   CAR still runs the ordinary session-start baseline and
   reports `baseline_gates_nothing`; it does not ask a model to reassess an
   all-green supplied contract, because caller-owned checks run verbatim.
@@ -673,7 +844,11 @@ also controls conversation replies and supplies the default for linked native ta
   An
   enumerator or critic call that
   stays silent past the session's `silence_window_secs` counts as a failed
-  attempt; `0` disables that per-call limit.
+  attempt; `0` disables that per-call limit. The completeness critic gets one
+  retry (on another model when its reply was unparseable). If the retry fails
+  too, derivation stops and the session fails with `failure_kind:
+  "infrastructure"` instead of proposing a contract that never had its
+  completeness review.
 - **Thin-intent refusal (D-92).** A model-derived request is thin only when a
   completed enumerator-plus-critic fan-out authored zero outcomes before filtering/repair, or
   when the whole trimmed request is one of the small case-insensitive no-op
@@ -895,7 +1070,7 @@ also controls conversation replies and supplies the default for linked native ta
   remains `coder.cancel`.
 
 #### `coder.confirm_contract`
-- **Params**: `{ session_id: string, contract?: OutcomeContract }` — pass `contract` to replace the proposal with a user-edited version (validated before acceptance). Check objects in this confirm-only payload may add `network_approved?: boolean` and `approved_credentials?: string[]`. A credential is approved only when it is both declared in `credentials` and listed in `approved_credentials` on that exact name and command. An unchanged check, including its credential declaration, keeps prior approval; changing its name, command, or declarations drops approval. Model revisions never carry approval. Network approval retains its existing exact-command behavior. This confirm rule does not change `coder.start`: a caller-supplied start contract remains operator-approved.
+- **Params**: `{ session_id: string, contract?: OutcomeContract }` — pass `contract` to replace the proposal with a user-edited version (validated before acceptance). Check objects in this confirm-only payload may add `network_approved?: boolean` and `approved_credentials?: string[]`. A credential is approved only when it is both declared in `credentials` and listed in `approved_credentials` on that exact name and command. An unchanged check, including its credential declaration, keeps prior approval; changing its name, command, or declarations drops approval. Model revisions never carry approval. Network approval retains its existing exact-command behavior. `coder.start` reads the same `network_approved` flag on a supplied contract's checks; supplying a contract approves its declared credentials but none of its network checks.
 - **Returns**: `{ state: "running" }`
 - The first human gate. Spawns the work loop; progress streams as `coder.event`.
 - On a session that builds an agent, only the CAR app or you at your terminal may confirm; see [agent builds](#managed-projects-coderprojects).
@@ -904,6 +1079,15 @@ also controls conversation replies and supplies the default for linked native ta
 #### `coder.list`
 - **Params**: `{}`
 - **Returns**: `{ sessions: [session_summary] }` — live sessions plus persisted snapshots from prior daemon lifetimes (`live: false`), newest first.
+
+`live: true` means this daemon holds the session in memory. That includes a
+session that has already ended: a `merged`, `reported`, `failed` or `abandoned`
+session stays in memory, still `live: true`, for 30 minutes after it ends, and
+leaves only when a later `coder.start` sweeps it (there is no background
+sweep). So `live` alone does not say a session is still running. Read activity
+from `state`: a session is still going when it is `live` and its `state` is not
+one of those four terminal states. A row with `live: false` is a saved snapshot
+that no process is running.
 
 ##### `session_summary`
 
@@ -949,9 +1133,11 @@ type; the rest is additive.
   "result_commit": "<full delivered commit SHA>" | null,
   "excluded_artifacts": [{"path":"car_runtime/car_runtime.abi3.so","reason":"compiled_binary","size_bytes":127926272}],
   "model": "…" | null,                // the pin the CALLER asked for
-  "authored_by": ["…"],               // every model that actually completed a turn,
-                                      // distinct, first-seen order; `[]` for a
-                                      // foreman/external session (no native turns)
+  "authored_by": ["…"],               // every model that actually completed a turn
+                                      // (for an Agent project, every model that wrote
+                                      // or repaired its spec), distinct, first-seen
+                                      // order; `[]` for a foreman/external session
+                                      // (no native turns)
   "distributed": false,               // the session farmed subtasks across the fleet
   "discussion_id": "disc-…" | null,
   "next_seq": 42 | null               // live sessions only; the coder.subscribe cursor
@@ -987,9 +1173,15 @@ It is `"auth_required"` when it ended waiting on a sign-in nobody supplied —
 does not wait at all (`coder.start` and `coder.revise_contract` are synchronous
 RPCs the client is blocked on, so they emit `auth_required` with `wait_secs: 0`
 and end rather than hold the call open). `"configuration"` means routing
-constraints left no eligible model before dispatch; self-heal releases the
-item claim without adding item backoff or posting a public failure comment,
-because changing the item cannot repair `heal.toml`. Since car#1534 it also
+constraints left no eligible model before dispatch, or, after the change was
+built, that the final check had no eligible auditor (outside Build an Agent;
+see `auditor_model`). For a configuration failure before any work, self-heal
+releases the item claim without adding item backoff or posting a public
+failure comment, because changing the item cannot repair `heal.toml`; one that
+follows a contract that went green (no auditor) takes the ordinary failure
+path's backoff, so the item is not rebuilt on every tick, and its comment
+says the contract passed but no independent auditor was available; it is not
+recorded as a contract or gate failure. Since car#1534 it also
 covers a broken ENVIRONMENT under an external engine: the MCP config could not
 be written, or stdin/stdout/stderr could not be acquired, so the CLI never
 received the task. That ends the session naming the underlying error and
@@ -1004,7 +1196,7 @@ default adaptive-routing path — is the one case that emits `auth_required` and
 still ends `"infrastructure"`: it does not wait, so the strikes run out
 normally.
 
-Since the failure-reason change, every failed session carries a redacted plain-language reason in `error` and one of these kinds. `checks_red` names the checks still red on the last round and the round count. With red checks, a headless native session keeps iterating until it succeeds or ends through `NoProgress` (the idle-iteration guard or session no-progress turn guard), the silence watchdog, cancellation, or a genuine infrastructure, authentication, or configuration failure; a repeated-read trip ends only that attempt. A worker-reported execution error is `failure_kind: "error"`, and its reason keeps the worker's text followed by the final red-check summary. `already_satisfied` belongs to an `abandoned` session whose authored ordinary checks all passed after baseline repair; its error names every passing check and says nothing needs to change. `interrupted` is a daemon restart that adopted a mid-flight session (it replaces `infrastructure` there). `inference_unavailable` and `model_not_found` refine an inference-backend failure and name the model when known. `engine_fallback_then_failed` names the engine asked for and the one that ran. `delivery_failed` names the delivery step that failed after the checks passed. `cancelled` is recorded on the snapshot of an abandoned session, though this summary field stays null for it. `error` is otherwise the residual. Scorers exclude `already_satisfied`, `infrastructure`, `auth_required`, `inference_unavailable`, `model_not_found`, `interrupted` and `delivery_failed`, because the work was not judged as an attempted change. A record written before this change has no reason, and listings show it as "not recorded".
+Since the failure-reason change, every failed session carries a redacted plain-language reason in `error` and one of these kinds. `checks_red` names the checks still red on the last round and the round count; after `coder.refresh_review` it has no round count and reads `Review recheck failed: <checks> still red.`, naming only checks that ran and failed (a timeout counts as red), followed by `; could not run: <checks>` when other checks could not run. With red checks, a headless native session keeps iterating until it succeeds or ends through `NoProgress` (the idle-iteration guard or session no-progress turn guard), the silence watchdog, cancellation, or a genuine infrastructure, authentication, or configuration failure; a repeated-read trip ends only that attempt. A worker-reported execution error is `failure_kind: "error"`, and its reason keeps the worker's text followed by the final red-check summary. `already_satisfied` belongs to an `abandoned` session whose authored ordinary checks all passed after baseline repair; its error names every passing check and says nothing needs to change. `interrupted` is a daemon restart that adopted a mid-flight session (it replaces `infrastructure` there). `inference_unavailable` and `model_not_found` refine an inference-backend failure and name the model when known. `engine_fallback_then_failed` names the engine asked for and the one that ran. `delivery_failed` names the delivery step that failed after the checks passed. `cancelled` is recorded on the snapshot of an abandoned session, though this summary field stays null for it. `error` is otherwise the residual. Scorers exclude `already_satisfied`, `infrastructure`, `auth_required`, `inference_unavailable`, `model_not_found`, `interrupted` and `delivery_failed`, because the work was not judged as an attempted change. A record written before this change has no reason, and listings show it as "not recorded".
 
 Read the **event**, not `failure_kind`, to decide whether to show a
 sign-in prompt.
@@ -1110,8 +1302,14 @@ reaped is a snapshot detail, not a place to send someone.
 - The old review is invalidated before work starts. Passing checks and unchanged
   task files produce a new diff and return to `needs_approval`. Failed checks,
   a changed task HEAD, or files changing during verification fail the task and
-  retain its worktree; those results cannot be delivered. Cancellation uses
-  `coder.cancel` and drains the verification task.
+  retain its worktree; those results cannot be delivered. Red checks record
+  `failure_kind: "checks_red"` with an `error` naming each red check. When no
+  check is red and some could not run at all (exit 126/127, or no exit code
+  without a timeout), the kind stays `error` and names them as could not run.
+  `delivery_failed` records a failure to set up the check executor, to stage
+  the refreshed diff, or to read the review identity, and a task HEAD that
+  changed since review. Cancellation uses `coder.cancel` and drains the
+  verification task.
 - Delivery still requires a separate `coder.approve_merge` action after review.
 - Only the run's owner or the CAR app may call this; see [who acts on a Coder run](#who-acts-on-a-coder-run).
 
@@ -1213,7 +1411,7 @@ shapes**; the already-happened information arrives in additive keys there.
 - **Params**: `{ session_id: string }`
 - `event_cursor` reserves the next event sequence at durable state transitions. `review_restored: true` identifies a review reopened after restart; its check results are historical, not newly executed.
 - Completed diff reviews may include `review_identity: { head, tree }`, the worktree HEAD and staged Git tree presented for review. It persists across restart and is absent on older snapshots and no-change findings. Delivery for a live task carrying this receipt refuses changed HEAD, staged content, unstaged tracked files, or non-ignored untracked files. The receipt does not claim fresh verification or restore a post-restart approval gate by itself.
-- **Returns**: the full session snapshot (contract, `outcomes_path?`, `outcomes?`, `contract_derivation?`, `last_check_results`, `protected_edits?`, `evidence_dir`, `evidence_bytes`, `workspace_path`, `result_branch?`, `result_commit?`, `excluded_artifacts?`, `error?`, `live`, `next_seq` when live). `protected_edits` is `[{ path, kind: "modified" | "deleted", allowed, first_iteration_seen? }]`, retaining the first observation of each distinct builder edit to a start-commit contract input. `excluded_artifacts` is omitted when empty; otherwise it is `[{ path, reason, size_bytes }]` and records either a delivery-time exclusion or a check effect that CAR reverted before returning the check result. Delivery-time `reason` values are `"over_size_limit" | "compiled_binary" | "ignored" | "root_check_evidence" | "interceptor_screenshot"`. Successful check restores use ``"reverted: written by contract check run `<name>`"``, `"reverted: written by a coder-shell check run"`, ``"reverted: modified by contract check run `<name>`"``, `"reverted: modified by a coder-shell check run"`, ``"reverted: deleted by contract check run `<name>`"`` or `"reverted: deleted by a coder-shell check run"`. If snapshot or restore fails, the delivery backstop retains the older ``"written by contract check run `<name>`"``, `"written by a coder-shell check run"`, ``"modified by contract check run `<name>`"`` and `"modified by a coder-shell check run"` reasons for the unrestored paths only. Each check that executes in the coder worktree snapshots its non-ignored tree through private copied Git indexes, restores changed bytes, executable modes, and symlinks immediately, removes check-added paths and newly empty directories, and never writes the real index. Ignored output remains in place. Baseline and review rechecks execute in disposable `check_workspace` copies instead. `outcomes` has shape `{ source: "fan_out" | "supplied" | "agent_project", groups: [{ group, outcomes: [{ text, check, network_approved, approved_credentials? }] }], not_verified, not_in_this_version, dropped, missing_groups, critic_ran }`; `OutcomeContract` is `{ description, allow_credentials?, protected_paths?: string[], editable_paths?: string[], checks: ContractCheck[] }`, and `ContractCheck` is `{ name, command, credentials?, expect_exit_zero, output_contains?, timeout_secs?, baseline?, differential? }`. Empty path and credential collections are omitted for backward-compatible reads. `not_verified[].check` carries the complete held check; legacy string-valued checks load as absent. `contract_derivation` retains `{ calls, prompt_tokens, completion_tokens, cost_usd, billing, models }`, with metered cost separated from execution-loop spend. `evidence_dir` and `evidence_bytes` retain the durable evidence root and recursive size. Restart adoption records interrupted checks as `{ name, completed: false, rerun_required: true }` without inventing a verdict. The snapshot also includes optional `agent_target: { id, fingerprint? }` for an Agent-project build — the registered agent the build replaces, recorded at `coder.start` (`fingerprint` absent means the id must still be free at approval) — and optional `agent_build_progress` for an Agent-project build:
+- **Returns**: the full session snapshot (contract, `outcomes_path?`, `outcomes?`, `contract_derivation?`, `last_check_results`, `protected_edits?`, `evidence_dir`, `evidence_bytes`, `workspace_path`, `result_branch?`, `result_commit?`, `excluded_artifacts?`, `error?`, `live`, `next_seq` when live). `protected_edits` is `[{ path, kind: "modified" | "deleted", allowed, first_iteration_seen? }]`, retaining the first observation of each distinct builder edit to a start-commit contract input. `excluded_artifacts` is omitted when empty; otherwise it is `[{ path, reason, size_bytes }]` and records either a delivery-time exclusion or a check effect that CAR reverted before returning the check result. Delivery-time `reason` values are `"over_size_limit" | "compiled_binary" | "ignored" | "root_check_evidence" | "interceptor_screenshot"`. Successful check restores use ``"reverted: written by contract check run `<name>`"``, `"reverted: written by a coder-shell check run"`, ``"reverted: modified by contract check run `<name>`"``, `"reverted: modified by a coder-shell check run"`, ``"reverted: deleted by contract check run `<name>`"`` or `"reverted: deleted by a coder-shell check run"`. If snapshot or restore fails, the delivery backstop retains the older ``"written by contract check run `<name>`"``, `"written by a coder-shell check run"`, ``"modified by contract check run `<name>`"`` and `"modified by a coder-shell check run"` reasons for the unrestored paths only. Each check that executes in the coder worktree snapshots its non-ignored tree through private copied Git indexes, restores changed bytes, executable modes, and symlinks immediately, removes check-added paths and newly empty directories, and never writes the real index. Ignored output remains in place. Baseline and review rechecks execute in disposable `check_workspace` copies instead. `outcomes` has shape `{ source: "fan_out" | "supplied" | "agent_project", groups: [{ group, outcomes: [{ text, check, network_approved, approved_credentials? }] }], not_verified, not_in_this_version, dropped, missing_groups, critic_ran }`; `OutcomeContract` is `{ description, allow_credentials?, protected_paths?: string[], editable_paths?: string[], checks: ContractCheck[] }`, and `ContractCheck` is `{ name, command, credentials?, expect_exit_zero, output_contains?, timeout_secs?, baseline?, differential? }`. Empty path and credential collections are omitted for backward-compatible reads. `not_verified[].check` carries the complete held check; legacy string-valued checks load as absent. `contract_derivation` retains `{ calls, prompt_tokens, completion_tokens, cost_usd, billing, models }`, with metered cost separated from execution-loop spend. `evidence_dir` and `evidence_bytes` retain the durable evidence root and recursive size. Restart adoption records interrupted checks as `{ name, completed: false, rerun_required: true }` without inventing a verdict. The snapshot also includes optional `agent_target: { id, fingerprint?, registration_id? }` for an Agent-project build — the registered agent the build replaces, recorded at `coder.start` (`fingerprint` absent means the id must still be free at approval; `registration_id` is that agent's `registration_id`, absent when the project recorded none, and an absent one matches any registration) — and optional `agent_build_progress` for an Agent-project build:
   `{ phase: "generating_spec" | "repairing" | "running_scenario", attempt, max_attempts, scenario?, scenarios_total?, model?, started_at, elapsed_secs }`. `scenario` is 1-based and appears only while a scenario is running; `model` is the requested pin until a completed generation identifies the model that actually served; it clears when a repair attempt or scenario starts, because those route independently of spec generation, and then follows the model serving each scenario turn. `started_at` is Unix seconds and `elapsed_secs` is refreshed on each live `coder.get` poll, then frozen when the build ends. The whole object is additive and omitted for every non-Agent session, so older hosts keep working unchanged.
 - `owner_agent_id` names the bound agent that started the run, and is absent when a person started it or the snapshot predates the field. Clients that do not know it ignore it.
 
@@ -1272,8 +1470,8 @@ shapes**; the already-happened information arrives in additive keys there.
 the run's owner (`owner_agent_id`); a run a person starts, from the CAR app or an
 unbound client, has no agent owner. The host-management connection may act on
 any run. A connection bound to an agent may act only on a run that agent
-started. An unbound connection may act on a person's run, and on an agent's run
-only on a daemon with no host token. Every other caller is refused with
+started. An unbound connection may act on a person's run, never on an agent's
+run, whether or not the daemon has a host token. Every other caller is refused with
 `Coder session '<id>' belongs to another principal; only the agent that started
 it or the CAR app can act on it`. A run saved before owners were recorded
 belongs to a person. Like every host-only rule, this doesn't stop a program
@@ -1313,8 +1511,8 @@ it does not make a crashed task automatically resumable.
 
 #### `coder.approve_merge`
 - **Params**: `{ session_id: string, approve: bool }`
-- **Returns**: `{ state: "merged", branch, commit, excluded_artifacts: [...], contract_changes: [{ path, kind: "modified" | "deleted", allowed }], agent_id?, registry_path? }` on approve; `{ state: "abandoned" }` on deny. `excluded_artifacts` uses the `coder.get` shape above. `contract_changes` flags protected edits left in the delivered diff; `allowed: false` means checks ran the start-commit copy, not that delivery removed the edit. Agent-project approvals populate `agent_id` and the daemon-derived declarative `registry_path`; ordinary code-project approvals leave both null. When the project was created with `existing_agent_id`, `agent_id` is that same id rather than the project slug. Approving an agent build is refused, with nothing committed or registered, when the id it replaces no longer holds the agent the build was started against — the version the project recorded (`agent_fingerprint`), or nothing for a project that has registered nothing — because it was removed, changed, or taken by an unrelated agent. The comparison is repeated atomically with the registry write. A replacement keeps the replaced agent's `enabled` state. Every approved agent build records the version it registered on the project, so the project's next build replaces that. A session persisted before builds recorded their target is checked against the `agent.json` committed at the session's start commit (what the project's last approval registered); with none there, an edit session is refused and a new-agent session may only take a free id.
-- The second human gate, valid only in `needs_approval`. Approve squash-commits the worktree (author `car-coder`) and creates `car/coder/<short-id>` in the repo — merge with `git merge <branch>`; fully reversible via `git branch -D`. An Agent rebuild replaces the matching registry entry and retains its immediately preceding spec as `previous` (one level only). A rebuild keeps the registered spec's `inference`, `context`, `cadence`, `denied_tools` and `enabled`, read when the build runs; if that registered spec cannot be read, the build ends as an Infrastructure loss ("cannot read the registered agent '<id>' this build replaces").
+- **Returns**: `{ state: "merged", branch, commit, excluded_artifacts: [...], contract_changes: [{ path, kind: "modified" | "deleted", allowed }], agent_id?, registry_path?, schedule?, schedule_note? }` on approve; `{ state: "abandoned" }` on deny. `excluded_artifacts` uses the `coder.get` shape above. `contract_changes` flags protected edits left in the delivered diff; `allowed: false` means checks ran the start-commit copy, not that delivery removed the edit. Agent-project approvals populate `agent_id` and the daemon-derived declarative `registry_path`; ordinary code-project approvals leave both null. When the project was created with `existing_agent_id`, `agent_id` is that same id rather than the project slug. Approving an agent build is refused, with nothing committed or registered, when the id it replaces no longer holds the agent the build was started against — the version the project recorded (`agent_fingerprint` and `agent_registration_id`), or nothing for a project that has registered nothing — because it was removed, changed, or taken by an unrelated agent, including an agent with identical content registered again after a `declagents.remove` (same fingerprint, new `registration_id`). A built spec that could not be saved against that id (another id, or one that fails validation) is refused the same way. The check holds the daemon's registry write lock and schedule lock from before the commit until the registry write, so a `declagents.*` change made in this daemon while the approval runs waits and lands after the approved build is registered. While an agent approval commits, every declagents registry write and every schedule sync or launch in the daemon waits, not only that agent's; the wait is bounded by one local git commit. The lock covers this daemon only, so the agent can still change after the commit from outside it (a second daemon sharing the registry through `CAR_DECLAGENTS_PATH`, or a hand edit of `declagents.json`). Whenever the registration is refused after the commit, because the agent changed that way or the registry file cannot be read or written, the project's `main` is moved back to where it was (by compare-and-swap, so a commit made on it meanwhile is never discarded), the build's changes are staged again in the session's worktree, and the approval is refused with the session still `needs_approval`, so approving again retries. A `merged` agent approval has always registered its agent. An approval that stopped after its commit and before registering (the daemon exited in between) registers that commit when it is approved again; if the agent changed in the meantime, it is refused and that commit is taken back the same way. A replacement keeps the replaced agent's `enabled` state. Every approved agent build records the version it registered on the project, so the project's next build replaces that. A session persisted before builds recorded their target is checked against the `agent.json` committed at the session's start commit (what the project's last approval registered); with none there, an edit session is refused and a new-agent session may only take a free id. A build that keeps the agent's fingerprint as an earlier release recorded it (cadence counted) is the same content, but it is still refused when the agent was registered again. For a registered agent not made with Build an Agent, the saved schedule is kept unless the build changed the schedule it started from, so a `declagents.set_schedule` made while the build ran is not undone (for a Build an Agent agent that call also changes the builder answer, which is part of the fingerprint, so such an approval is refused as changed); `schedule: { state, summary?, next_run_at?, note? }` says whether its schedule is now running on its own (`active`), and `schedule_note` explains a schedule answer CAR could not understand (the agent is saved to run only when asked) or one it could not install; see "Schedules" in `declagents.md`.
+- The second human gate, valid only in `needs_approval`. Approve squash-commits the worktree (author `car-coder`) and creates `car/coder/<short-id>` in the repo — merge with `git merge <branch>`; fully reversible via `git branch -D`. An Agent rebuild replaces the matching registry entry and retains its immediately preceding spec as `previous` (one level only). A rebuild keeps the registered spec's `inference`, `context`, `cadence` (for an agent made with Build an Agent, the cadence comes from the builder's schedule answer instead), `denied_tools` and `enabled`, read when the build runs; if that registered spec cannot be read, the build ends as an Infrastructure loss ("cannot read the registered agent '<id>' this build replaces").
 - On a session that builds an agent, only the CAR app or you at your terminal may approve or reject; see [agent builds](#managed-projects-coderprojects).
 - Only the run's owner or the CAR app may call this; see [who acts on a Coder run](#who-acts-on-a-coder-run).
 - **A pending no-change finding** (`needs_you: "finding"`, `no_change_finding` on `coder.get` with `resolved_at: null`) is decided by the same call, with an **explicit** optional param: `{ session_id, approve: true, accept_finding: true }` accepts it — publishes nothing, marks the finding `verification: "human_approved"`, emits `finding_resolved { accepted: true }`, and returns `{ state: "reported", branch: null }`. A plain `approve: true` on a finding is **refused** (it is what every pre-finding client and every unattended approver sends, and an accepted finding leaves nothing in git to review afterwards), and `accept_finding: true` on a session with a diff waiting is refused too. `approve: false` resolves the finding as rejected (`resolved_at` set, `verification` null), emits `finding_resolved { accepted: false }`, and abandons. A daemon session reaches a finding two ways: the native loop's `report_no_change` nomination, judged by the runtime (the native loop returns tool feedback for a nomination after its executor recorded an edit or when the run began with retained worktree changes, allowing ordinary verification to continue without undoing those changes; the runtime still refuses and fails an ineligible nomination that reaches adjudication, including a worktree moved off its provisioning commit; an admissible one **always** waits here — the daemon never takes `car code-task`'s autonomous path, because it cannot know a human read the contract), or a run that finished green with the worktree still on its provisioning commit and no edit recorded by the session's executor, which the runtime records itself (noting whether the baseline was already green) rather than offering an unpublishable empty diff. `car code --yes` never accepts a finding; it leaves it at the gate and exits non-zero.
@@ -1399,7 +1597,8 @@ cancels any turn in flight; a daemon shutdown ends every discussion with the
 process.
 
 Bounded five ways: at most **8 open discussions** per daemon (a slot is
-reserved before the runtime is built, so pipelined starts cannot exceed it), a
+reserved before the runtime is built, so pipelined starts cannot exceed it;
+see "At the limit" below), a
 **1-hour idle TTL** reaped on the next `coder.discuss.start` (activity is a
 send, an attach, a subscribe or an event from the turn, so a working turn is
 spared and one that has emitted nothing for an hour is stopped), the **1-hour
@@ -1407,14 +1606,38 @@ detached TTL** above, per-discussion caps on the replay buffer (2000 events,
 oldest dropped) and the distillation transcript (40 turns retained, the most
 recent 12 handed to `promote`), and a **64 KiB cap on one `send`**.
 
+**At the limit, a start closes an idle discussion instead of being refused.**
+It closes the least recently active open discussion that has no reply running
+and no `promote` or `coder.start` in progress from it, whether or not a
+connection is attached, and takes its slot. Which discussions a start may
+close depends on who starts it:
+
+- **Operator** (CarHost, the CLI, `car code`): any principal's.
+- **Agent-bound connection**: only that agent's own. Another principal's is
+  closed for it only by the 1-hour idle reap that runs first, as before.
+
+A running reply or start is never closed. The closed discussion stays in
+`saved` and reopens with `resume_id`, with its visible history. When no
+discussion the caller may close is idle, the start is refused with `8
+conversations are open and none of them can be closed to make room — wait for
+one to finish answering or starting a task, or close one, before opening
+another`.
+
+A client attached to a discussion that was closed this way is not sent an
+event. Its next `send`, `promote`, `close` or `coder.start { discussion_id }`
+returns `no open discussion '<id>' — …`; answer it with
+`coder.discuss.start { repo, resume_id }`. A `send` that races the close is
+refused with `<id> was closed while your message was being dispatched`, which
+is answered the same way.
+
 **Ownership is enforced, not merely recorded.** `send`, `subscribe`, `promote`,
 `close` and `coder.start { discussion_id }` all refuse a caller whose principal
 does not own the discussion, including while no connection is attached, with
 `discussion '<id>' belongs to another principal — a discussion is owned by the
 operator or agent that opened it; start your own with coder.discuss.start`.
 `coder.discuss.list` keeps live `discussions` scoped to the caller's principal.
-Its additive `saved` array lists closed conversations owned by the same
-principal; conversations still open are excluded. Every operator connection is
+Its additive `saved` array lists every conversation saved by the same
+principal, open or closed, each with an `open` flag. Every operator connection is
 the same principal, so two operator windows see and may drive the same open
 discussion; a connection bound to an agent identity sees only that agent's.
 The boundary is the credential: a process holding the daemon-wide token is the
@@ -1500,6 +1723,20 @@ hits. Scoped to this surface; the general assistant's read reach is unchanged.
   `{ ok: true }`. Frees the in-memory discussion, cancels any turn in flight
   and drops its subscribers, immediately, from any of the owner's connections.
   Owner-only.
+- `coder.discuss.archive` — **Params** `{ discussion_id, archived?: boolean }`
+  (default `true`). **Returns** `{ ok: true, archived }`. Hides one of the
+  caller's saved conversations from a client's default list, or brings it back
+  with `archived: false` (car#2089). Archiving removes nothing: the record,
+  the transcript and the display history all stay, the row is returned in
+  `coder.discuss.list`'s `saved` (with `archived: true`) when the caller passes
+  `include_archived: true`, and the conversation reopens with `coder.discuss.start
+  { repo, resume_id }` (which does not unarchive it). Allowed whether the
+  conversation is open or closed, since it ends nothing. Scoped like
+  `coder.discuss.list`: an id the caller's principal does not own, or one that
+  does not exist, is refused with `saved conversation is unavailable`. The
+  state is a marker beside the record rather than a field in it, so a live
+  discussion rewriting its record cannot undo it. Erasing a conversation is
+  not offered here (#3387).
 Discussion answers and promotion read linked coder records matching both the
 conversation id and repository. They include bounded check results and task status
 as runtime observations, persisted with the model checkpoint. These observations
@@ -1513,9 +1750,17 @@ prior task. It creates a fresh plan and verification run, preserving partial
 files and recording the continuation link. Reopening validates both the state
 directory and Git repository identity. A failed reopen cannot delete the tree.
 While another process holds the prior task's session lease — a second daemon,
-or a `car code-task` still delivering it — `coder.start` refuses with "The
-retained task is still running in another process; wait for it to finish
-before reopening." and recovers nothing into the tree.
+a `car code-task` still delivering it, or another daemon reopening or adopting
+it — `coder.start` refuses with "The retained task is still running or being
+reopened in another process; wait for it to finish before reopening." and
+recovers nothing into the tree. The reopening process holds that lease until
+the continuation's snapshot, naming the prior task in `resumed_from`, is saved.
+A request that reaches the lease after that refuses with "The retained task was
+already reopened as <session id>; open that task instead." A daemon of this
+version or later never reopens a tree another process holds. A daemon from
+before car#2704 sharing the same state root does not take that lease the same
+way, so while two daemon versions run against one state root, run continuations
+from only one of them.
 Crash orphans and external-engine tasks remain retained but cannot automatically
 resume without evidence that their execution stopped.
 Starting another task from a discussion with unfinished linked work is refused;
@@ -1533,13 +1778,25 @@ also requires an explicit base. An explicit `base` remains authoritative.
 Managed projects keep their existing
 main-based delivery behavior.
 
-- `coder.discuss.list` — **Params** `{}`. **Returns**
-  `{ discussions: [{ discussion_id, repo, created_at, turns, answering }], saved: [{ discussion_id, repo, created_at }] }`.
+- `coder.discuss.list` — **Params** `{ include_archived?: boolean }`. **Returns**
+  `{ discussions: [{ discussion_id, repo, created_at, turns, answering, work_context }], saved: [{ discussion_id, repo, created_at, work_context, open, archived }] }`.
   `discussions` contains the **caller's principal's** open discussions, whether
   or not any connection is attached, so a reconnected client finds what it left
   running; `answering` (additive) is `true` while a reply turn is in flight.
-  `saved` contains the same principal's closed conversations, newest-created
-  first.
+  `saved` contains every conversation the same principal has saved,
+  newest-created first. A conversation is saved from the moment it opens, so
+  one still open is listed too, with `open: true` (additive; `false` once it
+  closes): a client that left a conversation without closing it finds it in
+  the same list and reopens it with `coder.discuss.start { repo, resume_id }`,
+  which reattaches an open one. Both arrays come from one read of the open
+  discussions, so a row is never open in one and closed in the other. A
+  conversation still being opened (its record written, its discussion not yet
+  live) reads `open: false` until the start returns. Daemons before car#2089
+  listed only closed conversations here and omit `open`. A conversation
+  hidden with `coder.discuss.archive` is left out of `saved` unless
+  `include_archived: true` (default `false`), so a client that knows nothing
+  about archiving shows only what the person kept in view; every row carries
+  an additive `archived` flag. `discussions` is unaffected by archiving.
   Missing `saved` indicates an older daemon without history discovery. Also serves
   as the **capability probe**: a daemon predating this work answers JSON-RPC
   `-32601` (method not found), which a client maps to a plain "this daemon is
@@ -1571,11 +1828,11 @@ enforces and one it merely narrates.
 
 A **project** is a named, CAR-managed git repository under `~/.car/projects/<slug>/` — created and initialized for the user so the coder's worktree/branch machinery works underneath while they only ever see a name. The non-developer path: no repo to pick. Projects have a **kind** — `app` (generic code) or `agent` (an in-daemon declarative agent, see `declagents` below). A project session delivers on approve by committing straight to the project's `main` (fast-forward), not a `car/coder/<id>` branch. `coder.start` takes **exactly one of** `repo` (a raw git path) or `project` (a managed slug).
 
-**Agent builds need the CAR app or you at your terminal.** An agent connected to CAR can't create, confirm or approve an agent build; the CAR app or you at your terminal can. Three calls take the authority `declagents.remove` takes: `coder.projects.create` when a new project's requested `kind` is `"agent"` or an existing project's persisted kind is `"agent"` (even when the request says `kind: "app"`), and `coder.confirm_contract` and `coder.approve_merge` (with either `approve` value) on a session that builds an agent. That authority is a host-management connection, or an unbound client on a daemon with no host token; a daemon started without authentication has none, so there any unbound client passes, an agent's included. Every other caller is refused with ``Building an agent needs the CAR app or `car agent new` in your terminal.`` App projects and ordinary coding sessions are unchanged. A connection bound to an agent is refused on every daemon, including one without a host token. `car agent new` and `car project new --kind agent` refuse with `Building an agent needs you at the terminal or in the CAR app.` when `CAR_AGENT_ID` is set, whether or not CAR's local host key exists. When stdin and stdout are a terminal (and, for `car agent new`, `--yes` is not given), they ask first (for example `Build an agent for "<description>" with CAR's permission? [y/N]`); nothing is sent to the daemon before the answer, a no sends nothing, and a yes connects with CAR's local host key when the key file exists. Otherwise (`--yes`, or no terminal) they never present the key and connect as usual, so a daemon with a host token refuses the build and one with no host token builds it. When a person said yes but there was no key file to present and a daemon with a host token refuses, they say where CAR expected the key and how to recreate it. Like every host-only action, this doesn't stop a program running as you that reads CAR's local host key.
+**Agent builds need the CAR app or you at your terminal.** An agent connected to CAR can't create, confirm or approve an agent build; the CAR app or you at your terminal can. Three calls take the authority `declagents.remove` takes: `coder.projects.create` when a new project's requested `kind` is `"agent"` or an existing project's persisted kind is `"agent"` (even when the request says `kind: "app"`), and `coder.confirm_contract` and `coder.approve_merge` (with either `approve` value) on a session that builds an agent. That authority is a host-management connection. A daemon with no host token installed (including one started without authentication) has no host, so there every caller is refused ("Host authority fails closed"). Every caller without the authority is refused with ``Building an agent needs the CAR app or `car agent new` in your terminal.`` App projects and ordinary coding sessions are unchanged. A connection bound to an agent is refused on every daemon, including one without a host token. `car agent new` and `car project new --kind agent` refuse with `Building an agent needs you at the terminal or in the CAR app.` when `CAR_AGENT_ID` or `CAR_AGENT_TOKEN` is set, whether or not CAR's local host key exists. When stdin and stdout are a terminal (and, for `car agent new`, `--yes` is not given), they ask first (for example `Build an agent for "<description>" with CAR's permission? [y/N]`); nothing is sent to the daemon before the answer, a no sends nothing, and a yes connects with CAR's local host key when the key file exists. Otherwise (`--yes`, or no terminal) they never present the key and connect as usual, so the daemon refuses the build, with or without a host token. When a person said yes but there was no key file to present and a daemon with a host token refuses, they say where CAR expected the key and how to recreate it. Like every host-only action, this doesn't stop a program running as you that reads CAR's local host key.
 
-- `coder.projects.create` — **Params** `{ name: string, kind?: "app"|"agent", existing_agent_id?: string, builder_draft?: { template_id, name, responsibility, example, access, cadence, delivery, privacy, mail_access?: boolean, working_folder?: string } }` (default `kind` is `app`; the two edit fields require `agent`). **Returns** `CoderProject { slug, display_name, kind, repo_path, created_at, existing_agent_id?, agent_fingerprint?, reseeded, builder_draft? }`. `existing_agent_id` must name a registered declarative agent and makes the approved build replace that id instead of minting the project slug; an existing project cannot be rebound to a different id. An edit project is seeded with that agent's spec as `agent.json` and `scenarios.json`. `agent_fingerprint` is the SHA-256 fingerprint of a canonical form of the spec the project's next build replaces (fields equal to their defaults, empty values, `previous` and `enabled` left out): the edited agent as registered when the edit was opened, then whatever each approval of the project registers; absent for a new-agent project that has registered nothing. Repeating the call with the same `existing_agent_id` after that agent changed re-seeds the project from the agent registered now, records its fingerprint, and takes its stored `builder_draft` unless one is supplied; `reseeded` is `true` on exactly that response (it is `false` everywhere else, including `coder.projects.get`/`list`). `coder.start` on an Agent project is refused when its id no longer holds the recorded version (a new-agent project whose agent was deleted may re-create it), and on an edit project saved before the field existed with no approved spec committed (reopen the agent to record it). `builder_draft` carries the seven guided answers and template id through registration. Idempotent: an existing slug loads its metadata (the persisted kind wins) and may refresh its staged builder draft. Agent project names are free-form build descriptions: descriptions whose sanitized form exceeds 64 characters receive an at-most-64-character slug made from a readable prefix plus a 16-hex-character digest, while `display_name` and the later `coder.start` intent retain the complete description. Slugs contain only lowercase ASCII letters, digits, and hyphens.
+- `coder.projects.create` — **Params** `{ name: string, kind?: "app"|"agent", existing_agent_id?: string, builder_draft?: { template_id, name, responsibility, example, access, cadence, delivery, privacy, mail_access?: boolean, local_only?: boolean, working_folder?: string, timezone?: string } }` (default `kind` is `app`; the two edit fields require `agent`). **Returns** `CoderProject { slug, display_name, kind, repo_path, created_at, existing_agent_id?, agent_fingerprint?, agent_registration_id?, reseeded, builder_draft? }`. `existing_agent_id` must name a registered declarative agent and makes the approved build replace that id instead of minting the project slug; an existing project cannot be rebound to a different id. An edit project is seeded with that agent's spec as `agent.json` and `scenarios.json`. `agent_fingerprint` is the SHA-256 fingerprint of a canonical form of the spec the project's next build replaces (fields equal to their defaults, empty values, `previous`, `enabled`, `verification` and `registration_id` left out): the edited agent as registered when the edit was opened, then whatever each approval of the project registers; absent for a new-agent project that has registered nothing. `agent_registration_id` is the `registration_id` of that same version (see `declagents.list`), recorded and moved together with `agent_fingerprint`; absent on a project saved before it was recorded or whose agent had none, in which case only the fingerprint is compared. Repeating the call with the same `existing_agent_id` after that agent changed re-seeds the project from the agent registered now, records its fingerprint, and takes its stored `builder_draft` unless one is supplied; `reseeded` is `true` on exactly that response (it is `false` everywhere else, including `coder.projects.get`/`list`). A repeat after the agent was removed and identical content registered again records the new `agent_registration_id` but returns `reseeded: false`, because the project tree is unchanged. `coder.start` on an Agent project is refused when its id no longer holds the recorded version, including when identical content was registered again under a new `registration_id`, which reopening the edit records; a new-agent project whose agent was deleted may re-create it; and on an edit project saved before the field existed with no approved spec committed (reopen the agent to record it). `builder_draft` carries the seven guided answers and template id through registration; `timezone` (an IANA name, default empty for the Mac's own clock) is the fixed zone the `cadence` answer keeps, as in `declagents.set_schedule`. Idempotent: an existing slug loads its metadata (the persisted kind wins) and may refresh its staged builder draft. Agent project names are free-form build descriptions: descriptions whose sanitized form exceeds 64 characters receive an at-most-64-character slug made from a readable prefix plus a 16-hex-character digest, while `display_name` and the later `coder.start` intent retain the complete description. Slugs contain only lowercase ASCII letters, digits, and hyphens.
 - `coder.projects.list` — **Params** `{}`. **Returns** `{ projects: [CoderProject] }`, newest first.
-- `coder.projects.get` — **Params** `{ slug: string }`. **Returns** `CoderProject`.
+- `coder.projects.get` — **Params** `{ slug: string }`. **Returns** `CoderProject`. A `slug` that is not one folder name under the projects folder (empty, made only of dots, ending in a dot or space, or containing `/`, `\`, `:` or a NUL, or an absolute path) is refused as invalid params (`-32602`, message `invalid params: invalid project slug "<slug>": …`, the slug quoted with Rust string escapes) before any project file is read or written; `coder.start`'s `project` is checked the same way.
 
 ### `coder.event`
 Pushed to `coder.subscribe`d connections during a coder session. `seq` is
@@ -1596,7 +1853,7 @@ monotonically increasing per session (the resume cursor for
       "protected_edits": [{"path":"checks/walk.sh","kind":"modified"}],
       "duration_ms": 8123, "timed_out": false, "deadline_clamped": false,
       "credentials_allowed": false,
-      "credential_sources": {"OPENAI_API_KEY": "keychain"},
+      "credential_sources": {"OPENAI_API_KEY": "store"},
       "credentials_withheld": [],
       "network_isolation": "sandboxed",
       "evidence_dir": "/…/coder-…/evidence/1/tests_pass",
@@ -1637,8 +1894,9 @@ check/operational cap, the session's remaining explicit wall-clock cap, or the
 silence watchdog. A check that produces no output for `silence_window_secs`
 returns `timed_out: true`, and `output_tail` ends with
 `[runtime] check produced no output for <N>s (the silence window) and was killed`.
-`deadline_clamped` is true only when the **session's** remaining wall-clock cap
-killed it. Those two booleans together mean the check was starved by the session
+`deadline_clamped` is true only when the **session's** remaining wall-clock cap,
+or the wait for the protected Cargo home's lock, cut the check's limit below its
+own and it ran under that reduced limit. Those two booleans together mean the check was starved by the session
 clock and its `passed: false` is not a verdict on the work — see "A starved gate
 is not a red contract" in `docs/car-code-task.md`. `timed_out: true` with
 `deadline_clamped: false` is an ordinary red check, including a silence kill.
@@ -1737,7 +1995,8 @@ text),
 reasoning_chars, tool_calls, parsed, evidence_path}` (one reply from the
 different-vendor auditor, parsed or not; `call` is `audit` or `follow-up-N`,
 `attempt` counts retries of that call from 1, and `evidence_path` holds the
-redacted reply body capped at 64 KiB. Journaled with `data.actor: "auditor"`.
+redacted reply body capped at 64 KiB, or is `""` when that file could not be
+written (a full disk, a folder CAR cannot write). Journaled with `data.actor: "auditor"`.
 An unusable reply is retried under the shared three-strike policy and then
 ends the run as `infrastructure`),
 `inference_waiting {elapsed_secs}` (a native model call is still pending,
@@ -1755,7 +2014,9 @@ invocation died mid-run — timeout or I/O — with the contract still red, and 
 same hypothesis is being re-invoked; this costs no `iteration_started`, so one
 iteration may legitimately show two runs), `plan_text {text}`,
 `outcomes_step {step, group: string | null, phase, outcomes: number | null,
-detail: string | null}` (one fan-out, critic, or merge progress step;
+detail: string | null}` (one fan-out, critic, or merge progress step; a
+critic that fails reports `phase: "retrying"` once and then `"finished"` or
+`"failed"`;
 `group` and `outcomes` are present when the step applies to one user group),
 `outcome_dropped {kept, dropped, group, reason}` (the merge removed a duplicate
 or contradiction and records which outcome survived),

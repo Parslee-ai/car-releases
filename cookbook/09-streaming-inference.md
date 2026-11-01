@@ -34,11 +34,22 @@ CAR's on-device last-resort fallback. Leave `model` out when you want adaptive
 routing and automatic fallback.
 
 On Windows the auth-token file contains DPAPI ciphertext, not the plaintext
-token. Do not read that file directly from JavaScript or Python. The examples
-below prefer `CAR_AUTH_TOKEN`; for a same-host loopback daemon they otherwise
-fetch the already-decrypted token from CAR's colocated, no-store UI endpoint on
-the WebSocket port plus one. For a remote Windows daemon, set
-`CAR_AUTH_TOKEN` explicitly.
+token, so the examples below need `CAR_AUTH_TOKEN` there. No HTTP route serves
+the token: the dashboard's old `GET /auth-token` was removed in front doors 6c.
+Decrypt the file as the same Windows user, for example in PowerShell:
+
+```powershell
+Add-Type -AssemblyName System.Security
+$line = (Get-Content "$env:LOCALAPPDATA\ai.parslee.car\auth-token" -Raw).Trim()
+$b64 = $line.Replace('-', '+').Replace('_', '/')
+$b64 += '=' * ((4 - $b64.Length % 4) % 4)
+$env:CAR_AUTH_TOKEN = [Text.Encoding]::UTF8.GetString(
+  [Security.Cryptography.ProtectedData]::Unprotect(
+    [Convert]::FromBase64String($b64), $null, 'CurrentUser'))
+```
+
+The `car-runtime` npm and PyPI packages read and decrypt the file themselves,
+so a program that uses them needs none of this.
 
 ## TypeScript
 
@@ -50,24 +61,11 @@ import { join } from 'node:path';
 
 const ws = new WebSocket(process.env.CAR_DAEMON_URL ?? 'ws://127.0.0.1:9100/');
 
-async function loadAuthToken(daemonUrl: string): Promise<string> {
+async function loadAuthToken(): Promise<string> {
   const fromEnv = process.env.CAR_AUTH_TOKEN?.trim();
   if (fromEnv) return fromEnv;
   if (process.platform === 'win32') {
-    const uiUrl = new URL(daemonUrl);
-    if (!['127.0.0.1', 'localhost', '::1'].includes(uiUrl.hostname)) {
-      throw new Error('Set CAR_AUTH_TOKEN for a remote Windows CAR daemon.');
-    }
-    uiUrl.protocol = uiUrl.protocol === 'wss:' ? 'https:' : 'http:';
-    uiUrl.port = String(Number(uiUrl.port || (uiUrl.protocol === 'https:' ? 443 : 80)) + 1);
-    uiUrl.pathname = '/auth-token';
-    uiUrl.search = '';
-    uiUrl.hash = '';
-    const response = await fetch(uiUrl, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`CAR auth-token endpoint returned ${response.status}`);
-    const token = (await response.text()).trim();
-    if (!token) throw new Error('CAR daemon has no auth token; set CAR_AUTH_TOKEN or use --no-auth.');
-    return token;
+    throw new Error('Set CAR_AUTH_TOKEN: on Windows the token file is DPAPI-encrypted.');
   }
   const tokenPath = process.platform === 'darwin'
     ? join(homedir(), 'Library', 'Application Support', 'ai.parslee.car', 'auth-token')
@@ -84,7 +82,7 @@ ws.on('open', async () => {
       jsonrpc: '2.0',
       id: 'auth',
       method: 'session.auth',
-      params: { token: await loadAuthToken(ws.url) },
+      params: { token: await loadAuthToken() },
     }));
   } catch (error) {
     console.error(error);
@@ -130,25 +128,9 @@ import json
 import os
 import platform
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
-from urllib.request import Request, urlopen
 import websockets
 
-def read_windows_loopback_token(daemon_url: str) -> str:
-    parsed = urlparse(daemon_url)
-    if parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-        raise RuntimeError("Set CAR_AUTH_TOKEN for a remote Windows CAR daemon.")
-    scheme = "https" if parsed.scheme == "wss" else "http"
-    port = (parsed.port or (443 if scheme == "https" else 80)) + 1
-    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
-    token_url = urlunparse((scheme, f"{host}:{port}", "/auth-token", "", "", ""))
-    with urlopen(Request(token_url, headers={"Cache-Control": "no-store"})) as response:
-        token = response.read().decode("utf-8").strip()
-    if not token:
-        raise RuntimeError("CAR daemon has no auth token; set CAR_AUTH_TOKEN or use --no-auth.")
-    return token
-
-async def load_auth_token(daemon_url: str) -> str:
+async def load_auth_token() -> str:
     if token := os.getenv("CAR_AUTH_TOKEN", "").strip():
         return token
     home = Path.home()
@@ -156,7 +138,7 @@ async def load_auth_token(daemon_url: str) -> str:
     if system == "Darwin":
         token_path = home / "Library/Application Support/ai.parslee.car/auth-token"
     elif system == "Windows":
-        return await asyncio.to_thread(read_windows_loopback_token, daemon_url)
+        raise RuntimeError("Set CAR_AUTH_TOKEN: on Windows the token file is DPAPI-encrypted.")
     elif runtime_dir := os.getenv("XDG_RUNTIME_DIR"):
         token_path = Path(runtime_dir) / "ai.parslee.car/auth-token"
     else:
@@ -171,7 +153,7 @@ async def main() -> None:
             "jsonrpc": "2.0",
             "id": "auth",
             "method": "session.auth",
-            "params": {"token": await load_auth_token(url)},
+            "params": {"token": await load_auth_token()},
         }))
         auth = json.loads(await ws.recv())
         if "error" in auth:

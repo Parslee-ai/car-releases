@@ -7,8 +7,12 @@ CAR's supervised assistant has an opt-in host mode for repository engineering:
 car do --serve --governed-host --dir /absolute/path/to/repository
 ```
 
-Run that command once from a terminal with CarHost running. CAR registers and
-starts a repository-bound supervised agent, then exits the setup process. The
+Run that command once from a terminal with CarHost running. It asks
+`Install and start a governed Parslee Core for <repository> with CAR's
+permission? [y/N]`; after a yes CAR registers and starts a repository-bound
+supervised agent with CAR's local host key, then exits the setup process. Run
+with no terminal, it never presents the key, so a CAR with a host key refuses
+the registration (car#2444). The
 new agent appears in CarHost as `Parslee Core - <repository>`; its supervised
 child process receives the normal per-agent token from CarHost.
 
@@ -21,11 +25,18 @@ profile; browser credentials are not copied to the shell or transcript.
 Since this mode runs as a supervised agent behind CarHost, its browser is
 normally headless — the Command Deck's browser drawer is its visible face, not
 a separate Chrome window; open the drawer on this agent's conversation to
-watch it and take control when a sign-in needs a human. If CarHost is not
-connected (a pure command-line session with no host app ever attached), the
-browser launches headed instead, exactly as it always has, so a sign-in still
-has a visible window to complete in. `CAR_BROWSER_HEADLESS` still overrides
-either default.
+watch it and take control. If CarHost is not connected (a pure command-line
+session with no host app ever attached), the browser launches headed instead,
+exactly as it always has. When a sign-in needs a human
+(`browser_await_signin`) and CarHost is connected, or the browser has not
+launched yet, macOS moves it into its own visible Chrome window that is not
+flagged as automation, on this agent's persistent profile, so OAuth providers
+that refuse automated browsers ("Sign in with Google") no longer refuse it. Once
+the sign-in window opens, this agent keeps browsing in that visible window
+until its process restarts, and `navigator.webdriver` is hidden only in that window. If CarHost
+has disconnected from a headless browser, the sign-in ends at once telling the
+user to open the CAR app. `CAR_BROWSER_HEADLESS` set truthy still keeps every
+browser windowless, the sign-in included.
 
 Balanced permissions allow reads, ask before edits, and ask before every
 full-access action. In governed mode a standing full-access preference does not
@@ -40,13 +51,16 @@ broad staging (`git add .`, `git add -A`, `git commit -a`), and repository-scope
 escapes are unconditional denials.
 
 On macOS and Linux, every local assistant shell child also runs under CAR's OS
-secret sandbox. The sandbox denies reads of the daemon `auth-token` and
-`host-token` files after path resolution, so a glob, symlink, `/dev/fd`,
+secret sandbox. The daemon `auth-token` and `host-token` files can be neither
+read nor written, after path resolution, so a glob, symlink, `/dev/fd`,
 subshell, or encoder cannot turn either file into tool output. CAR also checks
 the protected files' inode link counts before spawning; a pre-existing hard-link
 alias refuses the command rather than leaving a second readable name. If the OS
 wrapper cannot be applied on those platforms, the local command is refused.
 Exact token value redaction remains in the output path as a second layer.
+The shell also loses the user-session services that would run a process for it
+outside the sandbox, such as `systemd-run --user`; the car-server-core README's
+"The assistant shell's OS sandbox" section lists what it loses and keeps.
 
 Windows keeps the existing approval boundary and output redaction: approved
 local shell commands still run without an OS file-read sandbox. Redaction

@@ -89,7 +89,7 @@ sha256 = "<hex digest>"          # required when distributing binaries
 # OR
 # health_url = "https://my-cool-agent.example.com/.well-known/a2a/agent.json"
 args = ["--mode", "production"]
-cwd = "/opt/my-cool-agent"       # optional working dir for the spawned child
+cwd = "/opt/my-cool-agent"       # optional working dir for the spawned child. On Linux it must be inside the agent's own folder (CAR refuses anything else)
 env = { RUST_LOG = "info" }
 restart = "on_failure"           # never | on_failure | always
 max_restarts = 10
@@ -100,6 +100,9 @@ auto_start = false               # spawn immediately on install and on car-serve
 # methods are rejected. Omit for legacy unrestricted behavior; [] denies every
 # application method (session.auth + server.handshake remain implicit).
 method_allowlist = ["mail.accounts", "mail.mailboxes", "mail.messages", "mail.message_body"]
+# Caveat: this scopes the agent credential. On the Mac it does not confine a
+# same-user process (the daemon token file is readable); on Linux the sandbox
+# makes it a wall. Scoped agents never receive CAR_AUTH_TOKEN (#3008).
 
 [capabilities.required]
 # Capabilities your agent CANNOT run without. Install fails if
@@ -144,7 +147,11 @@ daemon:
   child calls `session.auth { agent_id, token }` to bind the
   WS connection (#169). If `[transport].method_allowlist` is present, that
   authenticated connection can dispatch only those daemon methods (in addition
-  to the implicit auth/protocol handshake). The scope never grants authority a
+  to the implicit auth/protocol handshake). That scopes the agent credential; on the Mac it
+  does not confine a same-user process (a worker or an orchestrator, which the Mac walls, is
+  the exception), and on Linux the sandbox makes it a wall. An agent
+  with `method_allowlist` (or an organization work context), a worker, an orchestrator, and
+  every agent on Linux, is not given `CAR_AUTH_TOKEN`. The scope never grants authority a
   listed method's normal gate would refuse.
 
 For CAR's current manifest parser, set `kind = "external_process"`
@@ -206,21 +213,39 @@ later phase alongside full pure-data bundle support.
      and spawns that. No binary fetch or digest applies.
    - If neither is set, warn about unverified install.
 3. CLI sends the (possibly modified) manifest to the daemon as
-   `agents.install`.
+   `agents.install`. When you run it at a terminal, it first asks
+   whether to install the agent with CAR's permission (naming the
+   command CAR will run) and presents CAR's local host key only after a
+   yes.
+   With `--yes` or no terminal it never presents the key, so a daemon
+   with a host token refuses the install; use the CAR app, or run it in
+   your terminal (car#2444).
 4. Daemon runs `install_check`:
    - `runtime.car_min_version` against the daemon's own semver.
    - Every `capabilities.required[ns][feat]` against the host
      advertisement. Missing any → install fails.
    - `capabilities.optional` misses are collected for the
      install report.
-5. Daemon adopts the agent: writes
+5. Daemon refuses an id that is already installed (car#3264): a
+   supervised agent, or a manifest already tracked under
+   `~/.car/agents/<id>/`, keeps its id, and nothing changes. The
+   error names the installed agent and version. The same version is
+   refused as "this version is already installed" (remove it first
+   with `car uninstall <id>` to install it again); a different
+   version, older ones included, replaces the installed agent only
+   with `car install --upgrade` (`upgrade: true` on
+   `agents.install`). Versions compare by semver when both parse.
+   Switching between a supervised and a `pure_data` /
+   `health_url`-only bundle under one id is refused: uninstall
+   first.
+6. Daemon adopts the agent: writes
    `~/.car/agents/<id>/manifest.toml`, mirrors the entry into
-   the legacy `agents.json` (dual-write during the phase 1
+   the legacy `agents.json` only if that file already exists (a fresh install never creates it; dual-write during the phase 1
    migration window), mints a per-agent token if absent. Both persisted formats
    contain minted tokens. On Unix, CAR writes each file atomically as `0600`,
    keeps the CAR home and each per-agent directory at `0700`, and repairs
    permissions left by older releases before reading either format.
-6. Returns `{report, agent}` to the CLI.
+7. Returns `{report, agent}` to the CLI.
 
 The agent is now installed. With `auto_start = true`, spawnable
 external-process agents are started immediately and will also spawn
@@ -293,7 +318,7 @@ new one is needed.
 
 | Command | Effect |
 |---|---|
-| `car install <path>` | Install the manifest at `<path>/manifest.toml`. Local-install path; registry refs land in a later phase. |
+| `car install <path>` | Install the manifest at `<path>/manifest.toml`. Local-install path; registry refs land in a later phase. Refuses an id that is already installed; `--upgrade` replaces it with a different version. |
 | `car ls` (alias `agents`) | List every installed agent (id / status / pid / command). `--json` for tooling. |
 | `car inspect <id>` | Show one agent's manifest + runtime status. `--json` supported. |
 | `car start <id>` | Start an installed spawnable agent. |
@@ -301,6 +326,12 @@ new one is needed.
 | `car restart <id>` | Stop then start an installed agent. |
 | `car tail-log <id>` (alias `logs`) | Show the last N (`-n`, default 100) stdout/stderr lines captured from a supervised agent. `--json` emits `{ "lines": [...] }`. |
 | `car uninstall <id>` | Stop, remove from supervisor, reap manifest dir. Idempotent. |
+
+`car install`, `car start`, `car stop`, `car restart` and `car uninstall`
+ask `... with CAR's permission? [y/N]` at a terminal before presenting
+CAR's local host key, and never present it with `--yes`, with no
+terminal, or from a process with `CAR_AGENT_ID` or `CAR_AGENT_TOKEN` set
+(car#2444; details in `docs/websocket-protocol/agents.md`).
 
 The supervisor's existing CRUD methods (`agents.list`, `agents.start`,
 `agents.stop`, `agents.restart`, `agents.tail_log`) all work on

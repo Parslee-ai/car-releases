@@ -136,7 +136,7 @@ to the newest:
 
 | Asset | Contents |
 |-------|----------|
-| `car-<platform>.tar.gz` / `.zip` | `car`, `car-server`, `car-memgine-eval`, `car-mcp`, the `.node` module |
+| `car-<platform>.tar.gz` / `.zip` | `car`, `car-server`, `car-memgine-eval`, `car-mcp`, the `.node` module; on macOS also `car-host` and the MLX `mlx.metallib` with its `.sha256`. Never the installers below, which are assets of their own |
 | `car-runtime.<platform>.node` | Node native addon, standalone |
 | `car_runtime-<ver>-cp39-abi3-<platform>.whl` | Python wheel (carries the version — no `latest` URL) |
 | `CAR-darwin-arm64.pkg` | macOS app + CLI installer (signed/notarized) |

@@ -36,6 +36,41 @@
   event `data` kind are listed explicitly under `uncovered`, rather than being
   summarized by prose. Do not treat an uncovered result or event payload as
   promised by this artifact.
+- **Params (car-releases#98).** `rpc.<method>.params` describes what a method
+  accepts, generated from the Rust type its handler deserializes the whole
+  params object into. Unlike the result schemas, a params schema follows serde's
+  input rules: a field is `required` unless it is an `Option` or has a serde
+  default, and an object rejects unknown fields only where the type does
+  (`deny_unknown_fields`). Field aliases the daemon also accepts are not
+  listed. `rpc.server.handshake.params` is published too: `protocol_version`
+  (required, an unsigned integer: the newest version the client speaks), the
+  optional `protocol_version_min` (an unsigned integer, the oldest; omitted, it
+  equals `protocol_version`), and the optional `required_capabilities` /
+  `optional_capabilities` (arrays of non-blank strings). Seven handlers fall
+  back to their defaults when their params do not parse (absent, `null`, or a
+  mistyped field): `mail.inbox`, `mail.mailboxes`, `meeting.list`,
+  `registry.list`, `registry.reap`, `events.truncate` and `models.search`. For
+  those the schema is stricter than the daemon. `coverage.rpc_params` puts
+  every dispatch method in exactly one bucket:
+  - `covered`: a params schema is published.
+  - `not_read`: the dispatch arm passes no params to the method's handler
+    (`host.subscribe`, `mail.accounts`, `server.schema`, ...). Admission gates
+    that run before dispatch still apply to the call itself.
+  - `uncovered.typed_without_schema`: the params are parsed into the named Rust
+    type, which does not derive a schema yet.
+  - `uncovered.unresolved`: the params are read field by field, or through a
+    path the generator does not follow. No schema is claimed for these.
+- **The approval channel and mail.** `rpc.host.subscribe.result` is the
+  snapshot, `notification.host.event.params` is the `params` of every
+  `host.event` notification a subscriber then receives, and
+  `type.host_approval_request` is the approval record carried in a
+  snapshot's `approvals` and as the event `payload` of the kinds that
+  `coverage.notifications.host_event_payloads` names (`approval.requested`,
+  `approval.resolved`). Any other kind's `payload` is open JSON, including
+  `approval.resolve_requested` and `approval.self_resolved`. All six `mail.*`
+  results are covered, and so are the params of every `mail.*` method that reads
+  them. Server-to-client notifications other than `host.event` are not
+  inventoried yet, which is one reason `coverage.complete` is `false`.
 - NAPI: `CarRuntime.serverSchema()`. Python:
   `CarRuntime.server_schema()`. Both return the whole result as a JSON string.
 

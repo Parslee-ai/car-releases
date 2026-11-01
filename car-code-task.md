@@ -93,12 +93,16 @@ check chain, as described below.
 **The operator's declarative rules**, merged from two directories in this order:
 
 1. `<CAR_HOME>/policies/*.toml` — machine-wide
-2. `<worktree>/.car/policies/*.toml` — committed with the project
+2. `.car/policies/*.toml` in the project's `.car/` — committed with the project.
+   That is the nearest `.car/` from the worktree up to its git repository root
+   (never CAR's own `~/.car`), the same discovery `car do` uses.
 
-These are the same two locations, in the same order, that `car policy-check-hook`
-and `car-mcp`'s `policy_check` read, so a rule written once governs Claude Code,
-the assistant, the daemon, and the coder alike. Neither directory is walked
-upward, matching `car do`.
+`car policy-check-hook` and `car-mcp`'s `policy_check` read the same two kinds of
+location, in the same order, so a rule written once governs Claude Code, the
+assistant, the daemon, and the coder alike. Those two read every
+`.car/policies/` from their working directory up to the repository root, not
+only the nearest, so a repo-root rule binds a hook fired from a subdirectory
+even when a `.car/` without policies sits in between.
 
 Four properties worth knowing before writing a rule:
 
@@ -216,7 +220,7 @@ describes: a stated boundary the enforcement does not implement.
 What the deny-list buys is that publication cannot happen *by accident* or by
 the obvious spelling. The property that does not depend on out-lexing `/bin/sh`
 is **credential separation** of the environment, and that is now in place:
-the model's shell removes every name from `$CAR_HOME/env`, every provider credential name CAR
+the model's shell removes every provider credential name CAR
 declares, CAR's auth-token names, and every inherited credential-shaped name.
 It also removes `GH_TOKEN`/`GITHUB_TOKEN` (and their enterprise spellings),
 points `GH_CONFIG_DIR` at an empty directory, and overrides git's
@@ -266,10 +270,15 @@ by the patch text alone, so a value in base lines the change does not touch
 does not block delivery. Binary files follow the same rule: a binary version
 is refused only when it holds the value more times than the version it
 replaced (the old path, for a rename), so editing or renaming a binary file
-whose base version already held the value still delivers.
+whose base version already held the value still delivers. File versions are
+streamed, never held whole: a text file is read only as far as the first 8000
+bytes that show it is text, and a binary file is counted as it streams. The
+scan's memory therefore grows with the size of the delivered patch, which is
+held whole, and not with the size of the files it touches: a one-line edit to a
+very large file stays small, while a large binary file that is added or
+rewritten carries its whole content as a literal hunk in the patch.
 
-At each local spawn, CAR removes the union of names from `$CAR_HOME/env`,
-built-in model/provider declarations, explicit CAR secret and auth-token
+At each local spawn, CAR removes the union of built-in model/provider declarations, explicit CAR secret and auth-token
 constants, and inherited names ending in a credential suffix such as
 `_API_KEY`, `_TOKEN`, `_PASSWORD`, or `_PRIVATE_KEY`. PATH, HOME, locale,
 terminal, shell, temporary-directory, and toolchain variables remain. The
@@ -320,7 +329,7 @@ themselves.
 
 An unapproved declaration fails without executing and records
 `credentials_withheld`. An approved name resolves from the CAR secret store
-first, then `$CAR_HOME/env`; the daemon process environment is never a source.
+only; the daemon process environment is never a source.
 An unresolved approval also fails without executing. Resolved values are
 injected only after scrubbing, into that child only. Exact occurrences printed
 by a check are replaced with `[REDACTED:NAME]` before output, events, session
@@ -421,7 +430,9 @@ pristine operator Cargo home. Consequently two protected checks never observe
 one another's Cargo-home writes, while Cargo sees the same registry source path
 and can reuse target fingerprints. Protected checks for the same repository
 serialize; inability to obtain the lock within that check's remaining timeout
-is an infrastructure failure, not a red contract result. macOS uses CoW clones
+is an infrastructure failure, not a red contract result. A shorter wait comes
+out of the check's own limit, and a check that then times out under the reduced
+limit reports `deadline_clamped: true`: starved, not red. macOS uses CoW clones
 where supported. Linux hosts without CoW retain the existing cold
 empty/full-copy behavior, but at the stable path.
 
@@ -477,13 +488,36 @@ configuration from executing builder-controlled programs. CAR does not set
 local `clone --bare --no-local` from the session repository.
 
 On macOS the composed profile denies read and write access to the daemon's
-`$CAR_HOME/env`, `run/` tree, auth-token directory, configured file-secret
+`$CAR_HOME/env` (a hand-made file; CAR itself does not read it), the
+`secrets/` key-store directory, `run/` tree, auth-token directory, configured file-secret
 directory, and the user's Keychains directory; denies Unix-socket connections
 under the run/token directories; denies the daemon's registered TCP listener
-ports; blocks SecurityServer/securityd lookup; and denies `process-info` for
+ports — or, in a process that runs no daemon listener of its own (`car coder ab`
+builds the same sandbox), the ports of the daemon it talks to: the WebSocket port
+from `CAR_DAEMON_URL` (default 9100), the dashboard port above it, and the MCP
+port from `CAR_MCP_BIND` (default 9102); blocks SecurityServer/securityd lookup; and denies `process-info` for
 other processes. Raw and canonical paths are both denied. Untrusted repository
 shells and checks without explicit network approval deny non-loopback outbound
-network. On macOS, repository trust is itself a network grant for ordinary
+network. In an untrusted repository the model shell and the builder's contract
+and baseline checks are also denied read and write access to the operator's
+credential stores on macOS (Linux untrusted sessions get none of these denies
+yet, tracked in #3690): the list the independent
+verifier's shell is denied (`repo_trust::operator_credential_stores`):
+`~/.aws`, `~/.ssh`, `~/.azure`, `~/.codex`, `~/.claude`, `~/.config`,
+`~/.docker`, `~/.kube`, `~/.gnupg`, `~/Library/Keychains`, `~/.netrc`,
+`~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, Cargo's `credentials` files, and
+wherever `AZURE_CONFIG_DIR`, `XDG_CONFIG_HOME`, `GH_CONFIG_DIR`, `CODEX_HOME`,
+`CLAUDE_CONFIG_DIR`, `GNUPGHOME`, `DOCKER_CONFIG`, `CARGO_HOME`, `NETRC`,
+`AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`, `NPM_CONFIG_USERCONFIG` and
+`KUBECONFIG` move them. Git's XDG configuration directories
+(`~/.config/git`, `$XDG_CONFIG_HOME/git`) stay readable, never writable, so git
+runs (`git/credentials` stays denied, and an `[include] path` into another store
+still fails); `~/.gitconfig` stays readable and never writable; the worktree,
+Git directory, toolchain and CAR state subtrees stay reachable when they sit
+inside a store; and `SSH_AUTH_SOCK` is removed from the child's environment.
+A symlink inside a credential store is denied at its target, wherever that
+target is (a linked binary stays runnable but not readable). Windows untrusted sessions get none
+of these denies (the session's `repo_trust.sandbox_gap` says so). On macOS, repository trust is itself a network grant for ordinary
 dependency resolution, including headless runs. The remaining macOS gap is
 `sysctl(KERN_PROCARGS2)`, which Seatbelt does not mediate; see the paragraph
 above.
@@ -503,13 +537,135 @@ that namespace. An individually network-approved check still runs without
 token/run files and peer `/proc` state remain hidden in either posture. Windows
 and other platforms have no secret sandbox.
 
+A read-only mount does not stop `connect()` on a Unix socket, so a socket the
+host user reaches through a supplementary group (a `root:docker 0660`
+`docker.sock`, or a `libvirt` or `lxd` socket) would otherwise stay usable, and
+those daemons act as root. When the user has supplementary groups, the wrapper
+therefore drops all of them before the command runs: `newuidmap`/`newgidmap`
+write the namespace's ID map from the user's `/etc/subuid` and `/etc/subgid`
+ranges, which leaves `setgroups` allowed, and `setpriv --clear-groups` clears
+the groups. util-linux 2.38 and later does this through `unshare --map-auto`; on
+older util-linux (Ubuntu 22.04 ships 2.37) CAR runs the two helpers itself
+before the command starts. The command keeps only its primary group. That
+includes the effective group of the process that starts it, so a daemon started
+with a privileged effective group (systemd `Group=docker`, or `sg docker`)
+passes that group's access to its confined commands; start the daemon under the
+user's own primary group. A host where the groups cannot be dropped (the
+`uidmap` package or the user's subordinate ID ranges are missing) fails closed
+like any other unavailable sandbox, and the refusal names the three ways out:
+install the `uidmap` package, add `/etc/subuid` and `/etc/subgid` entries for
+the user, or run the check outside write confinement. A check that needs
+group-gated access, such as the `docker` group or a group-writable shared
+repository, must run outside write confinement. A user with no supplementary
+groups gets the same wrapper as before.
+
+The same holds for sockets the user owns. Services such as the systemd user
+manager (`systemctl --user`, `systemd-run --user`), rootless Docker and Podman
+(and the Docker Desktop, Colima, Rancher Desktop, Lima and Podman machine
+sockets under HOME), ssh-agent, gpg-agent, ssh connection masters, tmux, screen,
+an Emacs server and the X server run outside the sandbox with the user's full
+rights, so a confined command that reached one could have it run a process
+outside confinement. A write-confined command's view therefore hides them,
+re-read on every spawn.
+
+On Linux, `/tmp` and `/var/tmp` are empty and unreadable apart from the
+command's own confined roots, which come back writable at their paths, and
+read-only inputs under them, which come back read-only; that covers sockets
+under names no list can know (`/tmp/ssh-*`, `/tmp/tmux-<uid>`, `/tmp/.X11-unix`,
+`dbus-*`, `vscode-ipc-*`, editor and container helpers). `/run/user/<uid>`
+(submounts such as gvfs included), `/run/screen` and `/var/run/screen`, and the
+directories `XDG_RUNTIME_DIR`, `SCREENDIR` and `TMUX_TMPDIR` name get the same
+empty tmpfs, and so do `~/.docker`, `~/.colima`, `~/.rd`, `~/.lima`, `~/.screen`
+and `~/.local/share/containers/podman/machine`. A socket is hidden through the
+directory that holds it, so a service that makes its socket again, or a new one
+beside it, stays out of reach: each socket under `~/.ssh` (a socket directly in
+`~/.ssh` hides all of `~/.ssh`), the `S.*` sockets in `GNUPGHOME` or `~/.gnupg`
+(which hides that directory), and the sockets `SSH_AUTH_SOCK`, `GPG_AGENT_INFO`,
+`TMUX`, `DOCKER_HOST` or `CONTAINER_HOST` (`unix://`),
+`DBUS_SESSION_BUS_ADDRESS` (`unix:path=`) and `VSCODE_IPC_HOOK_CLI` name. A
+directory that is `/`, a top-level directory or `HOME`, or that holds, contains
+or lies inside a confined root, is never hidden whole; there only the socket
+itself is replaced by an unreadable file, which a service that recreates it gets
+past. The command also gets a private devpts instance, so another process's pty
+(the operator's terminal) cannot be opened by its path, and fresh empty
+`/dev/shm` and, where it is world-writable, `/run/lock`. The locations are read
+from the daemon's own environment and only absolute values count. A mask that
+cannot be mounted stops setup and the command is refused. A socket at a path no
+variable, fixed location or HOME directory above names, outside `/tmp` and
+`/var/tmp`, stays reachable.
+
+Abstract sockets have no path: a command in a private network namespace
+(`--net`) cannot reach the host's, and a network-approved write-confined check,
+which keeps the host's network namespace, runs under Landlock's abstract-socket
+scope. The CAR binary applies that scope to itself inside the sandbox, as root
+of its user namespace after the ID maps are written, so it needs no
+`no_new_privs` and a user with supplementary groups keeps the check. The wrapper
+holds the CAR binary open from before any mask goes up, so the scope still
+applies when the binary's own directory is hidden inside the sandbox
+(`~/.car/bin` under the verifier's and untrusted checks' read denies). A
+network-approved write-confined check therefore needs Linux 6.12 or later
+(Landlock ABI 6) and the CAR binary, and is refused before it runs otherwise,
+with the cause and the way out: run it on Linux 6.12 or later with the CAR
+binary, or withdraw the network approval, which runs it with a private network.
+The refusal names one of three causes: "Landlock's abstract-socket scope needs
+Linux 6.12 or later (Landlock ABI 6)" (Ubuntu 24.04's 6.8 among them), "there is
+no CAR helper binary (CAR is embedded in another program)" (Node, Python), or
+"the CAR helper binary is missing or was replaced since this process started"
+(an upgrade replaced it). A verifier probe is never refused this way: no
+source approves a probe's network, so it runs in a private network namespace
+instead. The same decision picks the spawn and the refusal. This includes
+every supplied check of a `car code` run that carries its own
+`"network_approved": true`: on Linux before 6.12 each is refused, and the way out is
+Linux 6.12 or later with the CAR binary, or withdrawing the network approval.
+Only a 6.12+ kernel exercises the scope in tests.
+
+On both platforms a write-confined command inherits no descriptor from the
+daemon above stderr except the runtime's check-run marker, so an open connection
+to an agent or bus cannot be passed down, and it gives up its controlling
+terminal, so a check started by the `car code` CLI cannot type into the
+operator's shell (`TIOCSTI`); `/dev/tty` is not writable to it. The A/B
+re-score keeps its descriptors and terminal as before. The general assistant's
+shell keeps its terminal but inherits no descriptor above stderr, and has its
+own session-service masks (the car-server-core README, "The assistant shell's
+OS sandbox").
+
+On macOS a write-confined command may connect to a Unix socket only under its
+confined roots (a symlink there to a socket elsewhere does not count), plus the
+system's name-resolution and log sockets (`/private/var/run/mDNSResponder`,
+`/private/var/run/syslog`), and it can start nothing outside its sandbox: no
+launchd job (`launchctl submit`, `launchctl bootstrap`), no Launch Services open
+(`open`, including `open -a Terminal`), and no Apple Event (`osascript`
+scripting another app). It can still reach any TCP service on loopback, such as
+a Jupyter server, unlike a Linux check without network approval, which gets a
+private network namespace (a network-approved Linux check keeps the host's).
+`/tmp` stays readable on macOS.
+
+This is deliberate and it takes away, inside write-confined checks and builder
+shells: `systemctl --user` and `systemd-run --user`, rootless and desktop Docker
+and Podman, ssh and gpg agents (signing, `git push` over ssh with an agent key,
+connection masters), attaching to tmux or screen, and any X11 or Wayland client
+including an Xvfb a check starts under `/tmp/.X11-unix`; on Linux also reading
+anything under `/tmp` or `/var/tmp` outside the confined roots, the ssh keys and
+config in a hidden `~/.ssh`, and the gpg keyring in a hidden `GNUPGHOME` or
+`~/.gnupg`; and on macOS `open`, Apple Events and launchd jobs. The coder A/B
+re-score and a copied rerun line are not write-confined and keep them. The
+general assistant's shell keeps agent-backed ssh and gpg, X11, the rest of
+`/tmp`, ssh keys, the gpg keyring and on macOS `open` and Apple Events, but
+loses the session services: `systemctl --user` and `systemd-run --user`,
+rootless and desktop Docker and Podman, and tmux and screen (the
+car-server-core README, "The assistant shell's OS sandbox").
+
 Supervised agents remain separate from coder children and continue receiving
 `CAR_AUTH_TOKEN` or `CAR_AGENT_TOKEN` in their environment. A macOS coder child
 may recover a sibling value through the `KERN_PROCARGS2` gap, but its daemon
 endpoint is denied. On Linux the coder child's private PID namespace hides the
 supervised process and its environment.
 
-The exact composed profile is probed once per process/posture. If it cannot run
+On macOS, each command's exact composed profile is probed before it runs; a
+profile that started is remembered until 1024 distinct profiles have started
+(then the set clears and the next use probes again), and one that failed is
+probed again on every use. On Linux the composed wrapper is probed once
+per process/posture. If it cannot run
 (including inside a parent sandbox), macOS and Linux refuse the local command
 instead of spawning it unwrapped; the failed check records
 `secret_isolation: "unavailable"`. A CarCoder builder also refuses a platform
@@ -630,7 +786,7 @@ system can be starved rather than answered.
 |---|---|
 | `--repo <PATH>` | Repository to work in. Resolved to its top level; must be a git repo. |
 | `--intent-file <PATH>` / `--intent <STRING>` | The task. Exactly one. |
-| `--contract-file <PATH>` | JSON `OutcomeContract`. **When present, derivation does not run.** A check may declare `credentials: [ENV_NAME]`; because this file is operator-supplied, those exact declarations are approved. `allow_credentials` separately removes only `DenyCredentialAccess` from check command inspection. Each check remains capped at `--max-check-timeout-secs`. See [The contract](#the-contract). |
+| `--contract-file <PATH>` | JSON `OutcomeContract`. **When present, derivation does not run.** A check may declare `credentials: [ENV_NAME]`; because this file is operator-supplied, those exact declarations are approved. Network is not: a check that needs it carries `"network_approved": true`. `allow_credentials` separately removes only `DenyCredentialAccess` from check command inspection. Each check remains capped at `--max-check-timeout-secs`. See [The contract](#the-contract). |
 | `--target-branch <NAME>` | Delivery branch, stable across sessions. Required for `--deliver pr`. |
 | `--pr-base <NAME>` | PR base. Defaults to the repo's default branch. |
 | `--body-prefix <TEXT>` | Trusted caller-supplied text placed verbatim at the start of the generated PR body. The model cannot edit it. Intended for stable orchestrator markers such as `<!-- car-selfheal:key=… -->`; do not pass untrusted model output. |
@@ -638,13 +794,14 @@ system can be starved rather than answered.
 | `--deliver <MODE>` | `pr` \| `branch` \| `none`. Defaults to `pr` with a target branch, else `branch`. Pull-request delivery selects GitHub for `github.com` origins and Azure DevOps for `dev.azure.com`, `ssh.dev.azure.com`, and `*.visualstudio.com` origins. GitHub requires an authenticated `gh` CLI; Azure DevOps requires the `azure-devops` extension for `az` plus `az login` or `AZURE_DEVOPS_EXT_PAT`. Set `CAR_CODER_FORGE=github` or `CAR_CODER_FORGE=azure-devops` for a self-hosted or otherwise unrecognized origin; an unknown origin fails before the delivery commit or push and names that override. GitLab, Bitbucket, and other forges are not supported. Use `branch` when an external orchestrator will open the review artifact. `branch` publishes a clean worktree whose HEAD is ahead of the base as a re-delivery, the same as `pr`; it fails only when the base already contains HEAD. |
 | `--model <ID>` | Pin the inference model. The pin governs every contract-derivation lane, and an unparseable-reply retry re-asks that model instead of rotating away from it. |
 | `--max-iterations <N>` | Optional explicit operator cap on contract-evaluation rounds. The default is unbounded (`default_max_iterations` unset or `0` in `~/.car/coder.toml`). Exhaustion is persisted as `failure_kind: "budget_exhausted"` and names the used iterations and cap. |
-| `--max-session-wall-secs <N>` | Optional explicit operator cap on the baseline, loop, and runtime re-run. The default is unbounded (`max_session_wall_secs` unset or `0`). Exhaustion is persisted as `failure_kind: "budget_exhausted"` and names elapsed time and cap. |
+| `--max-session-wall-secs <N>` | Optional explicit operator cap on the baseline, loop, runtime re-run, and independent verification (a verifier still running at the cap is stopped). The default is unbounded (`max_session_wall_secs` unset or `0`). Exhaustion is persisted as `failure_kind: "budget_exhausted"` and names elapsed time and cap. |
 | `--max-check-timeout-secs <N>` | Optional explicit operator ceiling for **one** contract check. The default is unbounded (`max_check_timeout_secs` unset). A check that reaches the cap is killed and judged red. The model's own `shell` tool keeps its separate ceiling regardless. |
-| `--silence-window-secs <N>` | Stop the run when nothing makes progress for this many seconds. Default `900`; `0` disables it. A silent check is killed and judged red. A silent session ends `stalled`; an external or foreman CLI that streams output for one window without changing its pinned worktree ends `no_progress`. Streamed lines alone are not progress. |
+| `--silence-window-secs <N>` | Stop the run when nothing makes progress for this many seconds. Default `900`; `0` disables it; a value from `1` to `29` is raised to the `30` second floor with a warning, because sandboxed start-up can take about 5 s under load. A silent check is killed and judged red. A silent session ends `stalled`; an external or foreman CLI that streams output for one window without changing its pinned worktree ends `no_progress`. Streamed lines alone are not progress. |
 | `--workspace-dir <PATH>` | Stable per-goal workspace. Reused when it is already a worktree of this repo. |
 | `--keep-workspace` | Keep the workspace on any non-zero exit, and on a green `--deliver none` run. A deadline-starved post-loop gate is always retained because the loop already verified that tree green; a stalled run is always retained for diagnosis. |
 | `--transcript <PATH>` | Mirror the JSONL stream to a file. A path that cannot be created or opened is a `config_error` refusal before any spend — never a silent downgrade to no transcript. |
 | `--json` | Emit the JSONL stream on stdout, one compact object per line. |
+| `--local-only` | Run on local models only, for a caller nobody is watching (the daemon's self-heal auto-fix passes it). Every remote dispatch is refused (`remote_in_local_only_scope`, and `remote_in_local_worker` from the restricted engine), routing chooses among on-device models, and `auditor_model = "auto"` picks the largest local text model from a vendor other than the builder's. Nothing is spent. |
 
 The three cap flags and their config keys are opt-in operator policy; none has a
 finite default. External-agent invocations likewise have no default wall-clock
@@ -834,12 +991,73 @@ instead of recording empty streams. Once the check exits, or is killed at its
 deadline, output is collected for at most 5 more seconds. A background process
 the check left holding a pipe cannot stall the re-score, and a clean exit never
 waits out the check's timeout. Each stream keeps at most 64 MiB, and the rest is
-drained and discarded. A note at the end of the stream records a truncation, a
-read error, or that collection stopped while a process still held the stream.
+drained and discarded. A plain `output_contains` marker is still looked for in
+everything the check printed, so a marker past 64 MiB passes; `$exact:` and
+`$json:` assertions are graded on the kept output, as the session grades them.
+A note at the end of the stream records a truncation, a read error, or that
+collection stopped while a process still held the stream.
 
 Before a contract check runs, CAR lexically checks redirections, `tee`,
 `-o`/`--output`/`--out`/`--output-file`/`--path` values, and `cp`/`mv`/`install`
-destinations. It denies targets outside the worktree (or its baseline copy) and
+destinations. A redirection does not hide a destination wherever it sits in the
+command (before the verb, between operands, or after them, including here-docs,
+`2>&1`, `&>`, `>|`, and bash's `>&file`, which is itself checked as a target),
+and a command substitution among the operands counts as one operand. Any `case`
+word inside a command substitution is refused, even as an argument, and so is a
+comment or here-doc inside one, or a substitution that is never closed. A
+command is judged past carriers such as `env`, `timeout`, `sudo`, and `cmd /c`;
+a `-t`/`--target-directory` value, or any abbreviation GNU accepts such as
+`--target`, is the destination; and a comment's words are not operands. A
+construct whose command is decided at run time is refused by name: `eval`, an
+alias definition or `shopt -s expand_aliases`, a shell function definition, and
+a write verb behind `xargs` or `find -exec`/`-execdir`/`-ok`/`-okdir` (`xargs
+grep` and `find -exec cat` still run). A target that is exactly one `$(mktemp)`
+or `$(mktemp -d)` substitution is admitted by the same rule `cd "$(mktemp -d)"`
+uses, only in the top-level check shell; a nested `sh -c` does not get the
+scratch-root shim, so its mktemp writes are denied. A here-doc body never moves
+the directory later writes are judged in, and it is judged as a program of its
+own, since a shell may run it (`sh <<EOF`). A body whose delimiter is unquoted
+and that holds `$(…)` or a backtick substitution is refused (quote the
+delimiter, `<<'EOF'`), and so is a here-doc missing its delimiter line or whose
+delimiter holds `$`, a backtick or a parenthesis. A body line ending in `\`
+under an unquoted delimiter is refused too, since the shell joins it with the
+next line, a delimiter line included, and so is a here-doc piped into a command
+that changes directory or starts a shell or interpreter (give the shell the
+here-doc directly, `sh <<'EOF'`). A POSIX check holding a carriage return is
+refused: save it with Unix line endings. A `cd` can fail and leave the shell
+where it was, so a write is judged from every directory the shell may be in: a
+command chained with `&&` after a `cd` is judged from the `cd`'s target alone,
+and once the check holds an `||` or a negated `cd`, not even that. A write
+target or `cd` operand holding any `$` other than the runtime roots above,
+including a positional or special parameter such as `$1`, `$@` or `$?`, is
+judged as an unknown variable. A check that sets CDPATH, `DIRSTACK`, `BASHOPTS`
+or `SHELLOPTS` (by assignment, as an `export`, `unset`, `read`, `printf -v`,
+`for` or zsh `set -A` name, or through `${NAME:=…}` or zsh's `${NAME::=…}`), or
+a shell option that changes how `cd` works (such as `autocd`, `cdable_vars` or
+`chase_links`, in any case and spelling, through `set -o`, a shell's `-o`/`-O`
+or long flag, or zsh's `options`), however it is quoted, or that runs `trap`,
+`shopt` or `setopt`, is refused, since each can move a later `cd`; a check that
+only mentions one of those words (`cargo test cdpath`) still runs; so is a
+variable name built at run time where `export`, `declare`, `env`, `read` or
+`printf -v` takes one, and a `cd` or `pushd` with more than one operand or a
+directory-stack index, `pushd -n`, a `popd` with an operand, and `dirs` with
+one. `set -e`, `set -u`, `set -x` and `set -o pipefail` still run. On Windows
+cmd has no here-docs, so every line there is a command, and an apostrophe is
+read both as ordinary text (cmd's reading, where a `>` between apostrophes is
+still a redirection) and as a quote (the reading of a program cmd starts, such
+as `bash` or `sed`): a check is refused if either reading refuses it. A Windows
+check holding `^`, cmd's escape character, or a `\"` inside double quotes, where
+cmd ends the string, is refused. cmd also expands `%NAME%` and `!NAME!` before
+it reads redirections, so a check there refuses any variable reference other
+than the runtime roots above, `%CD%`, the OS paths `%SystemRoot%`, `%windir%`
+and `%SystemDrive%`, and `%INTERCEPTOR_GROUP%`, `%HOME%`, `%USERPROFILE%`,
+`%RUSTUP_HOME%` and `%CARGO_HOME%`, whose values the check's author does not
+control, and refuses a `set` of one of those names, whose value it trusts to be
+a path. The check inspects the command's text and does not follow a program
+handed to an interpreter: a script piped or redirected into a shell, a script
+file it runs, or an inline `-c`/`-e` program.
+
+The check denies targets outside the worktree (or its baseline copy) and
 the check's evidence directory, then records the denial as the failed check and
 in `stderr.txt`. `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, and paths
 under `$CAR_CHECK_EVIDENCE_DIR`, `$CAR_CHECK_TMPDIR`, or `$CAR_HOME` are
@@ -847,7 +1065,8 @@ allowed. A write through `$TMPDIR` is denied because it names the host temp
 directory, outside the worktree and evidence roots. A variable assigned
 directly from `$(mktemp)`, `$(mktemp -d)`, or the equivalent backtick form is
 treated as contained for writes to the variable itself (and descendants for
-`-d`). An explicit outside template such as `mktemp /tmp/x.XXXX`, an explicit
+`-d`), only in the top-level check shell; a nested `sh -c` does not get the
+scratch-root shim, so its mktemp writes are denied. An explicit outside template such as `mktemp /tmp/x.XXXX`, an explicit
 `/tmp/x`, `$HOME/x`, `../x`, or `/etc/x` remains denied. On Windows, where a
 check runs under `cmd /C`, the inspector also checks `copy`/`move`/`xcopy`/
 `robocopy`/`md`/`mklink` destinations and robocopy's `/LOG:` and `/UNILOG:`
@@ -995,7 +1214,9 @@ that have those values.
 and `outcomes_written` names the artifact plus the outcome count by group. An
 enumerator or critic call that stays silent past the session's effective
 `silence_window_secs` counts as a failed attempt; `0` disables that per-call
-limit.
+limit. The completeness critic is retried once; a second failure stops
+derivation as an infrastructure failure rather than proposing a contract that
+skipped its completeness review.
 
 `run_end.status` ∈ `delivered` · `reported` · `needs_review` · `contract_failed`
 · `abandoned` · `failed`. A request that does not say what should change or
@@ -1024,7 +1245,7 @@ an operator signed in to Parslee (`car auth login`) is audited through a
 Parslee route whose upstream vendor the catalog records —
 `parslee/openrouter/frontier-general` (GPT-5.4) for an Anthropic builder,
 `parslee/openrouter/frontier-multimodal` (Gemini 3.1 Pro) for an OpenAI one.
-What must differ from the builder is that upstream vendor, not Parslee. The
+What must differ from every writer's vendor is that upstream vendor, not Parslee. The
 Parslee capability routes (`parslee/reasoning`, `parslee/advisor`,
 `parslee/fast`) cannot be auditors: the gateway chooses what serves them, so
 the catalog records no vendor for them and naming one is refused with that
@@ -1040,7 +1261,9 @@ on-device models) are never chosen automatically; one runs only when
 `auditor_model` in `docs/websocket-protocol.md`.
 
 This page covers `car code-task`, which always builds with CAR's own loop, so
-its builder's vendor is the vendor of the model that loop ran. Daemon sessions
+its builder's vendor is the vendor of the model that loop ran. When the loop
+ran models from more than one vendor, including in a repair round after a
+failed check, none of those vendors may audit the change. Daemon sessions
 started with `car code --engine external:<cli>` or `foreman:<cli>` have no
 such model when CAR's loop wrote none of the change. The audit then takes the
 vendor from what the CLI ran: the models Claude Code names in its stream, then
@@ -1139,7 +1362,8 @@ auditor model and what came back, meaning the content length, reasoning length,
 any tool calls, and the `finish_reason`. A missing audit is never treated as a
 pass. Every auditor reply, parsed or not, is written redacted and capped at 64
 KiB to `<evidence>/audit/reply-NNN.json` and journaled as a
-`coder.audit_reply` event, so a failed audit can be read directly.
+`coder.audit_reply` event, so a failed audit can be read directly. When that
+file cannot be written, the event's `evidence_path` is empty.
 
 ## Delivery semantics
 
@@ -1245,6 +1469,14 @@ KiB to `<evidence>/audit/reply-NNN.json` and journaled as a
   ]
 }
 ```
+
+Supplying the file does not approve network for any of its checks. A check that
+must reach the network carries its own approval beside its fields,
+`"network_approved": true`, which covers that exact check name and command.
+A recognized network check without it is refused: `car code-task` rejects the
+file before any model call and names the checks, and `car code` cancels the
+session because the daemon held them under Not verified. Any other unapproved
+check runs with network denied.
 
 ### The contract's checks are immutable
 
@@ -1405,13 +1637,68 @@ delivered diff contains; they do not remove the edit from delivery.
 When a coder shell command replays a contract check, its worktree edits are
 rolled back, so check output does not ride into delivery as builder work. A
 command replays a check only when it runs the check's exact command words or
-executes the same resolved script path. The script must run as a program, or
-as the script operand of an interpreter such as `bash`, `python`, `source` or
-`call`. Reading or editing a script (`cat`, `sed -i`, `chmod`) is not a replay.
-`cd`, `pushd`/`popd`, subshells, and `sh -c`/`cmd /c` command lines are
-followed when resolving the path. A check script outside the worktree keeps its
-absolute path and is matched exactly. Where a `cd` cannot be followed (`cd
-"$ROOT"`, a bare `cd`), the script is matched by file name.
+executes the same resolved script path. On macOS and Linux the word match
+fails closed: the check's words count wherever they appear, including inside
+quoted strings, `sh -c`/`eval` command lines, command and process
+substitutions, groups and compound commands, so any wrapper (`uv run`, `npx`,
+`timeout`, `watch '…'`) keeps the protection. The one exception is an operand
+of a command that just prints or looks up its operands (`echo`, `printf`, `:`,
+`type`, `which`, `command -v`, also behind `builtin` or `command`) at the top
+level of a plain pipeline, whose output goes nowhere, to a file, or only into
+data sinks: `cat`, `tee`, `grep`, `wc`, `head`, `tail`, `sort`, `pbcopy`,
+`less`, `more` and `jq`. A here-document or here-string is commands unless
+every reader in its pipeline is one of those data sinks, so `cat > notes.md
+<<EOF` is data while `ssh host <<EOF` or `python3 <<EOF` may run it. A data
+body still runs its `$( … )` and backtick substitutions, except escaped ones
+or under a quoted delimiter. Redirections are ignored on both sides. Because
+the match fails closed, a check's words in an ordinary argument, such as
+`git commit -m '… cargo test …'`, still count as a replay. Printed escapes
+(`\t`, `\n`, `\0`) count as word breaks, and printed hex, octal and Unicode
+escapes (`printf '\x63argo …' | sh`) as the characters they spell. Assignment
+and alias values are read as commands, `${NAME:-word}` and `${NAME:=word}`
+are read as their text, and every parameter expansion that can be empty
+(`$NAME`, `$1`, `$@`, `$*`, `$!`, `${…}`, quoted or not) is also read as
+empty, as when unset (`ca${x}rgo`). `$#`, `$?`, `$$`, `$0`, `$-`, their
+braced forms `${#}`, `${?}`, `${$}`, `${0}`, `${-}`, and a length `${#NAME}`
+are never empty and are not read that way. One case reads a plain `$NAME` or
+`${NAME}` as its value instead: when the line starts with an unbroken run of
+plain assignment statements (each only `NAME=literal` words, or `export`,
+`readonly`, `declare` or `typeset` and such words, ended by `;` or a
+newline), and the expansion is in the very next statement with no `=`,
+substitution, group, pipe or separator before it in that statement. Then the
+literal the run last assigned is used, split into words on whitespace when
+unquoted (`x=r; ca${x}go` and `x='rgo test'; ca$x -p …` are `cargo test`).
+Anything else (a subshell, `&&`, `||`, `|`, `&`, `local`, `unset`, a compound
+command, an assignment inside quotes or a substitution, or a value that is
+not a plain literal) keeps the empty reading. `$'…'` is read as its decoded
+text, as both bash and zsh decode it: hex `\xHH` and `\x{…}`, octal
+`\NNN`, `\uHHHH`, `\UHHHHHHHH` and `\cX`, so `$'\x63argo' test` is `cargo
+test`; bash's `$"…"` is read as a quoted string. Under `cmd` on Windows these
+exceptions do not apply. The
+script must run as a program, or as the script operand of an interpreter such
+as `bash`, `python`, `source` or `call`. Reading or editing a script (`cat`,
+`sed -i`, `chmod`) is not a replay. `cd`, `pushd`/`popd`, subshells,
+`sh -c`/`cmd /c` command lines, and the directory `env -C` or `sudo -D` runs a
+command in are followed when resolving the path, and the command line `env
+-S` carries, with the operands after it, is read like `sh -c`. A wrapper option's value (`time -o out.txt`, `xargs -J %`,
+`sudo -T 60`) is not taken for the program. A check
+script outside the worktree keeps its absolute path and is matched exactly.
+Where a `cd` cannot be followed (`cd "$ROOT"`, a bare `cd`), the script is
+matched by file name.
+
+The word match does not see a program that receives the command as an
+argument list (`subprocess.run(["cargo", "test"])`), or a command one step
+writes to a file or the clipboard and a later step runs (`echo … > t.sh; sh
+t.sh`). Nor does it read brace expansion (`{cargo,} test`), a variable
+whose value is not a plain literal (`x=$(echo cargo); $x test`), the output of a command
+substitution, `eval` of words re-quoted at run time, globs, another path to the
+program (`/usr/local/bin/cargo test`), or a spelling that differs only in
+case, which macOS's case-insensitive file system still runs (`Cargo test`,
+`bash Scripts/LINT.SH`). A variable set outside the strict substitution rule
+reads as empty, so the check is missed when its value spells it: a `declare`
+or `typeset` with option words (`declare -x x=r; ca${x}go test`), a statement
+between the assignment and its use (`x=r; true; ca${x}go test`), or a use
+inside a group or after `&&` (`x=r; { ca${x}go test; }`).
 
 Remaining limits: transitive discovery is static and follows only direct,
 repo-relative script invocations visible in committed script text. It does not
@@ -1458,9 +1745,14 @@ check runs and is reported. Two controls do bind:
 - **Duration.** `timeout_secs` is an optional explicit cap for that check. The
   global `--max-check-timeout-secs` / `max_check_timeout_secs` ceiling is also
   optional and unbounded by default. With neither set, only silence stops a
-  check: no output for `silence_window_secs` (default `900`, `0` disables) kills
+  check: no output for `silence_window_secs` (default `900`, `0` disables, minimum `30`) kills
   it and records a red result. The `600` in the example is therefore that
-  check's own explicit cap, not a default.
+  check's own explicit cap, not a default. Time spent waiting for the
+  protected Cargo home's lock comes out of that limit (or out of the ceiling
+  when the check sets none); preparing its tree does not. A check that times
+  out under a limit the lock wait or the session clock cut below its own
+  reports `deadline_clamped: true` and is not a verdict on the work; one that
+  times out on its full own limit is a real red.
 - **Credentials.** Every check starts with inherited credential names scrubbed.
   A check receives a value only when it declares the uppercase environment
   name and an operator approves that declaration for its exact name and

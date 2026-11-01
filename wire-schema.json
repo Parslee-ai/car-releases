@@ -4,11 +4,96 @@
     "covered": [
       "cli.car_inspect.result",
       "journal.event",
+      "notification.host.event.params",
+      "rpc.a2a.peers.add.params",
+      "rpc.a2a.peers.remove.params",
+      "rpc.assistants.invoke.params",
+      "rpc.browser.run.params",
+      "rpc.builder.build.params",
       "rpc.capabilities.list.result",
+      "rpc.credentials.issue.params",
+      "rpc.credentials.refusals.params",
+      "rpc.credentials.revoke.params",
+      "rpc.declagents.pause.params",
+      "rpc.declagents.remove.params",
+      "rpc.declagents.revert.params",
+      "rpc.declagents.route.params",
+      "rpc.declagents.run_scenarios.params",
+      "rpc.declagents.set_enabled.params",
+      "rpc.declagents.set_schedule.params",
+      "rpc.discovery.report.params",
+      "rpc.discovery.resolve.params",
+      "rpc.embed.params",
+      "rpc.events.truncate.params",
+      "rpc.feedback.compose_preview.params",
+      "rpc.feedback.status.params",
+      "rpc.host.dismiss_approval.params",
+      "rpc.host.register_agent.params",
+      "rpc.host.register_device.params",
+      "rpc.host.request_approval.params",
+      "rpc.host.resolve_approval.params",
+      "rpc.host.set_status.params",
+      "rpc.host.subscribe.result",
+      "rpc.host.update_device.params",
+      "rpc.image.generate.params",
+      "rpc.infer.cancel.params",
+      "rpc.infer.deadline.params",
       "rpc.infer.result",
+      "rpc.inference.runner.complete.params",
+      "rpc.inference.runner.event.params",
+      "rpc.inference.runner.fail.params",
+      "rpc.mail.accounts.result",
+      "rpc.mail.inbox.params",
+      "rpc.mail.inbox.result",
+      "rpc.mail.mailboxes.params",
+      "rpc.mail.mailboxes.result",
+      "rpc.mail.message_body.params",
+      "rpc.mail.message_body.result",
+      "rpc.mail.messages.params",
+      "rpc.mail.messages.result",
+      "rpc.mail.send.params",
+      "rpc.mail.send.result",
+      "rpc.meeting.get.params",
+      "rpc.meeting.list.params",
+      "rpc.meeting.stop.params",
+      "rpc.memory.delete.params",
+      "rpc.memory.update_status.params",
+      "rpc.messaging.config.set.params",
       "rpc.models.catalog_snapshot.result",
+      "rpc.models.search.params",
+      "rpc.multiplayer.abandon.params",
+      "rpc.multiplayer.get.params",
+      "rpc.multiplayer.list.params",
+      "rpc.multiplayer.merge_check.params",
+      "rpc.multiplayer.publish.params",
+      "rpc.multiplayer.start_stage.params",
+      "rpc.outcomes.record_external_grade.params",
+      "rpc.outcomes.resolve_pending.params",
+      "rpc.permissions.explain.params",
+      "rpc.permissions.request.params",
+      "rpc.permissions.status.params",
+      "rpc.policy.register.params",
+      "rpc.registry.heartbeat.params",
+      "rpc.registry.list.params",
+      "rpc.registry.reap.params",
+      "rpc.registry.register.params",
+      "rpc.registry.unregister.params",
+      "rpc.rerank.params",
+      "rpc.runs.cancel.params",
+      "rpc.runs.record_model_turn.params",
+      "rpc.runs.resume.params",
+      "rpc.runs.start.params",
+      "rpc.runs.unsubscribe.params",
+      "rpc.search.params",
+      "rpc.secret.delete.params",
+      "rpc.secret.get.params",
+      "rpc.secret.put.params",
+      "rpc.secret.status.params",
+      "rpc.server.handshake.params",
       "rpc.server.handshake.result",
       "rpc.server.schema.result",
+      "rpc.session.bind_context.params",
+      "rpc.session.init.params",
       "rpc.state.exists.result",
       "rpc.state.get.result",
       "rpc.state.keys.result",
@@ -20,12 +105,28 @@
       "rpc.tools.register.result",
       "rpc.tools.stream.subscribe.result",
       "rpc.tools.unregister.result",
-      "type.action_result"
+      "rpc.voice.enroll_speaker.params",
+      "rpc.voice.remove_enrollment.params",
+      "rpc.voice.transcribe_stream.push.params",
+      "rpc.voice.transcribe_stream.start.params",
+      "rpc.voice.transcribe_stream.stop.params",
+      "rpc.voice.tts_stream.cancel.params",
+      "rpc.voice.tts_stream.start.params",
+      "rpc.web_fetch.params",
+      "rpc.workers.spend.params",
+      "rpc.workers.start.params",
+      "rpc.workflow.build_automation.params",
+      "rpc.workflow.chain.params",
+      "rpc.workflow.resume.params",
+      "rpc.workflow.run.params",
+      "rpc.workflow.verify.params",
+      "type.action_result",
+      "type.host_approval_request"
     ],
     "follow_up": "car-86cq.1",
     "journal_event_payloads": {
       "covered": [],
-      "total": 53,
+      "total": 56,
       "uncovered": [
         "action_deduplicated",
         "action_executing",
@@ -47,6 +148,7 @@
         "gate_rejected",
         "goal_evaluated",
         "inference_metered",
+        "model_call_refused",
         "model_fallback",
         "permission_decision",
         "policy_violation",
@@ -79,18 +181,613 @@
         "voice_sidecar_failed",
         "voice_sidecar_resolved",
         "voice_sidecar_timed_out",
-        "voice_turn_cancelled"
+        "voice_turn_cancelled",
+        "worker_started",
+        "worker_starts_omitted"
       ]
     },
     "limitations": [
       "journal.event covers the exact envelope and closed EventKind enum; coverage.journal_event_payloads.uncovered names every kind whose Event.data remains an open JSON object",
       "coverage.rpc_results.uncovered is derived from the daemon dispatch inventory and names every result that still emits inline or otherwise lacks a schema from its real Rust type",
-      "the release version is reported at serve time in the server.schema result and is deliberately absent from these digested bytes, so the digest tracks wire shape alone"
+      "the release version is reported at serve time in the server.schema result and is deliberately absent from these digested bytes, so the digest tracks wire shape alone",
+      "rpc.<method>.params schemas describe what the daemon accepts: required follows serde's input rules, and an object rejects unknown fields only where the Rust type does (deny_unknown_fields); field aliases the daemon also accepts are not listed. mail.inbox, mail.mailboxes, meeting.list, registry.list, registry.reap, events.truncate and models.search fall back to their defaults when their params do not parse (absent, null, or mistyped), so for those methods the schema is stricter than the daemon",
+      "coverage.rpc_params.not_read names methods whose handler is passed no params; coverage.rpc_params.uncovered.typed_without_schema names methods parsed into a Rust type that does not derive a schema yet; coverage.rpc_params.uncovered.unresolved names methods whose params are read field by field or through a path the generator does not resolve",
+      "notification.host.event.params covers the host.event envelope; its payload is an open JSON value, described by type.host_approval_request for the kinds coverage.notifications.host_event_payloads names and not described for any other kind (approval.resolve_requested and approval.self_resolved included)",
+      "server-to-client notifications other than host.event are not inventoried yet, so coverage.complete stays false until they are"
     ],
+    "notifications": {
+      "covered": [
+        "notification.host.event.params"
+      ],
+      "host_event_payloads": {
+        "approval.requested": "type.host_approval_request",
+        "approval.resolved": "type.host_approval_request"
+      },
+      "inventoried": false
+    },
+    "rpc_params": {
+      "covered": [
+        "a2a.peers.add",
+        "a2a.peers.remove",
+        "assistants.invoke",
+        "browser.run",
+        "builder.build",
+        "credentials.issue",
+        "credentials.refusals",
+        "credentials.revoke",
+        "declagents.pause",
+        "declagents.remove",
+        "declagents.revert",
+        "declagents.route",
+        "declagents.run_scenarios",
+        "declagents.set_enabled",
+        "declagents.set_schedule",
+        "discovery.report",
+        "discovery.resolve",
+        "embed",
+        "events.truncate",
+        "feedback.compose_preview",
+        "feedback.status",
+        "host.dismiss_approval",
+        "host.register_agent",
+        "host.register_device",
+        "host.request_approval",
+        "host.resolve_approval",
+        "host.set_status",
+        "host.update_device",
+        "image.generate",
+        "infer.cancel",
+        "infer.deadline",
+        "inference.runner.complete",
+        "inference.runner.event",
+        "inference.runner.fail",
+        "mail.inbox",
+        "mail.mailboxes",
+        "mail.message_body",
+        "mail.messages",
+        "mail.send",
+        "meeting.get",
+        "meeting.list",
+        "meeting.stop",
+        "memory.delete",
+        "memory.update_status",
+        "messaging.config.set",
+        "models.search",
+        "multiplayer.abandon",
+        "multiplayer.get",
+        "multiplayer.list",
+        "multiplayer.merge_check",
+        "multiplayer.publish",
+        "multiplayer.start_stage",
+        "outcomes.record_external_grade",
+        "outcomes.resolve_pending",
+        "permissions.explain",
+        "permissions.request",
+        "permissions.status",
+        "policy.register",
+        "registry.heartbeat",
+        "registry.list",
+        "registry.reap",
+        "registry.register",
+        "registry.unregister",
+        "rerank",
+        "runs.cancel",
+        "runs.record_model_turn",
+        "runs.resume",
+        "runs.start",
+        "runs.unsubscribe",
+        "search",
+        "secret.delete",
+        "secret.get",
+        "secret.put",
+        "secret.status",
+        "server.handshake",
+        "session.bind_context",
+        "session.init",
+        "voice.enroll_speaker",
+        "voice.remove_enrollment",
+        "voice.transcribe_stream.push",
+        "voice.transcribe_stream.start",
+        "voice.transcribe_stream.stop",
+        "voice.tts_stream.cancel",
+        "voice.tts_stream.start",
+        "web_fetch",
+        "workers.spend",
+        "workers.start",
+        "workflow.build_automation",
+        "workflow.chain",
+        "workflow.resume",
+        "workflow.run",
+        "workflow.verify"
+      ],
+      "not_read": [
+        "a2a.peers.list",
+        "a2a.status",
+        "a2a.stop",
+        "a2ui.capabilities",
+        "a2ui.reap",
+        "a2ui.surfaces",
+        "accounts.list",
+        "admission.status",
+        "agents.health",
+        "agents.list",
+        "agents.message.pending",
+        "agents.register_basics",
+        "assistant.identity.get",
+        "auth.authority_hint",
+        "auth.default_context.clear",
+        "auth.default_context.get",
+        "auth.logout",
+        "auth.organizations",
+        "auth.snapshot",
+        "browser.close",
+        "calendar.list",
+        "capabilities.list",
+        "concierge.defaults",
+        "concierge.portfolio",
+        "concierge.refresh_catalog",
+        "connectors.list",
+        "contacts.containers",
+        "credentials.list",
+        "declagents.list",
+        "declagents.routing_stats",
+        "diagnostics.secret_store_activity",
+        "events.chain.enable",
+        "events.chain.verify",
+        "events.clear",
+        "events.count",
+        "events.stats",
+        "files.locations",
+        "fleet.inventory",
+        "fleet.worker.get",
+        "heal.status",
+        "health.status",
+        "host.agents",
+        "host.approvals",
+        "host.devices",
+        "host.subscribe",
+        "inference.register_runner",
+        "keychain.status",
+        "mail.accounts",
+        "memory.consolidate",
+        "memory.fact_count",
+        "memory.utility_get",
+        "messages.services",
+        "metrics.summary",
+        "mobile.runtime",
+        "models.catalog_snapshot",
+        "models.detect_upgrades",
+        "models.list",
+        "models.stats",
+        "models.update_prefs_get",
+        "models.upgrades",
+        "notes.accounts",
+        "openai_codex.auth_start",
+        "openai_codex.sign_out",
+        "openrouter.disconnect",
+        "openrouter.status",
+        "outcomes.scoreboard",
+        "parslee.auth",
+        "parslee.capabilities",
+        "permission.get_tier",
+        "permissions.domains",
+        "photos.albums",
+        "reminders.lists",
+        "secret.available",
+        "secret.list",
+        "selfheal.run",
+        "selfheal.status",
+        "server.schema",
+        "session.clear_halt",
+        "session.policy.open",
+        "speech.prepare",
+        "spend.costs",
+        "supervision.pending",
+        "supervision.unsubscribe",
+        "sync.checkpoint",
+        "sync.pump",
+        "sync.rebase",
+        "sync.status",
+        "tools.list",
+        "tools.stream.subscribe",
+        "ui.sign_in",
+        "ui.sign_out",
+        "voice.cancel_turn",
+        "voice.list_enrollments",
+        "voice.prepare_diarizer",
+        "voice.prepare_parakeet",
+        "voice.prewarm_turn",
+        "voice.providers.list",
+        "voice.sessions.list",
+        "voice.tts_stream.list",
+        "workflow.list_paused"
+      ],
+      "total": 559,
+      "uncovered": {
+        "typed_without_schema": {
+          "a2a.send": "A2aSendParams",
+          "a2ui.render_report": "RenderReport",
+          "classify": "ClassifyRequest",
+          "declagents.invoke": "DeclAgentInvokeParams",
+          "declagents.route_split": "DeclAgentSplitParams",
+          "discovery.route_compose": "DiscoveryRouteComposeParams",
+          "feedback.submit": "SubmitParams",
+          "memory.evaluate": "ProactiveEvaluationRequest",
+          "memory.intervene": "ProactiveMemoryRequest",
+          "memory.maintain": "ProactiveMaintenanceRequest",
+          "memory.save_knowledge": "ProactiveMemorySave",
+          "memory.save_procedural": "ProactiveMemorySave",
+          "multiplayer.submit_stage": "SubmitParams",
+          "runs.complete": "RunCompleteRequest",
+          "selfheal.detections": "DetectionQuery",
+          "verify": "VerifyRequest",
+          "verify.monte_carlo": "MonteCarloParams",
+          "video.generate": "GenerateVideoRequest"
+        },
+        "unresolved": [
+          "CancelTask",
+          "CreateTaskPushNotificationConfig",
+          "DeleteTaskPushNotificationConfig",
+          "GetExtendedAgentCard",
+          "GetTask",
+          "GetTaskPushNotificationConfig",
+          "ListTaskPushNotificationConfigs",
+          "ListTasks",
+          "SendMessage",
+          "SendStreamingMessage",
+          "SubscribeToTask",
+          "a2a.start",
+          "a2ui.action",
+          "a2ui.apply",
+          "a2ui.get",
+          "a2ui.ingest",
+          "a2ui/replay",
+          "a2ui/subscribe",
+          "a2ui/unsubscribe",
+          "accounts.open",
+          "agent/getAuthenticatedExtendedCard",
+          "agent_permissions.evaluate",
+          "agent_permissions.evaluate_tool",
+          "agent_permissions.get",
+          "agent_permissions.list_grants",
+          "agent_permissions.reset",
+          "agent_permissions.reset_tool",
+          "agent_permissions.revoke_grant",
+          "agent_permissions.set",
+          "agent_permissions.set_default",
+          "agent_permissions.set_observer",
+          "agent_permissions.set_tool",
+          "agents.chat",
+          "agents.chat.approve",
+          "agents.chat.cancel",
+          "agents.detect_external",
+          "agents.health_external",
+          "agents.install",
+          "agents.invoke_external",
+          "agents.list_external",
+          "agents.message",
+          "agents.message.approve",
+          "agents.peers",
+          "agents.remove",
+          "agents.restart",
+          "agents.start",
+          "agents.stop",
+          "agents.tail_log",
+          "agents.upsert",
+          "agents.wait",
+          "assistant.identity.set",
+          "auth.accounts",
+          "auth.complete",
+          "auth.completion_status",
+          "auth.default_context.set",
+          "auth.remove_account",
+          "auth.resolve_context",
+          "auth.start",
+          "auth.status",
+          "auth.switch_account",
+          "auth.switch_org",
+          "automation.run_applescript",
+          "automation.run_powershell",
+          "automation.shortcuts.list",
+          "automation.shortcuts.run",
+          "bookmarks.list",
+          "browser.producer.register",
+          "browser.view.back",
+          "browser.view.click",
+          "browser.view.forward",
+          "browser.view.hand_back",
+          "browser.view.keypress",
+          "browser.view.navigate",
+          "browser.view.paste",
+          "browser.view.reload",
+          "browser.view.scroll",
+          "browser.view.subscribe",
+          "browser.view.tab_close",
+          "browser.view.tab_open",
+          "browser.view.tab_switch",
+          "browser.view.take_control",
+          "browser.view.type",
+          "browser.view.unsubscribe",
+          "calendar.create_event",
+          "calendar.delete_event",
+          "calendar.events",
+          "calendar.update_event",
+          "cascade.run",
+          "coder.approve_merge",
+          "coder.cancel",
+          "coder.confirm_contract",
+          "coder.discuss.archive",
+          "coder.discuss.close",
+          "coder.discuss.list",
+          "coder.discuss.promote",
+          "coder.discuss.send",
+          "coder.discuss.start",
+          "coder.discuss.subscribe",
+          "coder.discuss.unsubscribe",
+          "coder.get",
+          "coder.list",
+          "coder.projects.create",
+          "coder.projects.get",
+          "coder.projects.list",
+          "coder.refresh_review",
+          "coder.respond",
+          "coder.revise_contract",
+          "coder.start",
+          "coder.subscribe",
+          "coder.unsubscribe",
+          "coder.unwatch",
+          "coder.watch",
+          "concierge.actions",
+          "concierge.apply",
+          "concierge.ask",
+          "concierge.clear_default",
+          "concierge.dismiss",
+          "concierge.maintain",
+          "concierge.rollback",
+          "concierge.set_default",
+          "concierge.status",
+          "connectors.add",
+          "connectors.add_stdio",
+          "connectors.authenticate",
+          "connectors.complete_authentication",
+          "connectors.disable_tools",
+          "connectors.enable_tools",
+          "connectors.refresh",
+          "connectors.remove",
+          "connectors.tools",
+          "contacts.find",
+          "declagents.get",
+          "declagents.runs",
+          "detokenize",
+          "events.cost_by_agent",
+          "events.query",
+          "events.retention",
+          "evolution.plan",
+          "evolution.run",
+          "feedback.list",
+          "fleet.composite",
+          "fleet.worker.set",
+          "foreman.plan",
+          "foreman.run",
+          "goal.clear",
+          "goal.set",
+          "goal.status",
+          "goal.suggest",
+          "heal.run",
+          "health.activity",
+          "health.sleep",
+          "health.workouts",
+          "host.events",
+          "host.notify",
+          "host.unregister_agent",
+          "infer",
+          "infer_stream",
+          "lattice.claim",
+          "lattice.claims",
+          "lattice.connect.accept",
+          "lattice.connect.confirm",
+          "lattice.connect.inspect",
+          "lattice.connect.invite",
+          "lattice.connect.label",
+          "lattice.connect.share",
+          "lattice.connections",
+          "lattice.directory",
+          "lattice.disconnect",
+          "lattice.find",
+          "lattice.human.status",
+          "lattice.inbox",
+          "lattice.join",
+          "lattice.knock",
+          "lattice.knock.accept",
+          "lattice.knock.block",
+          "lattice.knock.decline",
+          "lattice.knock.settings",
+          "lattice.knock.withdraw",
+          "lattice.knocks",
+          "lattice.leave",
+          "lattice.nodes",
+          "lattice.org.attest",
+          "lattice.org.policy",
+          "lattice.org.revoke",
+          "lattice.org.rule.add",
+          "lattice.org.rule.remove",
+          "lattice.org.rules",
+          "lattice.org.status",
+          "lattice.relay.probe",
+          "lattice.release",
+          "lattice.requests",
+          "lattice.respond",
+          "lattice.wait",
+          "lease.acquire",
+          "lease.release",
+          "lease.renew",
+          "lease.status",
+          "meeting.start",
+          "memory.add_fact",
+          "memory.admission_table",
+          "memory.build_context",
+          "memory.build_context_fast",
+          "memory.load",
+          "memory.persist",
+          "memory.query",
+          "memory.set_admission_table",
+          "memory.utility_set",
+          "message/send",
+          "message/stream",
+          "messages.chats",
+          "messages.read",
+          "messages.send",
+          "messaging.config.get",
+          "messaging.pairing.start",
+          "messaging.pairing.status",
+          "messaging.status",
+          "messaging.test_send",
+          "metrics.alerts",
+          "models.adopt",
+          "models.check_concierge",
+          "models.check_upgrade_nudge",
+          "models.dismiss_suggestion",
+          "models.dismiss_upgrade",
+          "models.install",
+          "models.list_unified",
+          "models.preflight",
+          "models.pull",
+          "models.recommend",
+          "models.register",
+          "models.remove",
+          "models.resource_policy.get",
+          "models.resource_policy.set",
+          "models.retire",
+          "models.route",
+          "models.route_provenance",
+          "models.setup_plan",
+          "models.storage_roots",
+          "models.unregister",
+          "models.update_prefs_set",
+          "multi.map_reduce",
+          "multi.pipeline",
+          "multi.subtask",
+          "multi.supervisor",
+          "multi.swarm",
+          "multi.tournament",
+          "multi.vote",
+          "nlp.extract_entities",
+          "nlp.identify_language",
+          "nlp.tokenize",
+          "notes.find",
+          "notes.read",
+          "notifications.local",
+          "openai_codex.auth_cancel",
+          "openai_codex.status",
+          "openrouter.auth_cancel",
+          "openrouter.auth_start",
+          "parslee.m365.generate_document",
+          "peers.cert_conflict_clear",
+          "peers.cert_status",
+          "permission.approve",
+          "permission.classify",
+          "permission.evaluate",
+          "permission.pending",
+          "permission.reject",
+          "permission.set_tier",
+          "policy.list",
+          "policy.unregister",
+          "proposal.submit",
+          "reminders.items",
+          "replan.set_config",
+          "runs.get_trace",
+          "runs.list",
+          "runs.record_turns",
+          "runs.subscribe",
+          "schedule.suggest",
+          "scheduler.create",
+          "scheduler.os_install",
+          "scheduler.os_list",
+          "scheduler.os_reconcile",
+          "scheduler.os_render",
+          "scheduler.os_uninstall",
+          "scheduler.run",
+          "scheduler.run_loop",
+          "selfheal.dismiss",
+          "selfheal.fix",
+          "session.auth",
+          "session.bindSandbox",
+          "session.bindSubstrate",
+          "session.consumer.issue",
+          "session.consumer.revoke",
+          "session.policy.close",
+          "skill.adopt_pack",
+          "skill.enforce_deployment",
+          "skill.export",
+          "skill.find",
+          "skill.gate_deployment",
+          "skill.import",
+          "skill.ingest",
+          "skill.ingest_governed",
+          "skill.meta",
+          "skill.repair",
+          "skill.report",
+          "skills.distill",
+          "skills.domains_needing_evolution",
+          "skills.evolve",
+          "skills.gate",
+          "skills.ingest_distilled",
+          "skills.ingest_provisional",
+          "skills.list",
+          "spend.status",
+          "state.exists",
+          "state.get",
+          "state.keys",
+          "state.set",
+          "state.snapshot",
+          "supervision.decide",
+          "supervision.subscribe",
+          "sync.append",
+          "sync.assistant_action.get",
+          "sync.assistant_action.put",
+          "sync.assistant_checkpoint.get",
+          "sync.assistant_checkpoint.put",
+          "sync.fence_check",
+          "sync.knowledge",
+          "sync.record_intent",
+          "sync.record_turn",
+          "sync.resume",
+          "sync.transcript",
+          "synthesize",
+          "tasks.list",
+          "tasks.schedule",
+          "tasks.unschedule",
+          "tasks/cancel",
+          "tasks/get",
+          "tasks/list",
+          "tasks/pushNotificationConfig/delete",
+          "tasks/pushNotificationConfig/get",
+          "tasks/pushNotificationConfig/list",
+          "tasks/pushNotificationConfig/set",
+          "tasks/resubscribe",
+          "tokenize",
+          "tools.cancel",
+          "tools.poll",
+          "tools.register",
+          "tools.unregister",
+          "transcribe",
+          "vision.ocr",
+          "voice.dispatch_turn",
+          "workers.report"
+        ]
+      }
+    },
     "rpc_results": {
       "covered": [
         "capabilities.list",
+        "host.subscribe",
         "infer",
+        "mail.accounts",
+        "mail.inbox",
+        "mail.mailboxes",
+        "mail.message_body",
+        "mail.messages",
+        "mail.send",
         "models.catalog_snapshot",
         "server.handshake",
         "server.schema",
@@ -106,7 +803,7 @@
         "tools.stream.subscribe",
         "tools.unregister"
       ],
-      "total": 537,
+      "total": 559,
       "uncovered": [
         "CancelTask",
         "CreateTaskPushNotificationConfig",
@@ -150,6 +847,7 @@
         "agent_permissions.revoke_grant",
         "agent_permissions.set",
         "agent_permissions.set_default",
+        "agent_permissions.set_observer",
         "agent_permissions.set_tool",
         "agents.chat",
         "agents.chat.approve",
@@ -165,6 +863,7 @@
         "agents.message.approve",
         "agents.message.pending",
         "agents.peers",
+        "agents.register_basics",
         "agents.remove",
         "agents.restart",
         "agents.start",
@@ -226,6 +925,7 @@
         "coder.approve_merge",
         "coder.cancel",
         "coder.confirm_contract",
+        "coder.discuss.archive",
         "coder.discuss.close",
         "coder.discuss.list",
         "coder.discuss.promote",
@@ -270,16 +970,23 @@
         "connectors.tools",
         "contacts.containers",
         "contacts.find",
+        "credentials.issue",
+        "credentials.list",
+        "credentials.refusals",
+        "credentials.revoke",
         "declagents.get",
         "declagents.invoke",
         "declagents.list",
+        "declagents.pause",
         "declagents.remove",
         "declagents.revert",
         "declagents.route",
         "declagents.route_split",
         "declagents.routing_stats",
         "declagents.run_scenarios",
+        "declagents.runs",
         "declagents.set_enabled",
+        "declagents.set_schedule",
         "detokenize",
         "diagnostics.secret_store_activity",
         "discovery.report",
@@ -321,6 +1028,7 @@
         "host.agents",
         "host.approvals",
         "host.devices",
+        "host.dismiss_approval",
         "host.events",
         "host.notify",
         "host.register_agent",
@@ -328,7 +1036,6 @@
         "host.request_approval",
         "host.resolve_approval",
         "host.set_status",
-        "host.subscribe",
         "host.unregister_agent",
         "host.update_device",
         "image.generate",
@@ -352,6 +1059,8 @@
         "lattice.directory",
         "lattice.disconnect",
         "lattice.find",
+        "lattice.human.status",
+        "lattice.inbox",
         "lattice.join",
         "lattice.knock",
         "lattice.knock.accept",
@@ -378,12 +1087,6 @@
         "lease.release",
         "lease.renew",
         "lease.status",
-        "mail.accounts",
-        "mail.inbox",
-        "mail.mailboxes",
-        "mail.message_body",
-        "mail.messages",
-        "mail.send",
         "meeting.get",
         "meeting.list",
         "meeting.start",
@@ -468,6 +1171,7 @@
         "nlp.tokenize",
         "notes.accounts",
         "notes.find",
+        "notes.read",
         "notifications.local",
         "openai_codex.auth_cancel",
         "openai_codex.auth_start",
@@ -477,6 +1181,7 @@
         "openrouter.auth_start",
         "openrouter.disconnect",
         "openrouter.status",
+        "outcomes.record_external_grade",
         "outcomes.resolve_pending",
         "outcomes.scoreboard",
         "parslee.auth",
@@ -569,6 +1274,8 @@
         "skills.ingest_provisional",
         "skills.list",
         "speech.prepare",
+        "spend.costs",
+        "spend.status",
         "supervision.decide",
         "supervision.pending",
         "supervision.subscribe",
@@ -602,6 +1309,8 @@
         "tasks/resubscribe",
         "tokenize",
         "transcribe",
+        "ui.sign_in",
+        "ui.sign_out",
         "verify",
         "verify.monte_carlo",
         "video.generate",
@@ -623,6 +1332,9 @@
         "voice.tts_stream.list",
         "voice.tts_stream.start",
         "web_fetch",
+        "workers.report",
+        "workers.spend",
+        "workers.start",
         "workflow.build_automation",
         "workflow.chain",
         "workflow.list_paused",
@@ -650,6 +1362,81 @@
         }
       ],
       "definitions": {
+        "AgentHandshake": {
+          "additionalProperties": false,
+          "description": "One agent's most recent `server.handshake`, as the daemon saw it.",
+          "properties": {
+            "client_protocol_max": {
+              "description": "Newest version in the client's range; absent with `client_protocol_min`.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "client_protocol_min": {
+              "description": "The client's wire protocol range. Absent when its params were too malformed to read one.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "client_version": {
+              "description": "The client package version the agent reported (`car-runtime` npm/PyPI or a Rust client's crate version). Absent when it reported none.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "negotiated_protocol": {
+              "description": "The version the connection settled on; absent when it was refused.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "observed_at": {
+              "description": "UNIX seconds when the daemon first answered a handshake with this outcome. A repeat of the same outcome leaves the record (and this time) untouched, so a looping client costs a read, not a rewrite.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "refusal": {
+              "description": "The daemon's refusal message, when the handshake was refused.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "server_protocol_max": {
+              "description": "Newest wire protocol version the daemon speaks.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "server_protocol_min": {
+              "description": "Oldest wire protocol version the daemon speaks.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "server_version": {
+              "description": "The daemon's own package version.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "observed_at",
+            "server_protocol_max",
+            "server_protocol_min",
+            "server_version"
+          ],
+          "type": "object"
+        },
         "AgentInference": {
           "additionalProperties": false,
           "description": "A declarative agent's persisted inference selection.\n\nThe whole block is optional so legacy agents retain adaptive routing. When present, `model` is a strict model pin; `provider` disambiguates a bare model name, and `reasoning_effort` controls the provider's reasoning budget.",
@@ -711,6 +1498,41 @@
             }
           ]
         },
+        "AgentVerification": {
+          "additionalProperties": false,
+          "description": "How the build that registered an agent was checked. Absent on a spec means the build's final check ran in full (or the spec predates this field).",
+          "properties": {
+            "reason": {
+              "description": "Plain words for the person, e.g. why no independent check ran.",
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/definitions/AgentVerificationStatus"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "AgentVerificationStatus": {
+          "description": "The one recorded verification status. Any other value a later release writes reads as `Unknown`, so the registry keeps loading.",
+          "oneOf": [
+            {
+              "enum": [
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Saved without an independent check: its own scenarios passed, and no second AI model was available to review the build.",
+              "enum": [
+                "not_checked"
+              ],
+              "type": "string"
+            }
+          ]
+        },
         "DeclarativeAgentKind": {
           "enum": [
             "declarative"
@@ -762,6 +1584,10 @@
             "name": {
               "type": "string"
             },
+            "registration_id": {
+              "description": "Which registration of `id` this is (`DeclarativeAgentSpec::registration_id`): a host that remembered an agent by id tells a rebuilt one (same value) from one registered after a remove (a new value). Absent for a spec saved before the field existed, until it is next replaced.",
+              "type": "string"
+            },
             "scenarios": {
               "format": "uint",
               "minimum": 0.0,
@@ -772,6 +1598,17 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "verification": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/AgentVerification"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "How the build that registered this version was checked; present only when it was saved without an independent check. A host can key what it shows about the check on this, so a rebuild that changes the check status is seen."
             }
           },
           "required": [
@@ -806,6 +1643,80 @@
           ],
           "type": "object"
         },
+        "ErrorKind": {
+          "description": "What kind of error a worker last had (`last_error.kind`). CAR's own vocabulary: nothing in a [`LastError`] is text the worker wrote (I3).",
+          "oneOf": [
+            {
+              "description": "Its process exited with a non-zero code.",
+              "enum": [
+                "exit"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Its process was killed by a signal.",
+              "enum": [
+                "signal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Its time limit passed.",
+              "enum": [
+                "timed_out"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "It crashed past its restart budget; the code or signal is the last crash's.",
+              "enum": [
+                "kept_crashing"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Its program could not be started.",
+              "enum": [
+                "spawn_failed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The place it runs in could not be prepared: its wall could not be applied, or its bundle environment could not be built.",
+              "enum": [
+                "environment_failed"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "LastError": {
+          "additionalProperties": false,
+          "description": "A worker's last error: a kind, plus the exit code or signal number when there is one. Numbers and CAR's enum only (I3).",
+          "properties": {
+            "exit_code": {
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "kind": {
+              "$ref": "#/definitions/ErrorKind"
+            },
+            "signal": {
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
         "ManagedAgentListRow": {
           "additionalProperties": false,
           "description": "One `agents.list` row: the redacted agent plus the decorations only the daemon holding the connection can supply.",
@@ -815,6 +1726,9 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "at_budget": {
+              "description": "The cap that stopped the agent and when it resumes (`{ cap, holding, resets_at, zone }`), while `budget` is `at_budget`."
             },
             "attached": {
               "description": "Whether the supervised process has called `session.auth { agent_id }` and bound a WebSocket connection to this daemon.",
@@ -835,6 +1749,10 @@
                 "null"
               ]
             },
+            "budget": {
+              "description": "`uncapped` (no cap declared), `under` (capped, with room) or `at_budget` (refused at a cap until its period resets). A status the dashboard shows beside the process status, never a process status: the process really is running.",
+              "type": "string"
+            },
             "capabilities": {
               "items": {
                 "type": "string"
@@ -850,14 +1768,43 @@
                 "null"
               ]
             },
+            "delegate_for": {
+              "description": "The people (`human:<name>`) the operator made this agent a Lattice delegate for (car-releases#109); absent when none.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "env": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
             },
+            "handshake": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/AgentHandshake"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The agent's most recent `server.handshake` as this daemon saw it: the wire protocol it settled on, or the refusal, plus both package versions. Absent until the agent has authenticated and handshaken."
+            },
             "id": {
               "type": "string"
+            },
+            "last_error": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LastError"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The current run's last error, as CAR's enum and numbers only: an exit code, a signal, a program that could not be started, or a wall that could not be applied. Absent until one happens, and after a fresh start."
             },
             "last_exit_code": {
               "format": "int32",
@@ -889,6 +1836,13 @@
             "name": {
               "type": "string"
             },
+            "network_fence_warning": {
+              "description": "Present on a worker this CAR starts without the network fence (CAR-544): \"Network fence: not built yet. This worker can reach any host.\" Every surface that shows the row shows it, in red.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "pid": {
               "format": "uint32",
               "minimum": 0.0,
@@ -905,11 +1859,30 @@
               "minimum": 0.0,
               "type": "integer"
             },
+            "secrets": {
+              "description": "Names, never values, of the secrets the agent declared.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "secrets_notice": {
+              "description": "Text when the agent declares no secrets (provider keys are no longer passed to it automatically, and this shows the manifest line to add), `null` when it declares some.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "session_id": {
               "type": [
                 "string",
                 "null"
               ]
+            },
+            "spend_caps": {
+              "description": "The spend caps the agent's bundle declared, as declared (`[{ usd, per }]`; `docs/proposals/spend-caps.md`). Empty means no cap. Only model calls made through CAR count against them.",
+              "items": true,
+              "type": "array"
             },
             "started_at": {
               "format": "int64",
@@ -920,6 +1893,13 @@
             },
             "status": {
               "$ref": "#/definitions/AgentStatus"
+            },
+            "status_reason": {
+              "description": "Why the agent is errored or backing off when a declared secret is the cause: it names the secret or the store, never a value.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "stderr_log_path": {
               "type": "string"
@@ -946,7 +1926,10 @@
             "max_restarts",
             "backoff_secs",
             "auto_start",
+            "secrets_notice",
             "capabilities",
+            "spend_caps",
+            "budget",
             "status",
             "pid",
             "last_exit_code",
@@ -1047,6 +2030,7 @@
                 "branch_decision",
                 "alternative_rejected",
                 "inference_metered",
+                "model_call_refused",
                 "transaction_conflict",
                 "admission_gate_decision",
                 "tool_receipt_hallucination",
@@ -1108,6 +2092,20 @@
               "description": "The active `runs.start` bracket reached one terminal state. This is distinct from `ProposalCompleted`: one run can contain many proposals.",
               "enum": [
                 "run_completed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A worker process started, on any start path (docs/proposals/orchestrator-workers.md). `data` carries `handle`, `at`, `seq` and `network_fence`: `none` while CAR starts workers without the network fence (CAR-544), with `warning` saying so, else `available`. `record_error` is present when the start could not be written to the worker's start records.",
+              "enum": [
+                "worker_started"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A session's first read of a worker's start records replayed only the newest ones. `data` carries `handle`, `omitted` (how many older starts were not replayed) and `path` (the file that still holds them).",
+              "enum": [
+                "worker_starts_omitted"
               ],
               "type": "string"
             }
@@ -1183,6 +2181,174 @@
       "title": "Event",
       "type": "object"
     },
+    "notification.host.event.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Host event emitted to subscribed OS host clients.",
+      "properties": {
+        "agent_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "payload": {},
+        "sequence": {
+          "description": "Monotonic daemon-local ordering token. A reconnect snapshot carries the sequence it observed, so a client can reconcile it PER CONVERSATION KEY: the snapshot's verdict stands for every key that no live event with a strictly larger sequence has already spoken for on that socket.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "timestamp",
+        "kind",
+        "message",
+        "payload"
+      ],
+      "title": "HostEvent",
+      "type": "object"
+    },
+    "rpc.a2a.peers.add.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "allow_untrusted": {
+          "description": "Opt-in to register a non-loopback peer (see the gate below). Documented and refused-with as `allowUntrusted`; the snake-case spelling earlier callers may send keeps working.",
+          "type": "boolean"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "A2aPeerAddParams",
+      "type": "object"
+    },
+    "rpc.a2a.peers.remove.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug"
+      ],
+      "title": "A2aPeerRemoveParams",
+      "type": "object"
+    },
+    "rpc.assistants.invoke.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "agent_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capability": {
+          "type": "string"
+        },
+        "payload_json": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability",
+        "payload_json"
+      ],
+      "title": "AssistantInvokeParams",
+      "type": "object"
+    },
+    "rpc.browser.run.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`browser.run` params.",
+      "properties": {
+        "extra_args": {
+          "description": "Extra Chromium command-line flags appended verbatim at launch (#112). Honoured only on the launch call.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "headed": {
+          "description": "When true, launches a visible Chromium window for interactive flows (first-time auth, 2FA, supervised runs). Only honored on the call that first launches the browser session — subsequent calls reuse the existing browser regardless.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "height": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "script": {
+          "description": "Inline JSON string (CLI-compatible), OR the structured object."
+        },
+        "width": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "script"
+      ],
+      "title": "BrowserRunParams",
+      "type": "object"
+    },
+    "rpc.builder.build.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "existing": {},
+        "goal": {
+          "type": "string"
+        },
+        "max_attempts": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "goal"
+      ],
+      "title": "BuilderBuildParams",
+      "type": "object"
+    },
     "rpc.capabilities.list.result": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
@@ -1231,6 +2397,13 @@
             "$ref": "#/definitions/CapabilityMethodRow"
           },
           "type": "array"
+        },
+        "single_principal_mode": {
+          "description": "`car_proto::SINGLE_PRINCIPAL_MODE_NOTICE` when the daemon has no host token installed, so nobody holds the host role and host-management methods refuse every session (car#3404), followed by `; cause: ` and why. Omitted otherwise, which keeps a host-token daemon's result byte-identical to before and adds nothing an older client must parse.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1239,6 +2412,1256 @@
         "methods"
       ],
       "title": "CapabilitiesListResult",
+      "type": "object"
+    },
+    "rpc.credentials.issue.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "What `credentials.issue` was asked for.",
+      "properties": {
+        "agent_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "label_selector": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "max_chats": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "description": "The chat kind's fields (PR 6). Refused on an orchestrator credential."
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "IssueParams",
+      "type": "object"
+    },
+    "rpc.credentials.refusals.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "credential_id": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "credential_id"
+      ],
+      "title": "CredentialIdParams",
+      "type": "object"
+    },
+    "rpc.credentials.revoke.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "credential_id": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "credential_id"
+      ],
+      "title": "CredentialIdParams",
+      "type": "object"
+    },
+    "rpc.declagents.pause.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "paused"
+      ],
+      "title": "PauseParams",
+      "type": "object"
+    },
+    "rpc.declagents.remove.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "DeclAgentIdParams",
+      "type": "object"
+    },
+    "rpc.declagents.revert.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "DeclAgentIdParams",
+      "type": "object"
+    },
+    "rpc.declagents.route.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "from": {
+          "description": "The agent forwarding this need onward (AgentNet's Forward op). Excluded from candidates; on invoke, the directed edge `from → chosen` is reinforced or weakened by the outcome. Absent at network entry.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "invoke": {
+          "description": "If true, also run the top-ranked agent on `need` and include its result.",
+          "type": "boolean"
+        },
+        "need": {
+          "description": "Natural-language description of the task to route.",
+          "type": "string"
+        },
+        "visited": {
+          "description": "Agents already on this routing path — the DAG/cycle guard. Excluded from candidates; the caller accumulates this as it walks a Forward chain.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "need"
+      ],
+      "title": "DeclAgentRouteParams",
+      "type": "object"
+    },
+    "rpc.declagents.run_scenarios.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "DeclAgentIdParams",
+      "type": "object"
+    },
+    "rpc.declagents.set_enabled.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "id"
+      ],
+      "title": "DeclAgentEnableParams",
+      "type": "object"
+    },
+    "rpc.declagents.set_schedule.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "phrase": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "phrase"
+      ],
+      "title": "SetScheduleParams",
+      "type": "object"
+    },
+    "rpc.discovery.report.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "identifier": {
+          "description": "The `agentdns://…` identifier the outcome is recorded against.",
+          "type": "string"
+        },
+        "outcome": {
+          "description": "`\"success\"` or `\"failure\"`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "outcome"
+      ],
+      "title": "DiscoveryReportParams",
+      "type": "object"
+    },
+    "rpc.discovery.resolve.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "limit": {
+          "description": "Max services to return (clamped to [1, 50]). Default 5.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "need": {
+          "description": "Natural-language description of the capability being sought.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "need"
+      ],
+      "title": "DiscoveryResolveParams",
+      "type": "object"
+    },
+    "rpc.embed.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "An embedding request.",
+      "properties": {
+        "instruction": {
+          "description": "Optional instruction for query-side embedding (Qwen3-Embedding format). Default: \"Retrieve relevant memory facts\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "is_query": {
+          "description": "Whether these texts are queries (true) or documents (false). Queries get the Instruct:/Query: prefix; documents are embedded raw.",
+          "type": "boolean"
+        },
+        "model": {
+          "description": "Reserved for API compatibility. The embedding model is always used.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "texts": {
+          "description": "Texts to embed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "texts"
+      ],
+      "title": "EmbedRequest",
+      "type": "object"
+    },
+    "rpc.events.truncate.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "maxEvents": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxSpans": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "EventsTruncateParams",
+      "type": "object"
+    },
+    "rpc.feedback.compose_preview.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Params shared by `feedback.compose_preview` and `feedback.submit`. Unknown fields are ignored (tolerant mappers, PAR-7348 lesson) — and there is deliberately no path-shaped field to be tolerant ABOUT: a client-sent `path`/`log_tails` extra is inert. The preview-handle cache honors a `preview_id` only when the submit's [`ComposeKey`] (normalized description, toggle flags, screenshot byte hash, host version fields) EQUALS the previewed one — any real change refuses the handle with `PREVIEW_EXPIRED`.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "host_version": {
+          "description": "Host app version (CFBundleShortVersionString), folded into the version stamp (capture manifest item 4) via the collector's `host_version_fields` — redacted like all caller JSON.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "include_diagnostics": {
+          "type": "boolean"
+        },
+        "include_screenshot": {
+          "type": "boolean"
+        },
+        "macos_version": {
+          "description": "Host OS version string, same folding as `host_version`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "screenshot_b64": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "title": "ComposeParams",
+      "type": "object"
+    },
+    "rpc.feedback.status.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "limit": {
+          "description": "Maximum rows returned by the all-entries form. Ignored when a submission_id selects one row.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "submission_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "StatusParams",
+      "type": "object"
+    },
+    "rpc.host.dismiss_approval.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`host.dismiss_approval` params.",
+      "properties": {
+        "approval_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approval_id"
+      ],
+      "title": "HostDismissApprovalParams",
+      "type": "object"
+    },
+    "rpc.host.register_agent.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "HostAgentDisplay": {
+          "description": "Host-visible display hints for an agent.",
+          "properties": {
+            "accent": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "icon": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "description": "Request to register an agent with the OS host surface.",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "display": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/HostAgentDisplay"
+            }
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "metadata": {},
+        "name": {
+          "type": "string"
+        },
+        "pid": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "RegisterHostAgentRequest",
+      "type": "object"
+    },
+    "rpc.host.register_device.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata": {},
+        "name": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "platform"
+      ],
+      "title": "RegisterHostDeviceRequest",
+      "type": "object"
+    },
+    "rpc.host.request_approval.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Request to create an approval prompt in the host surface.",
+      "properties": {
+        "a2ui": {
+          "description": "The approval as an A2UI component tree, `{ components: [...], dataModel?: {...} }`. `host.request_approval` refuses the request unless `car_a2ui::approval_surface` accepts it (display components only, a `root`, 64 KiB), and stores the checked surface on the row. `details` is still required context for text channels, which cannot draw it."
+        },
+        "action": {
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "The agent the approval is raised for.\n\n**Advisory from an agent-bound caller.** `host.request_approval` replaces this with the session's authenticated agent binding when the session has one, so an agent cannot attribute its request to another agent or leave it unattributed. A client with no binding — the operator surface holding the daemon-wide token — keeps what it sends, because raising an approval on an agent's behalf is exactly what those clients do.\n\nThe stamped value is what the requester-vs-resolver comparison in `car_server_types::host::Resolver` reads, so its trustworthiness is the check's trustworthiness.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {},
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "system_level": {
+          "description": "When `true`, the approval is created as system-level: it has no `client_id` owner and any authenticated session may resolve it. This is the right mode for agent-requested approvals where \"the user\" (via CarHost or `car-host approve`) is the resolver, not the requesting agent itself; a supervised agent that tries to resolve its own system-level row is refused (#3453). The previous default (always session-owned by the requester) locked the approval to the agent's WS connection, which broke as soon as the agent reconnected — the new session got a fresh client_id and could no longer resolve its own pending approval, AND CarHost (a different session) couldn't either.\n\nDefaults to `false` for backward compatibility: existing callers that don't set this field keep the strict per-session ownership semantics.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "CreateHostApprovalRequest",
+      "type": "object"
+    },
+    "rpc.host.resolve_approval.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Request to resolve an approval.",
+      "properties": {
+        "approval_id": {
+          "type": "string"
+        },
+        "resolution": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approval_id",
+        "resolution"
+      ],
+      "title": "ResolveHostApprovalRequest",
+      "type": "object"
+    },
+    "rpc.host.set_status.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "HostAgentStatus": {
+          "description": "OS-host-visible agent status.",
+          "enum": [
+            "idle",
+            "running",
+            "waiting_for_approval",
+            "paused",
+            "completed",
+            "errored",
+            "stopped"
+          ],
+          "type": "string"
+        }
+      },
+      "description": "Request to update an agent's host-visible status.",
+      "properties": {
+        "agent_id": {
+          "type": "string"
+        },
+        "current_task": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload": {},
+        "status": {
+          "$ref": "#/definitions/HostAgentStatus"
+        }
+      },
+      "required": [
+        "agent_id",
+        "status"
+      ],
+      "title": "SetHostAgentStatusRequest",
+      "type": "object"
+    },
+    "rpc.host.subscribe.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "BrowserSignInSnapshot": {
+          "additionalProperties": false,
+          "description": "One browser wait returned by `host.subscribe.pending_signins`.",
+          "properties": {
+            "conversation_id": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "standing_session": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "conversation_id",
+            "message",
+            "standing_session"
+          ],
+          "type": "object"
+        },
+        "HostAgent": {
+          "additionalProperties": false,
+          "description": "Agent entry visible to menu bar, tray, or terminal host clients.",
+          "properties": {
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "current_task": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "display": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/HostAgentDisplay"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "pid": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "project": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "session_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "$ref": "#/definitions/HostAgentStatus"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "kind",
+            "capabilities",
+            "status",
+            "display",
+            "updated_at",
+            "metadata"
+          ],
+          "type": "object"
+        },
+        "HostAgentDisplay": {
+          "additionalProperties": false,
+          "description": "Host-visible display hints for an agent.",
+          "properties": {
+            "accent": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "icon": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "HostAgentStatus": {
+          "description": "OS-host-visible agent status.",
+          "enum": [
+            "idle",
+            "running",
+            "waiting_for_approval",
+            "paused",
+            "completed",
+            "errored",
+            "stopped"
+          ],
+          "type": "string"
+        },
+        "HostApprovalRequest": {
+          "additionalProperties": false,
+          "description": "Approval request visible to the OS host surface.\n\n`client_id` is the WS session that raised the approval. When `Some(x)`, only session `x` may call `host.resolve_approval` on it — added 2026-05 after a security audit found unrestricted resolve let one client approve another's pending request. When `None` the approval is system-raised (the high-risk-method approval gate uses this so the local UI session can resolve approvals raised by *other* sessions' dispatch attempts) and any authenticated session may resolve it, except a session walled to a supervised agent, which may not resolve a gate row nor a system-level row attributed to itself (#3453).",
+          "properties": {
+            "a2ui": {
+              "description": "The approval drawn as an A2UI component tree, already checked by `car_a2ui::approval_surface`: an `A2uiSurface` of display components only. A graphical host renders it under its own header and Approve / Deny controls; text channels keep using `action` and `details`."
+            },
+            "action": {
+              "type": "string"
+            },
+            "agent_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "client_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": true,
+            "id": {
+              "type": "string"
+            },
+            "options": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "resolution": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "resolved_at": {
+              "format": "date-time",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "$ref": "#/definitions/HostApprovalStatus"
+            }
+          },
+          "required": [
+            "id",
+            "action",
+            "details",
+            "options",
+            "status",
+            "created_at"
+          ],
+          "type": "object"
+        },
+        "HostApprovalStatus": {
+          "enum": [
+            "pending",
+            "resolved"
+          ],
+          "type": "string"
+        },
+        "HostDevice": {
+          "additionalProperties": false,
+          "description": "User-owned device registered by a native host app.\n\nThis is deliberately status/capability metadata, not a raw remote-exec surface. The daemon can tell the flagship assistant which personal devices are present and what consumer-safe surfaces they advertise; individual privacy-heavy capabilities still need dedicated, policy-gated RPCs.",
+          "properties": {
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "session_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "platform",
+            "capabilities",
+            "status",
+            "updated_at",
+            "metadata"
+          ],
+          "type": "object"
+        },
+        "HostEvent": {
+          "additionalProperties": false,
+          "description": "Host event emitted to subscribed OS host clients.",
+          "properties": {
+            "agent_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "payload": {},
+            "sequence": {
+              "description": "Monotonic daemon-local ordering token. A reconnect snapshot carries the sequence it observed, so a client can reconcile it PER CONVERSATION KEY: the snapshot's verdict stands for every key that no live event with a strictly larger sequence has already spoken for on that socket.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "timestamp": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "sequence",
+            "timestamp",
+            "kind",
+            "message",
+            "payload"
+          ],
+          "type": "object"
+        },
+        "HostIdentity": {
+          "additionalProperties": false,
+          "description": "Daemon-identifying metadata returned inside [`HostSnapshot`]. Lets multi-daemon hosts (`car-server install` plus an ad-hoc eval daemon, etc.) tell which daemon they connected to and whether THIS one owns the supervisor lock or is observe-only. Closes the observability gap from Parslee-ai/car-releases#44.\n\nStable on the wire across the connection's lifetime — emitted once on subscribe rather than as a periodic event because the fields are immutable for the daemon's lifetime (the manifest role flips only on daemon restart, which would close this WS anyway).",
+          "properties": {
+            "manifest_path": {
+              "description": "Absolute path to the lifecycle-agent manifest this daemon supervises (or observes). `None` when no manifest is configured (`HOME` unset; embedder didn't install one). Lossy-encoded on non-UTF-8 paths — operators on path layouts that round-trip through this field should normalize upstream.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "manifest_role": {
+              "$ref": "#/definitions/HostManifestRole"
+            },
+            "parslee": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ParsleeIdentity"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Parslee cloud account bound to this daemon, when the local user has completed `car auth login`. This is advisory identity for cloud-backed features; the local WS auth token still gates access to the daemon process."
+            },
+            "pid": {
+              "description": "`std::process::id()` of the daemon — operators correlating log lines + `ps`/`lsof` output need this.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "version": {
+              "description": "`CARGO_PKG_VERSION` from the daemon binary at build time.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "version",
+            "pid",
+            "manifest_path",
+            "manifest_role"
+          ],
+          "type": "object"
+        },
+        "HostManifestRole": {
+          "description": "Manifest-lock relationship for the daemon serving this WS. Returned inside [`HostIdentity`].",
+          "oneOf": [
+            {
+              "description": "This daemon holds the exclusive `<manifest>.lock` — agents.* mutations route through here.",
+              "enum": [
+                "owner"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Another `car-server` on the host owns the lock; this daemon runs in observe-only mode (Parslee-ai/car-releases#44).",
+              "enum": [
+                "observer"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "No manifest is configured at all — `HOME` unset or the embedder didn't install one.",
+              "enum": [
+                "none"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "ParsleeIdentity": {
+          "additionalProperties": false,
+          "description": "Parslee cloud identity associated with the local CAR user.",
+          "properties": {
+            "account_id": {
+              "type": "string"
+            },
+            "active_organization": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "display_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "email": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "organization_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "account_id"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Snapshot returned by `host.subscribe`.",
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/definitions/HostAgent"
+          },
+          "type": "array"
+        },
+        "approvals": {
+          "items": {
+            "$ref": "#/definitions/HostApprovalRequest"
+          },
+          "type": "array"
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/HostDevice"
+          },
+          "type": "array"
+        },
+        "event_sequence": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/definitions/HostEvent"
+          },
+          "type": "array"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/HostIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Daemon-identifying metadata — added 2026-05 to surface observe-only mode (Parslee-ai/car-releases#44) and let multi-daemon hosts tell which daemon they're talking to."
+        },
+        "pending_signins": {
+          "description": "Authoritative browser waits at `event_sequence`. Clients replace local attention from this on reconnect unless they have already applied a live event with a larger sequence.",
+          "items": {
+            "$ref": "#/definitions/BrowserSignInSnapshot"
+          },
+          "type": "array"
+        },
+        "subscribed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "subscribed",
+        "agents",
+        "devices",
+        "approvals",
+        "events",
+        "pending_signins",
+        "event_sequence"
+      ],
+      "title": "HostSnapshot",
+      "type": "object"
+    },
+    "rpc.host.update_device.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "device_id": {
+          "type": "string"
+        },
+        "metadata": true,
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "device_id"
+      ],
+      "title": "UpdateHostDeviceRequest",
+      "type": "object"
+    },
+    "rpc.image.generate.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Request to generate an image from text.\n\n`Default` is implemented manually (not derived) because `format` has a sensible non-empty default (`\"png\"`) that `String::default()` would clobber to `\"\"`. Callers can `GenerateImageRequest { prompt: \"...\".into(), ..Default::default() }` and get a usable shape. Mirrors the `GenerateRequest` ergonomic fix from #109.",
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "guidance": {
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "height": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input_image_path": {
+          "description": "Input image to transform (img2img). Backends that don't support image conditioning return an `InferenceError::UnsupportedMode` if this is set.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "negative_prompt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent_image_path": {
+          "description": "Anchor for cross-call continuity — instructs the model to generate variants in the visual neighbourhood of this image. Currently meaningful only on backends that natively support the concept (e.g. gpt-image-2). Other backends ignore the hint or return `UnsupportedMode`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "seed": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "steps": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "variant_count": {
+          "description": "Number of variants to generate in one call. `None` (or 1) produces a single image — matches the original `generate_image` contract. Backends that don't support batching either loop internally or error if `> 1`. Honoured by [`crate::InferenceEngine::generate_image_batch`]; the scalar [`crate::InferenceEngine::generate_image`] forces it to 1.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "width": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "title": "GenerateImageRequest",
+      "type": "object"
+    },
+    "rpc.infer.cancel.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "inference_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "inference_id"
+      ],
+      "title": "InferCancelParams",
+      "type": "object"
+    },
+    "rpc.infer.deadline.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "inference_id": {
+          "type": "string"
+        },
+        "timeout_ms": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inference_id",
+        "timeout_ms"
+      ],
+      "title": "InferDeadlineParams",
       "type": "object"
     },
     "rpc.infer.result": {
@@ -1421,6 +3844,23 @@
               "minimum": 0.0,
               "type": "integer"
             },
+            "reasoning_tokens": {
+              "description": "Reasoning tokens the provider says it spent, a subset of [`Self::completion_tokens`] (already counted and billed there, not additional). Read from OpenAI chat `usage.completion_tokens_details.reasoning_tokens` and Responses `usage.output_tokens_details.reasoning_tokens`, on non-streaming calls. `None` means the provider reported no figure — Anthropic, Google, Bedrock, local models and streamed calls today — never that no reasoning happened. Omitted from the wire when absent.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "reported_cost_usd": {
+              "description": "The provider's own dollar figure for this call, when its response carried one (OpenRouter's `usage.cost`, which CAR asks for). `None` means the provider sent no figure, never that the call was free; the call is then priced from the catalog ([`billing::call_cost`]). Omitted from the wire when absent.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
             "total_tokens": {
               "description": "Total tokens (prompt + completion).",
               "format": "uint64",
@@ -1528,7 +3968,7 @@
           "type": "string"
         },
         "stop_reason": {
-          "description": "Why generation stopped. For remote models this is the raw provider string (OpenAI `finish_reason`, Anthropic `stop_reason`, Google `finishReason`). For local Qwen3 hybrid-thinking models the runtime also sets it for its reasoning-recovery path (car-releases#60): `\"thinking_recovered\"` when reasoning consumed the whole token budget inside an unclosed `<think>` block and the runtime retried with reasoning suppressed to produce a direct answer, or `\"thinking_truncated\"` when even that retry was empty. A model decoded in-process also reports `\"local_decode_timeout\"` ([`LOCAL_DECODE_TIMEOUT_STOP_REASON`]) when the wall-clock ceiling cut the pass short (car#851). `None` for an ordinary local completion or a provider that didn't report one. Always serialized (as `null` when `None`) so the wire contract is stable — see the `inference_result_serializes_*` tests. Use [`InferenceResult::was_truncated`] to detect a cut-short response.",
+          "description": "Why generation stopped. For remote models this is the raw provider string (OpenAI `finish_reason`, Anthropic `stop_reason`, Google `finishReason`). For local Qwen3 hybrid-thinking models the runtime also sets it for its reasoning-recovery path (car-releases#60): `\"thinking_recovered\"` when reasoning consumed the whole token budget inside an unclosed `<think>` block and the runtime retried with reasoning suppressed to produce a direct answer (its `usage` and `latency_ms` then count both passes), or `\"thinking_truncated\"` when even that retry was empty. A model decoded in-process also reports `\"local_decode_timeout\"` ([`LOCAL_DECODE_TIMEOUT_STOP_REASON`]) when the wall-clock ceiling cut the pass short (car#851). `None` for an ordinary local completion or a provider that didn't report one. Always serialized (as `null` when `None`) so the wire contract is stable — see the `inference_result_serializes_*` tests. Use [`InferenceResult::was_truncated`] to detect a cut-short response.",
           "type": [
             "string",
             "null"
@@ -1592,6 +4032,830 @@
         "stop_reason"
       ],
       "title": "InferenceResult",
+      "type": "object"
+    },
+    "rpc.inference.runner.complete.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "call_id": {
+          "type": "string"
+        },
+        "result": true
+      },
+      "required": [
+        "call_id",
+        "result"
+      ],
+      "title": "InferenceRunnerCompleteParams",
+      "type": "object"
+    },
+    "rpc.inference.runner.event.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "call_id": {
+          "type": "string"
+        },
+        "event": true
+      },
+      "required": [
+        "call_id",
+        "event"
+      ],
+      "title": "InferenceRunnerEventParams",
+      "type": "object"
+    },
+    "rpc.inference.runner.fail.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "call_id": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "error"
+      ],
+      "title": "InferenceRunnerFailParams",
+      "type": "object"
+    },
+    "rpc.mail.accounts.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "MailAccount": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "provider_hint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "address",
+            "display_name",
+            "provider_hint"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Availability envelope — returned from every list-ish method so callers can branch on `available` instead of assuming a populated list.\n\n**Flatten caution.** This struct is `#[serde(flatten)]`ed into every listing payload (see `CalendarListing`, `ContactListing`, etc.). Do not add fields with names that collide with payload fields. `#[non_exhaustive]` to keep future additions additive.",
+      "properties": {
+        "accounts": {
+          "items": {
+            "$ref": "#/definitions/MailAccount"
+          },
+          "type": "array"
+        },
+        "available": {
+          "description": "True if the backend returned real data.",
+          "type": "boolean"
+        },
+        "backend": {
+          "description": "Backend that was attempted (`\"eventkit\"`, `\"msgraph\"`, `\"eds\"`, ...).",
+          "type": "string"
+        },
+        "reason": {
+          "description": "When `available` is false, human-readable explanation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "backend",
+        "reason",
+        "accounts"
+      ],
+      "title": "AccountListing",
+      "type": "object"
+    },
+    "rpc.mail.inbox.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`mail.inbox` and `mail.mailboxes` params: the accounts to read, every account when empty.",
+      "properties": {
+        "account_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "title": "MailAccountIdsParams",
+      "type": "object"
+    },
+    "rpc.mail.inbox.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "InboxSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "type": "string"
+            },
+            "most_recent_subject": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "total": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "unread": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "account_id",
+            "unread",
+            "total",
+            "most_recent_subject"
+          ],
+          "type": "object"
+        },
+        "UnresolvedInbox": {
+          "additionalProperties": false,
+          "description": "A selected account [`list_inbox`] could not summarize, and why.",
+          "properties": {
+            "account_id": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "account_id",
+            "reason"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Availability envelope — returned from every list-ish method so callers can branch on `available` instead of assuming a populated list.\n\n**Flatten caution.** This struct is `#[serde(flatten)]`ed into every listing payload (see `CalendarListing`, `ContactListing`, etc.). Do not add fields with names that collide with payload fields. `#[non_exhaustive]` to keep future additions additive.",
+      "properties": {
+        "available": {
+          "description": "True if the backend returned real data.",
+          "type": "boolean"
+        },
+        "backend": {
+          "description": "Backend that was attempted (`\"eventkit\"`, `\"msgraph\"`, `\"eds\"`, ...).",
+          "type": "string"
+        },
+        "reason": {
+          "description": "When `available` is false, human-readable explanation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summaries": {
+          "items": {
+            "$ref": "#/definitions/InboxSummary"
+          },
+          "type": "array"
+        },
+        "unresolved": {
+          "description": "Selected accounts whose INBOX could not be found or read, which have no entry in `summaries`: an unreadable inbox is not an empty one (Parslee-ai/car#2712). Omitted when every selected account read; when none did, the listing is `available: false` instead.",
+          "items": {
+            "$ref": "#/definitions/UnresolvedInbox"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "available",
+        "backend",
+        "reason",
+        "summaries"
+      ],
+      "title": "InboxListing",
+      "type": "object"
+    },
+    "rpc.mail.mailboxes.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`mail.inbox` and `mail.mailboxes` params: the accounts to read, every account when empty.",
+      "properties": {
+        "account_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "title": "MailAccountIdsParams",
+      "type": "object"
+    },
+    "rpc.mail.mailboxes.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "Mailbox": {
+          "additionalProperties": false,
+          "description": "A mailbox (folder) inside one mail account.\n\n`full_name` is the **selector**: pass it back verbatim as [`MessageQuery::mailbox`] to read that mailbox. On macOS it is the slash-joined path from the account root (`\"Travel\"`, `\"Travel/2026\"`); on Microsoft Graph it is the folder id. `name` is the leaf label for display.",
+          "properties": {
+            "account_id": {
+              "type": "string"
+            },
+            "full_name": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "total": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "unread": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "account_id",
+            "full_name",
+            "name",
+            "total",
+            "unread"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Availability envelope — returned from every list-ish method so callers can branch on `available` instead of assuming a populated list.\n\n**Flatten caution.** This struct is `#[serde(flatten)]`ed into every listing payload (see `CalendarListing`, `ContactListing`, etc.). Do not add fields with names that collide with payload fields. `#[non_exhaustive]` to keep future additions additive.",
+      "properties": {
+        "available": {
+          "description": "True if the backend returned real data.",
+          "type": "boolean"
+        },
+        "backend": {
+          "description": "Backend that was attempted (`\"eventkit\"`, `\"msgraph\"`, `\"eds\"`, ...).",
+          "type": "string"
+        },
+        "mailboxes": {
+          "items": {
+            "$ref": "#/definitions/Mailbox"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "description": "When `available` is false, human-readable explanation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "backend",
+        "reason",
+        "mailboxes"
+      ],
+      "title": "MailboxListing",
+      "type": "object"
+    },
+    "rpc.mail.message_body.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`mail.message_body` params: the `id` from a `mail.messages` row.",
+      "properties": {
+        "message_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id"
+      ],
+      "title": "MailMessageBodyParams",
+      "type": "object"
+    },
+    "rpc.mail.message_body.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Availability envelope — returned from every list-ish method so callers can branch on `available` instead of assuming a populated list.\n\n**Flatten caution.** This struct is `#[serde(flatten)]`ed into every listing payload (see `CalendarListing`, `ContactListing`, etc.). Do not add fields with names that collide with payload fields. `#[non_exhaustive]` to keep future additions additive.",
+      "properties": {
+        "available": {
+          "description": "True if the backend returned real data.",
+          "type": "boolean"
+        },
+        "backend": {
+          "description": "Backend that was attempted (`\"eventkit\"`, `\"msgraph\"`, `\"eds\"`, ...).",
+          "type": "string"
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_type": {
+          "description": "`\"text\"` or `\"html\"`.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Echo of the requested id, so a caller fetching several bodies can correlate replies without tracking call order.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "When `available` is false, human-readable explanation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "truncated": {
+          "description": "`true` when the body was cut at [`MESSAGE_BODY_CAP`].",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "available",
+        "backend",
+        "reason",
+        "id",
+        "content_type",
+        "body",
+        "truncated"
+      ],
+      "title": "MessageBodyResult",
+      "type": "object"
+    },
+    "rpc.mail.messages.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Which messages to read.\n\nEvery field has a default, and the defaults reproduce the pre-existing INBOX-only behaviour: `mailbox: None` means [`DEFAULT_MAILBOX`], so a caller that sends `{}` reads exactly what it read before this query existed.",
+      "properties": {
+        "account_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "all_mailboxes": {
+          "description": "Read every mailbox of the selected accounts instead of one, merged newest first inside the backend so the order is global, and deduped by `Message-ID` within each account (a Gmail message in INBOX and under a label is one row; the same message in two accounts is two). [`Self::mailbox`] must be unset: the JSON surfaces reject both together, and a direct Rust caller that sets both gets the all-mailbox read, `mailbox` ignored. Mailboxes that could not be read in time are listed in [`MessageListing::unresolved`] rather than silently left out (Parslee-ai/car-releases#93).",
+          "type": "boolean"
+        },
+        "include_body": {
+          "type": "boolean"
+        },
+        "limit": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mailbox": {
+          "description": "Mailbox selector — a [`Mailbox::full_name`], or a bare leaf name like `\"Travel\"`. `None` reads [`DEFAULT_MAILBOX`].",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "since": {
+          "description": "Drop messages received before this instant. Applied *before* `limit`, so a narrow window still yields the newest `limit` matches rather than whatever survives a pre-filtered slice.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeout_ms": {
+          "description": "Bound, in milliseconds, on each Mail.app Apple Events script this read runs (and, for [`Self::all_mailboxes`], the budget after which no further mailbox read starts). Clamped to [`MIN_READ_TIMEOUT`]..=[`MAX_READ_TIMEOUT`]; unset is 15 s. A read that does not finish fails with [`IntegrationError::Timeout`].",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "MessageQuery",
+      "type": "object"
+    },
+    "rpc.mail.messages.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "MessageSummary": {
+          "additionalProperties": false,
+          "description": "One message row. Header-weight by design — `body` is populated only when the caller asked for it via [`MessageQuery::include_body`].",
+          "properties": {
+            "account_id": {
+              "type": "string"
+            },
+            "body": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "body_unavailable": {
+              "description": "Why `body` is `None` although [`MessageQuery::include_body`] asked for it: the call's body time budget ran out, Mail could not find or read the message, or the message Mail found is not this row's. Absent when the body came back (an empty body is `Some(\"\")`) or was not asked for.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cc": {
+              "description": "The **CC** addresses, in header order. Empty when the message has no CC line or the backend could not read it. Before this field CC recipients were dropped entirely, a regression against reading Mail.app through `osascript` (Parslee-ai/car-releases#92).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "date_received": {
+              "format": "date-time",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "description": "Opaque, backend-qualified id — feed it straight back to [`message_body`]. Callers should not parse it; [`decode_message_id`] is the only supported reader.",
+              "type": "string"
+            },
+            "mailbox": {
+              "description": "The mailbox this row came from, as the backend **resolved** it — not the selector the caller typed. Same shape as [`Mailbox::full_name`], so a row asked for as `\"travel\"` comes back stamped `\"Travel/2026\"` and can be matched against [`list_mailboxes`] output.",
+              "type": "string"
+            },
+            "message_id": {
+              "description": "RFC 5322 `Message-ID` header. Mail.app returns the value verbatim; it is `None` when the backend does not expose one.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "preview": {
+              "description": "Short excerpt. Graph returns `bodyPreview` for free; Mail.app has no cheap equivalent, so on macOS this is `None` unless `include_body` was set — in which case it is the head of the body.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "recipients": {
+              "description": "The **To** addresses only, in header order. Kept To-only so existing callers keep their meaning; the CC addresses are in [`Self::cc`].",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sender": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "subject": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "message_id",
+            "account_id",
+            "mailbox",
+            "subject",
+            "sender",
+            "recipients",
+            "cc",
+            "date_received",
+            "read",
+            "preview",
+            "body"
+          ],
+          "type": "object"
+        },
+        "UnresolvedMailbox": {
+          "additionalProperties": false,
+          "description": "A mailbox an all-mailbox read skipped, and why.",
+          "properties": {
+            "account_id": {
+              "type": "string"
+            },
+            "mailbox": {
+              "description": "The mailbox, as [`Mailbox::full_name`]; `None` when the account's mailboxes could not be listed or read at all.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "timed_out": {
+              "description": "`true` when the mailbox was not read because the time budget ran out or a read did not finish within it — retry with a larger [`MessageQuery::timeout_ms`], a `since` window, or later. `false` for a read that failed for another reason.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "account_id",
+            "mailbox",
+            "reason",
+            "timed_out"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Availability envelope — returned from every list-ish method so callers can branch on `available` instead of assuming a populated list.\n\n**Flatten caution.** This struct is `#[serde(flatten)]`ed into every listing payload (see `CalendarListing`, `ContactListing`, etc.). Do not add fields with names that collide with payload fields. `#[non_exhaustive]` to keep future additions additive.",
+      "properties": {
+        "available": {
+          "description": "True if the backend returned real data.",
+          "type": "boolean"
+        },
+        "backend": {
+          "description": "Backend that was attempted (`\"eventkit\"`, `\"msgraph\"`, `\"eds\"`, ...).",
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/definitions/MessageSummary"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "description": "When `available` is false, human-readable explanation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unresolved": {
+          "description": "Mailboxes (or whole accounts) an [`MessageQuery::all_mailboxes`] read did not read, with why, so a partial merge never reads as the whole answer (Parslee-ai/car-releases#93). `messages` is newest-first over everything that WAS read. Also filled when nothing was read (`available: false`): a locked index lists every mailbox, and when Mail reports it cannot list the mailboxes (or the short walk after a locked index does not finish) each requested account is listed with `mailbox: null` (none when `account_ids` was empty, since there is no account to name). Omitted when nothing was skipped; a single-mailbox read reports failure through `available: false` instead.",
+          "items": {
+            "$ref": "#/definitions/UnresolvedMailbox"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "available",
+        "backend",
+        "reason",
+        "messages"
+      ],
+      "title": "MessageListing",
+      "type": "object"
+    },
+    "rpc.mail.send.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "account_id": {
+          "type": "string"
+        },
+        "bcc": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "body": {
+          "type": "string"
+        },
+        "cc": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "draft_only": {
+          "description": "When `true`, just save the message as a draft — don't send.",
+          "type": "boolean"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "to": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "account_id",
+        "body",
+        "subject",
+        "to"
+      ],
+      "title": "SendRequest",
+      "type": "object"
+    },
+    "rpc.mail.send.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Availability envelope — returned from every list-ish method so callers can branch on `available` instead of assuming a populated list.\n\n**Flatten caution.** This struct is `#[serde(flatten)]`ed into every listing payload (see `CalendarListing`, `ContactListing`, etc.). Do not add fields with names that collide with payload fields. `#[non_exhaustive]` to keep future additions additive.",
+      "properties": {
+        "available": {
+          "description": "True if the backend returned real data.",
+          "type": "boolean"
+        },
+        "backend": {
+          "description": "Backend that was attempted (`\"eventkit\"`, `\"msgraph\"`, `\"eds\"`, ...).",
+          "type": "string"
+        },
+        "message_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "When `available` is false, human-readable explanation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sent": {
+          "description": "`true` if the message was actually sent or drafted.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "available",
+        "backend",
+        "reason",
+        "sent",
+        "message_id"
+      ],
+      "title": "SendResult",
+      "type": "object"
+    },
+    "rpc.meeting.get.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "meeting_id": {
+          "type": "string"
+        },
+        "root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "meeting_id"
+      ],
+      "title": "MeetingGetParams",
+      "type": "object"
+    },
+    "rpc.meeting.list.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "MeetingListParams",
+      "type": "object"
+    },
+    "rpc.meeting.stop.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "meeting_id": {
+          "type": "string"
+        },
+        "summarize": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "meeting_id"
+      ],
+      "title": "MeetingStopParams",
+      "type": "object"
+    },
+    "rpc.memory.delete.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "MemoryDeleteParams",
+      "type": "object"
+    },
+    "rpc.memory.update_status.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "tenant_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "title": "MemoryUpdateStatusParams",
+      "type": "object"
+    },
+    "rpc.messaging.config.set.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Params for `messaging.config.set`. All fields optional — only the supplied fields mutate (a `null`/absent field leaves that part of the config unchanged). `add_handles` / `remove_handles` apply after `allowlisted_handles` when both are present.",
+      "properties": {
+        "add_handles": {
+          "description": "When present, add each handle to the allowlist (idempotent).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowlisted_handles": {
+          "description": "When present, REPLACE the entire allowlist with these handles.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "app_token": {
+          "description": "Slack app-level token (`xapp-`) to provision. See [`Self::bot_token`] — both must be present to trigger provisioning.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bot_token": {
+          "description": "Slack bot token (`xoxb-`) to provision. When BOTH `bot_token` and `app_token` are present (Slack channel only), the daemon writes them to the OS keychain (MC-9) and persists only a keychain *reference* into the config — the bearer value never lands in `messaging.json` nor echoes back in the response. This is a host-gated, write-only provisioning input; an inbound message cannot reach this surface (MC-6). Absent ⇒ no token change (back-compat for the enable/allowlist-only callers).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel": {
+          "description": "Which channel this mutation targets (stable string key: `\"imessage\"` / `\"slack\"`). **Absent ⇒ iMessage** — back-compat for the #403 surface and bindings, which have no `channel` field. (The full FFI/doc parity for the explicit `channel` field — `.d.ts`/`.pyi`/websocket-protocol — lands in Unit 6; the server-side optional field is added here so the per-channel WS round-trip works. The wire value stays a plain string tagged by channel — no typed identity struct across FFI.)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "description": "When present, set the master opt-in flag.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "remove_handles": {
+          "description": "When present, remove each handle from the allowlist (idempotent).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "slack_channel": {
+          "description": "Slack post-channel id (`C0123…` / `D024…`) — the conversation the outbound approval prompt posts into (Slack channel only). Unlike the tokens this is CONFIGURATION, not a secret: the daemon persists it IN `messaging.json` (host-gated), never the keychain. Set on the same `messaging.config.set { channel: \"slack\", … }` call as the tokens. Absent ⇒ no post-channel change (back-compat).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "MessagingConfigSetRequest",
       "type": "object"
     },
     "rpc.models.catalog_snapshot.result": {
@@ -1728,6 +4992,14 @@
         "CostModel": {
           "additionalProperties": false,
           "properties": {
+            "audio_per_minute": {
+              "description": "USD per minute of audio, for a model priced by the length of the audio it hears (speech to text). Omitted when the catalog has no such price.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
             "cache_read_input_per_mtok": {
               "description": "USD per 1M cache-read input tokens. Unlike protocol-wide cache multipliers, this is model-specific and comes from the provider's published catalog.",
               "format": "double",
@@ -1754,6 +5026,14 @@
             },
             "output_per_mtok": {
               "description": "USD per 1M output tokens (remote models).",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "per_1k_characters": {
+              "description": "USD per 1,000 characters of text, for a model priced by the text it speaks (text to speech). Omitted when the catalog has no such price.",
               "format": "double",
               "type": [
                 "number",
@@ -1787,13 +5067,13 @@
             }
           },
           "required": [
-            "cache_read_input_per_mtok",
-            "cache_write_input_per_mtok",
             "input_per_mtok",
             "output_per_mtok",
+            "cache_read_input_per_mtok",
+            "cache_write_input_per_mtok",
             "pricing_tiers",
-            "ram_mb",
-            "size_mb"
+            "size_mb",
+            "ram_mb"
           ],
           "type": "object"
         },
@@ -2303,6 +5583,13 @@
               "additionalProperties": false,
               "description": "CAR-owned supervised vLLM-MLX process backed by a managed HuggingFace artifact. Unlike `VllmMlx`, CAR downloads, admits, spawns, reaps, and accounts this allocation. Dispatch rewrites a clone to `VllmMlx` only after the child reports healthy.",
               "properties": {
+                "draft_hf_repo": {
+                  "description": "A speculative-decoding drafter for this checkpoint: a separate HF repo holding only MTP drafter weights (`model_type` like `qwen3_5_mtp`), which the target supplies embeddings and head for. CAR fetches it beside the model and serves with it attached; decode on a dense model is memory-bandwidth-bound, and the drafter roughly doubles it there. Omitted from serialization when absent so rows without one keep their canonical form and `row_digest`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "hf_repo": {
                   "type": "string"
                 },
@@ -2320,6 +5607,7 @@
                 }
               },
               "required": [
+                "draft_hf_repo",
                 "hf_repo",
                 "hf_weight_file",
                 "type"
@@ -2790,6 +6078,1046 @@
       "title": "CatalogSnapshot",
       "type": "object"
     },
+    "rpc.models.search.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "ModelCapability": {
+          "description": "What a model can do.",
+          "oneOf": [
+            {
+              "description": "Text completion / chat generation",
+              "enum": [
+                "generate"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Vector embeddings",
+              "enum": [
+                "embed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Cross-encoder relevance scoring (query + document → relevance score). Qwen3-Reranker is the canonical local implementation.",
+              "enum": [
+                "rerank"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Label assignment / classification",
+              "enum": [
+                "classify"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Code generation, repair, refactoring",
+              "enum": [
+                "code"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Chain-of-thought, planning, analysis",
+              "enum": [
+                "reasoning"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Text condensation",
+              "enum": [
+                "summarize"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Function/tool calling",
+              "enum": [
+                "tool_use"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Multiple tool calls in a single response (parallel tool execution)",
+              "enum": [
+                "multi_tool_call"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Vision / image understanding",
+              "enum": [
+                "vision"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Video understanding (multi-frame sampling + temporal tokens). Distinct from `Vision` so routing can prefer video-trained models when the caller attaches a video content block.",
+              "enum": [
+                "video_understanding"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Audio understanding (speech + non-speech audio as an input to a chat/reasoning model). Distinct from `SpeechToText` which is the transcription-only task. Gemma 4 E2B/E4B and Gemini do this; Qwen2.5-VL does not.",
+              "enum": [
+                "audio_understanding"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Visual grounding — structured object-localization output (bounding boxes keyed to object labels) in addition to text.",
+              "enum": [
+                "grounding"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Speech recognition / transcription",
+              "enum": [
+                "speech_to_text"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Speech synthesis / text-to-speech",
+              "enum": [
+                "text_to_speech"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Image generation",
+              "enum": [
+                "image_generation"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Video generation",
+              "enum": [
+                "video_generation"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "properties": {
+        "availableOnly": {
+          "type": "boolean"
+        },
+        "capability": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelCapability"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "localOnly": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "query": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "ModelSearchParams",
+      "type": "object"
+    },
+    "rpc.multiplayer.abandon.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Params of the calls that name one item: `multiplayer.get` and `multiplayer.abandon`.",
+      "properties": {
+        "item": {
+          "type": "string"
+        },
+        "remote": {
+          "description": "The git remote holding the item; `origin` when absent or blank.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "repo"
+      ],
+      "title": "ItemParams",
+      "type": "object"
+    },
+    "rpc.multiplayer.get.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Params of the calls that name one item: `multiplayer.get` and `multiplayer.abandon`.",
+      "properties": {
+        "item": {
+          "type": "string"
+        },
+        "remote": {
+          "description": "The git remote holding the item; `origin` when absent or blank.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "repo"
+      ],
+      "title": "ItemParams",
+      "type": "object"
+    },
+    "rpc.multiplayer.list.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "remote": {
+          "description": "The git remote holding the items; `origin` when absent or blank.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo"
+      ],
+      "title": "RepoParams",
+      "type": "object"
+    },
+    "rpc.multiplayer.merge_check.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`multiplayer.merge_check` params: the item to check, and whether a merge that verifies is pushed.",
+      "properties": {
+        "item": {
+          "type": "string"
+        },
+        "push": {
+          "description": "Push the merge when it verifies. Off unless `true`.",
+          "type": "boolean"
+        },
+        "remote": {
+          "description": "The git remote holding the item; `origin` when absent or blank.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "repo"
+      ],
+      "title": "MergeCheckParams",
+      "type": "object"
+    },
+    "rpc.multiplayer.publish.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "item": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remote": {
+          "description": "The git remote to publish to; `origin` when absent or blank.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "PublishParams",
+      "type": "object"
+    },
+    "rpc.multiplayer.start_stage.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "engine": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remote": {
+          "description": "The git remote holding the item; `origin` when absent or blank.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "repo"
+      ],
+      "title": "StartStageParams",
+      "type": "object"
+    },
+    "rpc.outcomes.record_external_grade.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ExternalGradeTask": {
+          "description": "The task an external grade is for — `car_inference::InferenceTask` on the wire, mirrored here so the wire schema can describe it.",
+          "enum": [
+            "generate",
+            "embed",
+            "classify",
+            "code",
+            "reasoning"
+          ],
+          "type": "string"
+        }
+      },
+      "properties": {
+        "allow_unknown_model": {
+          "description": "Record the grade even though `model_id` is not a model this daemon knows. Off by default, so a typo is refused instead of growing a profile nothing routes to.",
+          "type": "boolean"
+        },
+        "model_id": {
+          "description": "Catalog id (or name) of the graded model.",
+          "type": "string"
+        },
+        "n": {
+          "description": "Number of graded cases behind `quality`; defaults to 1.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "quality": {
+          "description": "Mean grade over the `n` cases, in `[0, 1]`.",
+          "format": "double",
+          "type": "number"
+        },
+        "source": {
+          "description": "Who graded it — a stable name such as `neo` or `nightly-eval`, 1-64 characters of `[A-Za-z0-9._:-]`. A supervised agent's sources are stored as `agent:<id>/<source>`, so it can only update its own.",
+          "type": "string"
+        },
+        "task": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ExternalGradeTask"
+            }
+          ],
+          "description": "Task the grade is for."
+        }
+      },
+      "required": [
+        "model_id",
+        "quality",
+        "source",
+        "task"
+      ],
+      "title": "OutcomesRecordExternalGradeParams",
+      "type": "object"
+    },
+    "rpc.outcomes.resolve_pending.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "actionResults": {
+          "description": "Flat `(trace_id, success, confidence, output)` tuples from the caller. Same shape `car-reason`'s session produces from its `ActionOutcome` vector. Daemon side runs the inference rules and writes resolved outcomes back to the shared tracker.",
+          "items": {
+            "items": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "actionResults"
+      ],
+      "title": "OutcomesResolvePendingParams",
+      "type": "object"
+    },
+    "rpc.permissions.explain.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "target_bundle_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "title": "PermParams",
+      "type": "object"
+    },
+    "rpc.permissions.request.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "target_bundle_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "title": "PermParams",
+      "type": "object"
+    },
+    "rpc.permissions.status.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "target_bundle_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "title": "PermParams",
+      "type": "object"
+    },
+    "rpc.policy.register.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`policy.register` params: a policy definition, plus the session it is scoped to. Without `session_id` the policy is global.",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "name",
+        "rule"
+      ],
+      "title": "PolicyRegisterParams",
+      "type": "object"
+    },
+    "rpc.registry.heartbeat.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "registry_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "RegistryNameParams",
+      "type": "object"
+    },
+    "rpc.registry.list.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "registry_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "RegistryListParams",
+      "type": "object"
+    },
+    "rpc.registry.reap.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "max_age_secs": {
+          "description": "Heartbeats older than this many seconds are reaped. Default 60 — two missed 20s heartbeats trigger removal.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "registry_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "RegistryReapParams",
+      "type": "object"
+    },
+    "rpc.registry.register.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "entry": {
+          "description": "Caller serializes their AgentEntry as a JSON value; we re-serialize it so the ffi-common helper can validate the shape with the same parser used by the bindings."
+        },
+        "registry_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "entry"
+      ],
+      "title": "RegistryRegisterParams",
+      "type": "object"
+    },
+    "rpc.registry.unregister.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "registry_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "RegistryNameParams",
+      "type": "object"
+    },
+    "rpc.rerank.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "A reranking request.",
+      "properties": {
+        "documents": {
+          "description": "Candidate documents to score. Order is preserved in the result via [`RerankedDocument::index`].",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "instruction": {
+          "description": "Optional task instruction (Qwen3-Reranker prompt prefix). Defaults to \"Given a web search query, retrieve relevant passages that answer the query\" — the Qwen upstream default.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Optional model override (e.g. \"Qwen3-Reranker-0.6B\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "query": {
+          "description": "The search query to score candidates against.",
+          "type": "string"
+        },
+        "top_n": {
+          "description": "If set, only the top-N highest-scoring candidates are returned. Otherwise all candidates are returned, sorted by score desc.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "documents",
+        "query"
+      ],
+      "title": "RerankRequest",
+      "type": "object"
+    },
+    "rpc.runs.cancel.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Strict `runs.cancel` request. Unknown fields are rejected to keep the idempotency preimage closed and reviewable.",
+      "properties": {
+        "idempotency_key": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "reason",
+        "run_id"
+      ],
+      "title": "RunCancelRequest",
+      "type": "object"
+    },
+    "rpc.runs.record_model_turn.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "RunModelTokenUsage": {
+          "description": "Token accounting reported by the inference provider for one model turn.",
+          "properties": {
+            "cache_creation_input_tokens": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "cache_read_input_tokens": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "completion_tokens": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "context_window": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "prompt_tokens": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "total_tokens": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "completion_tokens",
+            "context_window",
+            "prompt_tokens",
+            "total_tokens"
+          ],
+          "type": "object"
+        },
+        "RunModelToolCall": {
+          "description": "One tool call requested by a model during an inference turn.",
+          "properties": {
+            "arguments": {
+              "description": "Requested arguments exactly as presented to proposal construction."
+            },
+            "id": {
+              "description": "Provider/model-supplied call id after the harness normalizes absent ids.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Tool name requested by the model.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "`runs.record_model_turn` request params — one inference result recorded before any requested actions execute.",
+      "properties": {
+        "assistant_text": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "requested_tool_calls": {
+          "items": {
+            "$ref": "#/definitions/RunModelToolCall"
+          },
+          "type": "array"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "token_usage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RunModelTokenUsage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turn_index": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assistant_text",
+        "duration_ms",
+        "model_id",
+        "run_id",
+        "turn_index"
+      ],
+      "title": "RunRecordModelTurnRequest",
+      "type": "object"
+    },
+    "rpc.runs.resume.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Strict `runs.resume` request. The caller supplies no owner identity or secret: the daemon derives both from the authenticated WebSocket session.",
+      "properties": {
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "title": "RunResumeRequest",
+      "type": "object"
+    },
+    "rpc.runs.start.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`runs.start` request params.",
+      "properties": {
+        "agent_id": {
+          "description": "Owning agent id. Optional on the wire: when absent the daemon resolves from `session.auth {agent_id}`, then `CAR_AGENT_ID`, then falls back to a deterministic id synthesized from `agent_name`. With none of these available, `runs.start` is rejected.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agent_name": {
+          "description": "Agent display name — the one-shot fallback source for a deterministic `agent_id` when nothing else resolves.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idempotency_key": {
+          "description": "Optional caller-supplied run id for a globally reserved, same-WebSocket idempotent start. An exact retry on the connection that owns the live nonterminal run returns that binding. A terminal run, a run owned by another connection, or any durable occurrence from a prior connection is not adopted: `runs.start` returns JSON-RPC `-32010` (`run ownership conflict:`). After an unacknowledged start and disconnect, CAR releases the key only when no `RunStarted` boundary reached durable storage; otherwise it reconciles one historical `Incomplete` occurrence and keeps the original key owned. Absent ⇒ the daemon mints a fresh random `run_id`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intent": {
+          "type": "string"
+        },
+        "outcome_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "intent"
+      ],
+      "title": "RunStartRequest",
+      "type": "object"
+    },
+    "rpc.runs.unsubscribe.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`runs.unsubscribe` request params.",
+      "properties": {
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "title": "RunUnsubscribeRequest",
+      "type": "object"
+    },
+    "rpc.search.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Parameters for the `search` capability (matches the `search` ToolSchema).",
+      "properties": {
+        "max_results": {
+          "description": "1..=20; defaults to 5 when omitted.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "SearchRequest",
+      "type": "object"
+    },
+    "rpc.secret.delete.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "operator_broker": {
+          "description": "Set only by the local CLI reader after it loaded the owner-only host token. This is authorization intent, not identity; the authenticated session remains the proof.",
+          "type": "boolean"
+        },
+        "service": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "SecretParams",
+      "type": "object"
+    },
+    "rpc.secret.get.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "operator_broker": {
+          "description": "Set only by the local CLI reader after it loaded the owner-only host token. This is authorization intent, not identity; the authenticated session remains the proof.",
+          "type": "boolean"
+        },
+        "service": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "SecretParams",
+      "type": "object"
+    },
+    "rpc.secret.put.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "operator_broker": {
+          "description": "Set only by the local CLI reader after it loaded the owner-only host token. This is authorization intent, not identity; the authenticated session remains the proof.",
+          "type": "boolean"
+        },
+        "service": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "SecretParams",
+      "type": "object"
+    },
+    "rpc.secret.status.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "operator_broker": {
+          "description": "Set only by the local CLI reader after it loaded the owner-only host token. This is authorization intent, not identity; the authenticated session remains the proof.",
+          "type": "boolean"
+        },
+        "service": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "SecretParams",
+      "type": "object"
+    },
+    "rpc.server.handshake.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`server.handshake` params, sent before any other call on a connection.",
+      "properties": {
+        "optional_capabilities": {
+          "description": "Capabilities the client uses when the daemon has them.",
+          "items": {
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "protocol_version": {
+          "description": "The newest daemon JSON-RPC protocol version the client speaks. Alone, it is the only version the client speaks.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "protocol_version_min": {
+          "description": "The oldest protocol version the client speaks; omitted, it equals `protocol_version`. The connection settles on the highest version in both the client's and the daemon's range, and only a range sharing no version with the daemon's is refused with `-32006`.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "required_capabilities": {
+          "description": "Capabilities the client cannot work without; one the daemon lacks refuses the handshake.",
+          "items": {
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "protocol_version"
+      ],
+      "title": "ServerHandshakeParams",
+      "type": "object"
+    },
     "rpc.server.handshake.result": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
@@ -2822,6 +7150,19 @@
           "type": "array"
         },
         "protocol_version": {
+          "description": "The version this connection settled on: the highest in both the client's and the daemon's range. A client that sent one version gets that version back.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "server_protocol_version_max": {
+          "description": "Newest wire protocol version this daemon speaks.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "server_protocol_version_min": {
+          "description": "Oldest wire protocol version this daemon speaks.",
           "format": "uint32",
           "minimum": 0.0,
           "type": "integer"
@@ -2838,6 +7179,8 @@
         "client_version",
         "negotiated_capabilities",
         "protocol_version",
+        "server_protocol_version_max",
+        "server_protocol_version_min",
         "server_version"
       ],
       "title": "ServerHandshakeResult",
@@ -2875,6 +7218,148 @@
         "schema"
       ],
       "title": "ServerSchemaResult",
+      "type": "object"
+    },
+    "rpc.session.bind_context.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "organization_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "personal": {
+          "type": "boolean"
+        },
+        "working_dir": {
+          "description": "Absolute directory the run works in; its repository's declared org constrains the choice.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "working_dir"
+      ],
+      "title": "BindContextParams",
+      "type": "object"
+    },
+    "rpc.session.init.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "PolicyDefinition": {
+          "description": "Policy definition from client.",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "rule": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            },
+            "value": {}
+          },
+          "required": [
+            "name",
+            "rule"
+          ],
+          "type": "object"
+        },
+        "ToolDefinition": {
+          "description": "Tool definition sent by client during registration.\n\nMirrors the caller-settable fields of `car_ir::ToolSchema` over the wire so the validator, caching, and rate-limiting layers see the same values the in-process engine does. `ToolSchema.source` is deliberately absent: the runtime assigns `user_defined` to client registrations rather than trusting a caller to claim `builtin`. New optional fields are added with serde defaults so pre-v0.5.x clients (which only sent `name` / `description` / `parameters`) still parse cleanly.",
+          "properties": {
+            "cache_ttl_secs": {
+              "description": "If set, results are cached with this TTL in seconds.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "idempotent": {
+              "description": "Marks the tool as safe to cache/retry.",
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "parameters": {
+              "description": "JSON Schema for parameters. Empty object = schemaless (legacy behavior — validator skips type checks)."
+            },
+            "rate_limit": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ToolRateLimit"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, rate-limited to this many calls per interval."
+            },
+            "returns": {
+              "description": "JSON Schema for return value (optional)."
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "ToolRateLimit": {
+          "description": "Mirror of `car_ir::ToolRateLimit` over the wire.",
+          "properties": {
+            "interval_secs": {
+              "format": "double",
+              "type": "number"
+            },
+            "max_calls": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "interval_secs",
+            "max_calls"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Initialize a session.",
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "policies": {
+          "items": {
+            "$ref": "#/definitions/PolicyDefinition"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/definitions/ToolDefinition"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "client_id"
+      ],
+      "title": "SessionInitRequest",
       "type": "object"
     },
     "rpc.state.exists.result": {
@@ -3284,6 +7769,296 @@
       "title": "ToolsUnregisterResult",
       "type": "object"
     },
+    "rpc.voice.enroll_speaker.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "audio": true,
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "audio",
+        "label"
+      ],
+      "title": "EnrollSpeakerParams",
+      "type": "object"
+    },
+    "rpc.voice.remove_enrollment.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "title": "RemoveEnrollmentParams",
+      "type": "object"
+    },
+    "rpc.voice.transcribe_stream.push.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "pcm_b64": {
+          "description": "Base64-encoded 16-bit signed PCM frame. JSON-RPC is text, so binary audio frames have to be encoded; clients in WS-binary contexts that want to skip the round trip can call the FFI directly.",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pcm_b64",
+        "session_id"
+      ],
+      "title": "VoicePushParams",
+      "type": "object"
+    },
+    "rpc.voice.transcribe_stream.start.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "audio_source": true,
+        "options": {},
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "audio_source",
+        "session_id"
+      ],
+      "title": "VoiceStartParams",
+      "type": "object"
+    },
+    "rpc.voice.transcribe_stream.stop.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "VoiceStopParams",
+      "type": "object"
+    },
+    "rpc.voice.tts_stream.cancel.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "stream_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stream_id"
+      ],
+      "title": "VoiceTtsStreamCancelParams",
+      "type": "object"
+    },
+    "rpc.voice.tts_stream.start.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "options": {
+          "description": "Optional [`car_ffi_common::voice::TtsStreamOptions`] as a raw JSON value (provider, voice_id, binary_frames)."
+        },
+        "stream_id": {
+          "description": "Caller-chosen opaque id for this stream. Used both as the session_id wrapped onto each `voice.event` notification AND as the key for `voice.tts_stream.cancel`.",
+          "type": "string"
+        },
+        "text": {
+          "description": "Text to synthesize. Splitting into multiple synth calls (for long-form narration) is the caller's responsibility.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stream_id",
+        "text"
+      ],
+      "title": "VoiceTtsStreamStartParams",
+      "type": "object"
+    },
+    "rpc.web_fetch.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Parameters for the `web_fetch` capability.",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "FetchRequest",
+      "type": "object"
+    },
+    "rpc.workers.spend.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "description": "How many calendar days, ending today, to report: 1 to 92, default 7.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "label": {
+          "description": "One label, `key=value`, of the caller's own workers.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "orchestrator": {
+          "description": "The host only: whose label to read.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "worker": {
+          "description": "One of the caller's own workers, by handle.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "WorkersSpendParams",
+      "type": "object"
+    },
+    "rpc.workers.start.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "`workers.start` params. Unknown fields are refused: the request has no network, fence, cwd, env, command or wall field and cannot carry one.",
+      "properties": {
+        "bundle": {
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "time_limit_secs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "values": {
+          "description": "Handed-over secret values, `{ <declared name>: \"<value>\" }`. Taken as raw JSON and checked by [`handed_values`], so no parse error can quote a value back."
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wait_ready_secs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bundle",
+        "name"
+      ],
+      "title": "WorkersStartParams",
+      "type": "object"
+    },
+    "rpc.workflow.build_automation.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "spec": true
+      },
+      "required": [
+        "spec"
+      ],
+      "title": "WorkflowBuildAutomationParams",
+      "type": "object"
+    },
+    "rpc.workflow.chain.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "initial_state": {
+          "additionalProperties": true,
+          "description": "Optional base state seeded into every workflow in the chain (the first workflow gets exactly this; later ones get it merged under the predecessor's `final_state`).",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "workflows": {
+          "description": "Workflow definitions run sequentially: each next workflow's initial state is the previous result's `final_state` merged over `initial_state`.",
+          "items": true,
+          "type": "array"
+        }
+      },
+      "required": [
+        "workflows"
+      ],
+      "title": "WorkflowChainParams",
+      "type": "object"
+    },
+    "rpc.workflow.resume.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "input": {},
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "title": "WorkflowResumeParams",
+      "type": "object"
+    },
+    "rpc.workflow.run.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "initial_state": {
+          "additionalProperties": true,
+          "description": "Optional state map seeded into workflow state before the run starts — the inter-workflow chaining hook (hand a prior run's `final_state` to the next workflow). Omitted = prior behavior.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "workflow": true
+      },
+      "required": [
+        "workflow"
+      ],
+      "title": "WorkflowRunParams",
+      "type": "object"
+    },
+    "rpc.workflow.verify.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "workflow": true
+      },
+      "required": [
+        "workflow"
+      ],
+      "title": "WorkflowVerifyParams",
+      "type": "object"
+    },
     "type.action_result": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
@@ -3348,6 +8123,80 @@
         "timestamp"
       ],
       "title": "ActionResult",
+      "type": "object"
+    },
+    "type.host_approval_request": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "HostApprovalStatus": {
+          "enum": [
+            "pending",
+            "resolved"
+          ],
+          "type": "string"
+        }
+      },
+      "description": "Approval request visible to the OS host surface.\n\n`client_id` is the WS session that raised the approval. When `Some(x)`, only session `x` may call `host.resolve_approval` on it — added 2026-05 after a security audit found unrestricted resolve let one client approve another's pending request. When `None` the approval is system-raised (the high-risk-method approval gate uses this so the local UI session can resolve approvals raised by *other* sessions' dispatch attempts) and any authenticated session may resolve it, except a session walled to a supervised agent, which may not resolve a gate row nor a system-level row attributed to itself (#3453).",
+      "properties": {
+        "a2ui": {
+          "description": "The approval drawn as an A2UI component tree, already checked by `car_a2ui::approval_surface`: an `A2uiSurface` of display components only. A graphical host renders it under its own header and Approve / Deny controls; text channels keep using `action` and `details`."
+        },
+        "action": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "client_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "details": true,
+        "id": {
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resolution": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolved_at": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/HostApprovalStatus"
+        }
+      },
+      "required": [
+        "id",
+        "action",
+        "details",
+        "options",
+        "status",
+        "created_at"
+      ],
+      "title": "HostApprovalRequest",
       "type": "object"
     }
   }

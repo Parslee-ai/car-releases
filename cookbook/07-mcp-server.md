@@ -56,6 +56,37 @@ launching `car-mcp-server`, and `tools/list` includes daemon-backed tools the
 stdio process cannot serve: the assistant trio, daemon read groups, and
 `peer_list` / `peer_message` / `peer_inbox`.
 
+**The daemon endpoint needs the daemon's auth token** for memory, skills, and
+the assistant (car#3185). Send `Authorization: Bearer <contents of the
+auth-token file>` — on macOS
+`~/Library/Application Support/ai.parslee.car/auth-token`, on Linux
+`$XDG_RUNTIME_DIR/ai.parslee.car/auth-token` (else
+`~/.config/ai.parslee.car/auth-token`), or
+`$CAR_HOME/ai.parslee.car/auth-token` when `CAR_HOME` is set. The token changes
+on every daemon launch, so pass it through an environment variable you set from
+the file rather than pasting it into a config. Without it those requests are
+`401`; the peer and Lattice tools and the plan checks still answer.
+
+```jsonc
+// Cursor, ~/.cursor/mcp.json
+{ "mcpServers": { "car-daemon": {
+    "url": "http://127.0.0.1:9102/mcp",
+    "headers": { "Authorization": "Bearer ${env:CAR_AUTH_TOKEN}" } } } }
+```
+
+```toml
+# Codex, ~/.codex/config.toml
+[mcp_servers.car-daemon]
+url = "http://127.0.0.1:9102/mcp"
+bearer_token_env_var = "CAR_AUTH_TOKEN"
+```
+
+Claude Desktop's config file launches only stdio servers, so it reaches an HTTP
+endpoint through a bridge such as `mcp-remote`, which takes the header as
+`--header "Authorization:${AUTH_HEADER}"` with `AUTH_HEADER` set to
+`Bearer <token>` in the entry's `env`. The stdio `car-mcp` binary below needs
+none of this.
+
 They are not missing from the stdio binary by oversight. `car-mcp-server` is
 `car-mcp` plus telemetry: no `Runtime`, no inference engine, no daemon state.
 Serving the assistant there would mean shipping the whole daemon inside the
@@ -96,8 +127,9 @@ left to be discovered:
 - **A handle is not a record.** The registry is in memory. After a daemon
   restart every `run_id` is unknown, and the poll says so.
 
-`assistant_cancel` lands at the next **turn boundary**, not mid-model-call —
-expect one more turn, then poll for the document describing what the run did.
+`assistant_cancel` stops the run at once, even while a model call is in
+flight, and no further reply text is shown or acted on; then poll for the
+document describing what the run did before the cancel.
 On an `until` run, a cancel also skips a goal check that has not started, and a check it interrupts is not graded.
 Runs are sandboxed by default (Docker, no network); `local: true` runs on the
 host **read-only**, because a tool call has no way to ask a human to approve a
@@ -166,6 +198,7 @@ egress guardrail.
   "decision": "deny",
   "basis": "denied_by_rule",
   "tool": "WebFetch",
+  "inspected_as": "webfetch",
   "findings": [
     {
       "source": "policy_rules",
@@ -192,9 +225,22 @@ would enforce nothing while reporting a clean result.
 `findings[].source` separates an operator-authored rule (`policy_rules`) from a
 built-in guardrail (`inspector:*`), and `severity` separates a warn from a deny.
 
-Two limits worth knowing. Neither policy directory is walked upward — same as
-`car do` — which is why the response names every directory it consulted and how
-many rules each contributed. And the stateful repetition inspector is
+Operator rules match the tool name exactly as the host sends it. The egress
+guardrail, a heuristic, keys on CAR's tool names, so the call is mapped first:
+Claude Code's `Bash` is inspected as `shell` and `WebFetch` as `webfetch`, and
+`inspected_as` says which. A tool with no mapping that still carries a `command`
+or `url` string is inspected as what those look like, but its guardrail findings
+only warn. `inspected_as` is `null` for an unmapped tool with neither key;
+`read_file`, `write_file` and `edit_file` (Claude Code's `Read`, `Write` and
+`Edit`) are mapped but not egress-inspected; a `policy_load_failed` deny
+carries no `inspected_as`.
+
+`policy_check` and the hook read every `.car/policies/` from the working
+directory up to the repository root (the walk stops at the worktree's `.git`,
+skips the state root, and outside a repository reads only the working
+directory's own `.car/`); `car do` and the coder read only the nearest `.car/`.
+The response names every directory it consulted and how many rules each
+contributed. One limit worth knowing: the stateful repetition inspector is
 deliberately excluded: a gate whose answer depends on hidden history is not one
 an operator can reason about, and this server sees only the calls a host happens
 to route through it.

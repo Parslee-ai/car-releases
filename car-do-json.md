@@ -113,7 +113,8 @@ run named) and `substitution_reason`. There are two ways it happens:
   model too large for this machine's memory — and every turn that substitute
   serves carries the same two fields.
 
-The top-level fields describe the first substitution; each substituted turn
+The top-level fields describe the first substitution, which is the startup one
+when there was one, even if a later turn also fell back; each substituted turn
 also carries them in `models_served` and on its `model_served` event. Their
 absence means nothing substituted. A run that stopped at `max_turns` or
 `stalled` keeps that status and still carries the two fields when it

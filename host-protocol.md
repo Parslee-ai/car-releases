@@ -73,16 +73,32 @@ After subscribing, clients receive notifications:
 - `host.agents`: list registered agents.
 - `host.events`: list recent host events. Params: `{ "limit": 100 }`.
 - `host.approvals`: list approval requests.
+
+A session bound to a supervised agent sees only its own records on
+`host.approvals`, `host.events` and `host.subscribe` (snapshot and live
+`host.event` stream), unless the host granted it the watcher view with
+`agent_permissions.set_observer` (macOS and Windows; on Linux a walled agent
+cannot call these methods). Host apps, the daemon-token operator and the CLI
+see every agent's records.
 - `host.register_agent`: register an agent visible to host UI.
 - `host.unregister_agent`: remove an agent. Params: `{ "agent_id": "..." }`.
 - `host.set_status`: update agent status and task text.
 - `host.notify`: append and broadcast a host event.
 - `host.request_approval`: create an approval request for the host UI.
-- `host.resolve_approval`: resolve a pending approval request.
+- `host.resolve_approval`: resolve a pending approval request. A row that is
+  no longer pending is refused (`-32003`, `error.data.reason:
+  "already_resolved"`), never reported as resolved.
+- `host.dismiss_approval`: remove a resolved approval row. An agent removes
+  only its own; a host app removes any.
 - `agents.chat`: issue a chat turn to a named lifecycle agent. See
   `agents.chat` below.
 - `agents.chat.cancel`: abort an in-flight chat. Params:
-  `{ "session_id": "chat-..." }`.
+  `{ "session_id": "chat-..." }`. Returns `{ "cancelled": true,
+  "session_id", "dispatched"? }`, or `{ "cancelled": false, "reason" }` when
+  no turn is routed under the id. `dispatched: false` means no call of the
+  turn ran; `true` means one did; a missing `dispatched` (any agent other
+  than the bundled assistant, or no answer from it) means unknown, never
+  false.
 - `agents.chat.approve`: resolve an inline chat approval an agent raised
   via an `approval_pending` event, so the parked turn resumes. Params:
   `{ "session_id": "chat-...", "approval_id": "...", "decision": true }`,
@@ -93,7 +109,8 @@ After subscribing, clients receive notifications:
   has recorded the approval; the reply does not say whether it was. Only an
   approval for a web search by the built-in assistant is a four-choice card.
   A plain `decision` approves the one call and remembers nothing.
-  Reverse-requests the agent's `agent.chat.approve`; returns
+  Reverse-requests the agent's `agent.chat.approve` (carrying the card's
+  `turn_id` when the agent's `approval_pending` named one); returns
   `{ "resolved": bool }`. The daemon mirrors each chat gate into the host
   approval ledger under the same `approval_id`, so `host.resolve_approval`
   is also valid and routes back to this parked turn. The `approval_id` a
@@ -138,17 +155,35 @@ wire but agents may still emit incremental events — the host should
 not rely on a single response frame. `model` is optional. A non-empty CAR model
 ID is a strict per-turn selection forwarded to the attached agent (or the
 in-daemon declarative runner); omitting it preserves that agent's configured
-model and adaptive fallback policy.
+model and adaptive fallback policy. `shows_agent_drafts: true` says this
+host shows the draft card a `propose_agent` call becomes (see `tool_call`
+below); the daemon forwards it to the agent as `context.shows_agent_drafts`.
+The flag is read turn by turn: only a turn that carries it is offered that
+tool and its turn-ending reply, and has the tool's prompt line in its system
+prompt (the line is added or removed every turn, so a conversation started
+on one host does not carry it into another host's turn). A call to the tool
+on any other turn is refused with a plain `ok: false` result, and the turn
+goes on. A host without the card (iOS, Android and Windows today) leaves
+the flag out. A host that sets it may also send `added_agents`, the agents the
+person added from that chat's draft cards (`[{ id, name }]`, oldest first);
+the daemon forwards it, from the host only, as `context.added_agents`, and
+the built-in assistant proposes a change to one of them as an edit of it.
 
 Response (after the agent acks, capped at 5s):
 
 ```json
 {
   "jsonrpc": "2.0",
-  "result": { "accepted": true, "session_id": "chat-abc123" },
+  "result": { "accepted": true, "session_id": "chat-abc123", "turn_id": "turn-5f0c…" },
   "id": 42
 }
 ```
+
+`turn_id` is the daemon's id for this turn, present for a turn sent to an
+attached agent. Frames of an agent that echoes it carry the same `turn_id`.
+A frame can reach the host before this reply does, so use `turn_id` to
+correlate frames with a turn, never as a gate that holds frames back until
+the reply arrives.
 
 Streaming tokens then arrive on the host's connection as
 notifications:
@@ -165,6 +200,9 @@ notifications:
   }
 }
 ```
+
+A frame may also carry `turn_id` (see the response above) when the agent
+echoes it; the daemon forwards it unchanged.
 
 `kind` is a discriminated enum:
 
@@ -195,7 +233,20 @@ notifications:
   as aliases for the name and `tool_args`/`input` as aliases for the
   args; object args are shown as compact sorted-key JSON. The
   external-CLI projection (`agents.invoke_external` with `stream`)
-  emits `tool` + `params` (plus a legacy `detail` = name).
+  emits `tool` + `params` (plus a legacy `detail` = name). A
+  `propose_agent` call from the built-in assistant is a draft agent
+  rather than an action. The assistant is offered the tool only on turns
+  whose `agents.chat` carried `shows_agent_drafts: true` (see
+  `agents.chat` above); the macOS host sets it and shows the call as a
+  card instead of a tool row. The card can be built only after its
+  `tool_result` reports `ok: true`, and only when each answer's quote
+  (`person_said`) is at least three whole words, in order, inside a
+  single message the person wrote in that chat, compared without regard
+  to case, punctuation or spacing. That checks the quoted words are the
+  person's own; it does not prove the answer means what they said, which
+  is why the card shows every answer before the person builds. The host
+  builds and adds the agent with its own host authority, on the person's
+  clicks.
 - `tool_result` — the outcome row immediately following its `tool_call`.
   `{ tool: string, ok: boolean, excerpt: string, evidence: object }`.
   The daemon scrubs the excerpt through the feedback redactor, keeps at
@@ -207,11 +258,17 @@ notifications:
 - `todos` — the conversation's whole task list after a successful
   `todo_write`: `{ items: [{ id: number, text: string, status: "open" |
   "done" | "dropped" }] }`. The latest event replaces any earlier one.
-  The macOS host renders it as the work panel's Progress section.
+  The macOS host renders it as the work panel's Progress section. The list
+  stays as the model wrote it; once the chat's latest agent draft card
+  knows its build ended (added, stopped or failed), the host adds a line
+  under the list saying so, in the card's words.
 - `approval_pending` — agent has parked the turn on a user approval
   (e.g. Milo's calendar-write gate, or `car do`'s write/shell gate).
   `approval_id: string`, `action`/`tool: string`, `details?`/`params?:
-  object`, `deadline?: string` (RFC 3339). The daemon mirrors this gate into
+  object`, `deadline?: string` (RFC 3339), `call_id?: string` (the built-in
+  assistant's: for a gated tool call, the id its `tool_call` carries; a goal
+  check's approval, or one for a call inside a delegated child, carries an
+  id no `tool_call` event names). The daemon mirrors this gate into
   the host approval ledger under the same ID, with `source: "chat"` and
   `session_id` in its details, so Command Deck, badges, tray UI, and the
   inline card all show one request. A host may resolve through either
@@ -273,8 +330,11 @@ notifications:
   object with the six always-present nullable software stages
   `local_verification`, `remote_main`, `ci_cd`, `deployment`, `health`,
   `production_browser_proof`. `ungrounded_claims?: string[]` is absent
-  on the goal-turn shape. A host renders desktop actions instead of the
-  software matrix when any are present: a read is verified when it
+  on the goal-turn shape. A host lists the recorded software stages
+  beside the desktop actions (a turn can carry both), and shows
+  `desktop_actions_omitted` as a count of actions the turn ran that the
+  list leaves out, so its verified count reads as covering only the
+  listed rows. A desktop action's read is verified when it
   succeeded and produced evidence by its own result fields (never with
   `"ok": false`, `"success": false`, a non-null `error`, `"met": false`,
   `"settled": false` or `"timed_out": true`; a `web_search` only with
@@ -300,10 +360,28 @@ notifications:
 To opt into the surface, an agent must implement two reverse-callback
 methods on its server-bound WS connection:
 
-- `agent.chat { session_id, prompt, stream, context, model?, attachments? }` —
+- `agent.chat { session_id, prompt, stream, context, turn_id, model?, attachments? }` —
   request. Agent acks with `{ accepted: true, session_id }` (or rejects
   with a JSON-RPC error). `context.host_client_id` and
-  `context.voice_input` are advisory.
+  `context.voice_input` are advisory. `context.shows_agent_drafts` is
+  present, and `true`, only when the host's `agents.chat` set it.
+  `context.added_agents` is present only alongside it, from the host.
+  - `turn_id` — the daemon's id for this turn. Echo it as `turn_id` on
+    every `agent.chat.event` of the turn, its terminal included. The daemon
+    then matches each frame to that turn: a frame naming another turn's id
+    (a turn the host's next `agents.chat` on the same `session_id` replaced,
+    or one that has ended) is dropped instead of reaching the host or
+    ending the newer turn, except its approval frames. The replaced turn
+    keeps running, so a card it raises after it was replaced reaches the
+    host, which can answer it, and the turn's `approval_resolved` for it
+    reaches the host too. A card it raised before it was replaced was
+    closed with its turn's route, and its late `approval_resolved` is
+    consumed without reaching the host. A frame without
+    `turn_id` is matched by `session_id` alone, as before, so a replaced
+    turn's late terminal can then end its successor. The Node and Python
+    bindings send it with `chatTurnEvent` / `chat_turn_event` (`chatEvent` /
+    `chat_event` send none), and their cancelled event for a turn stopped
+    while queued carries it.
   - `model?` — optional CAR model ID forwarded from the host's
     `agents.chat.model` selection. A non-empty value is a strict per-turn
     selection: bundled agents send it to inference unchanged and report that
@@ -326,16 +404,45 @@ methods on its server-bound WS connection:
     not provider capability — a non-vision provider rejects the images
     downstream at inference. See the FFI `imagesJson` / `images_json`
     param.
-- `agent.chat.cancel { session_id }` — notification (no id). Best-
-  effort fire-and-forget; agent should short-circuit its inference
-  stream and `inference.stream.cancel` upstream. It should also release
-  any approval it has parked and skip a goal check that has not run. The
-  bundled `car do --serve` assistant keeps the stopped turn in the
+- `agent.chat.cancel { session_id }` — a notification (no id) to most
+  agents: best-effort fire-and-forget; the agent should short-circuit its
+  inference stream and `inference.stream.cancel` upstream. It should also
+  release any approval it has parked and skip a goal check that has not
+  run. The bundled `car do --serve` assistant is sent it as a request, and
+  answers `{ "ok": true, "dispatched": bool }` (no `dispatched` when no turn
+  of the session is in flight there), which the daemon relays in the
+  `agents.chat.cancel` reply. It keeps the stopped turn in the
   session's thread: a call it never ran reads as stopped, and call ids
-  on the same `session_id` continue from it.
+  on the same `session_id` continue from it. The
+  cancel can arrive right behind the turn's `agent.chat`, before the agent has
+  acked it, so register the turn as the request is read: the daemon
+  client calls a request handler (`register_handler`) in frame order and
+  only runs the future it returns on a task, so whatever the handler
+  records before returning that future is in place when the cancel is
+  handled. The Node and Python bindings do this for an agent that uses
+  `registerChatHandler` / `register_chat_handler`: a cancel for a turn
+  still waiting for that handler drops the turn before the handler sees
+  it and sends its terminal `agent.chat.event { kind: "error", error:
+  "cancelled" }`, and every cancel still reaches the agent's own
+  `agent.chat.cancel` notification handler.
+- The daemon also sends `agent.chat.cancel` (always as a notification)
+  when it ends a turn's route without a Stop, because nobody can answer
+  that turn's approvals or read its reply any more: the host that
+  started the turn disconnected, or the agent did not acknowledge
+  `agent.chat` within 5 s (for a conversational A2A turn, also when its
+  180 s reply deadline runs out). Treat it exactly as a Stop.
+- When the daemon ends an agent's connection (the agent disconnected or
+  the daemon restarted), every route on it ends too, and no cancel can
+  reach the turns the agent accepted on it. `car do --serve` stops all
+  of them when its connection drops
+  (`DaemonClient::register_connection_lost_handler`).
+- At a Stop, `car do --serve` ends the turn at once, as stopped, even
+  while a model call is in flight, and no further reply text is shown or
+  acted on, even when the reply comes back together with the Stop.
 
 Streamed tokens go up the same WS as `agent.chat.event`
-notifications keyed by `session_id`. The daemon's interceptor
+notifications keyed by `session_id` (and, when echoed, the turn's
+`turn_id`; see `agent.chat` above). The daemon's interceptor
 rewrites the method to `agents.chat.event` before forwarding to the
 originating host (see `try_forward_agent_chat_event` in
 `car-server-core/src/handler.rs`).
@@ -846,7 +953,9 @@ implementation assumes otherwise:
   no read of the daemon's session set, so it caches host connectivity —
   and that cached answer decides whether `browser_await_signin` returns
   the "open the CAR app" result or waits out its full timeout in front of
-  a drawer that is not there. The daemon pushes
+  a drawer that is not there — and, on macOS, whether it opens its own
+  visible sign-in window (only while a host is connected or before the
+  browser has launched). The daemon pushes
   `agent.browser.host_connected { connected }` on every transition it
   observes; a producer must apply it rather than relying on the next
   `browser.producer.register` ack, which is only refreshed per turn.

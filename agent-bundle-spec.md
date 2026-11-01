@@ -58,6 +58,135 @@ default_inference_complexity = "medium"
 | `lifecycle.stateful` | Declares whether the agent accumulates memory between runs. |
 | `lifecycle.persistence` | `session` (in-memory only), `host` (single device), `synced` (multi-device). |
 
+### Orchestrators and worker bundles
+
+An **orchestrator** declares the worker bundles it may start at runtime, and a
+**worker bundle** is a bundle that runs only as such a worker
+(`docs/proposals/orchestrator-workers.md`). Bundles that use these sections set
+`[runtime] bundle_format_version = 2` or higher; a CAR that understands only
+version 1 refuses them. The newest format this CAR accepts is 3, which
+`[spend]` (below) requires; a version newer than 3 is refused.
+
+```toml
+# in an orchestrator
+[[workers]]
+bundle = "source-sync"      # the worker bundle's [agent] id
+version = "1.4.0"           # one exact version
+
+[workers.limits]            # the author's concurrency caps, counted over the whole tree
+total = 40
+per_label = { tenant = 2 }  # running workers that share one value of the key
+
+# in a worker bundle
+[agent]
+role = "worker"
+
+[worker]
+models = ["provider/model-a"]             # the models its calls are pinned to
+
+[report]
+counters = ["records_synced", "errors"]   # the only keys workers.report accepts
+```
+
+| Field | Rule |
+|-------|------|
+| `[[workers]]` | Each entry names a valid bundle id and one exact version (no range or wildcard); a bundle is declared once. |
+| `[workers.limits]` | At most once per orchestrator (TOML attaches it to the `[[workers]]` entry it follows, but the caps are the orchestrator's). `per_label` keys follow the label-key rule `[a-z][a-z0-9_-]{0,31}`. |
+| `[workers.spend]` | The author's per-label caps, in the `[spend]` entry shape (`per_label = { tenant = [ { usd = 5, per = "day" } ] }`). Not supported by this CAR yet: a manifest that sets it is refused ("agent `<id>`: [workers.spend] is not supported by this CAR yet", or at a format version below 3 "… needs [runtime] bundle_format_version = 3") rather than installed with the cap ignored. |
+| `[agent] role = "worker"` | Needs an exact `[agent] version` and an `external_process` transport with a command. Installed into the bundle store, never as an agent. May not declare `[[workers]]` (no nesting in v1). |
+| `[report] counters` | At most 32 keys, each `[a-z][a-z0-9_]{0,31}`, no repeats. |
+| `[transport] kind = "outside"` | An **outside agent**: CAR runs no process for it. It takes no other `[transport]` field (one is refused, not ignored). It may declare `[[workers]]`, which makes it an outside orchestrator: the same id, declared worker bundles, caps and records as an installed one, reached only through an owner-issued outside credential on the public door (`credentials.issue`, see [Remote access](remote-access.md)). Only `agents.install` makes one; `agents.upsert` refuses to create or edit it, and `agents.start` and `agents.restart` refuse it. CAR records an install generation in its own copy of the manifest: a fresh install of the id mints a new one, an upgrade keeps it, and a value a publisher writes is ignored. |
+
+An unknown key in any of these sections (`[workers.limit]`, `totl`, `counter`)
+is refused when the manifest is read, rather than installed as if absent. The
+same rules apply when CAR loads an installed manifest at start, so a hand-edited
+one that breaks them is skipped with a logged reason. Every field of these
+sections is covered by the bundle signature.
+
+### `[spend]` — spending caps
+
+An agent's author caps the agent's spend on model calls made through CAR by
+declaring caps in the bundle: an amount in US dollars per calendar period, any
+combination of hour, day and month. No `[spend]` table means no cap. The
+design is `docs/proposals/spend-caps.md`; the wire surface (`spend.status`,
+the `-32018` refusal, the records) is
+[spend](websocket-protocol/spend.md#spend).
+
+```toml
+[runtime]
+bundle_format_version = 3            # required for [spend] (and [workers.spend])
+car_min_version = "0.59.0"           # required with [spend]: the first CAR that enforces caps
+
+[spend]
+caps = [ { usd = 2, per = "hour" }, { usd = 10, per = "month" } ]
+```
+
+| Field | Rule |
+|-------|------|
+| `caps` | A list of `{ usd = <number>, per = "hour" \| "day" \| "month" }`. `usd` is a number greater than 0 and at most $1,000,000,000,000 (an amount that rounds to $0 at micro-dollar precision counts as zero); each period at most once; no other key in an entry or in the table. The same entry shape is used by `[workers.spend]`. |
+| `[runtime] bundle_format_version` | Must be `3` when `[spend]` is present. |
+| `[runtime] car_min_version` | Must be `"0.59.0"` or newer when `[spend]` is present. A CAR older than the format-version check ignores tables it does not know and would install a capped bundle with its caps dropped; every stable CAR enforces `car_min_version`, so an older CAR refuses the bundle instead, and the caps are never silently lost. `car export` writes it. |
+
+**Refused, nothing installed.** Validation runs at `agents.install` (and in
+`car export`, once the bundle unit builds it); each failure names the field, and the bundle is not installed
+(the error is `manifest validation failed: <text>`):
+
+- "agent `<id>`: [spend] needs [runtime] bundle_format_version = 3"
+- "[spend] needs [runtime] car_min_version = \"0.59.0\" or newer"
+- "[spend] caps[1].usd must be greater than 0 (got -5)"
+- "[spend] caps[0].usd must be a number of US dollars (got \"ten\")"
+- "[spend] caps[2].per must be one of hour, day, month (got \"week\")"
+- "[spend] cap for day declared twice"
+- "[spend] caps[0] has an unknown field `limit`", "[spend] has an unknown field `limit`", "[spend] caps[0] needs usd and per"
+- "[spend] caps[0].usd must be at most $1,000,000,000,000 (got …)"
+
+**Shown back as declared.** `agents.list` rows, `car ls --json` and
+`spend.status.declared` carry the caps with the amount as written, so
+`usd = 2` reads back as `2`, not `2.0`, and `car export` writes them unchanged.
+
+**A bad cap in an installed manifest** (someone edits
+`agents/<id>/manifest.toml` by hand) does not make the agent vanish and does
+not let it run uncapped: at boot the agent is registered with status
+`errored`, `auto_start` off and `status_reason` "not started: <message>" (the
+same message as above), and `agents.start` is refused with "agent <id> not
+started: <message>" until a version whose caps validate is installed. The
+edited manifest is left on disk as it is — CAR never writes its caps-less
+in-memory record over it, whatever else it persists meanwhile (another
+agent's removal, a rename) — and a plain `agents.upsert` of that agent is
+refused with the same reason, so the bad cap can never turn into no cap at
+the next restart.
+
+**Caps change by installing a new version** (`agents.install` with
+`upgrade: true`); `agents.upsert` refuses a non-empty `spend_caps` field (an
+absent, null or empty one, as an `agents.list` row of an uncapped agent
+carries, is accepted) and a plain upsert keeps the installed caps. CAR's own
+copy of the manifest (`agents/<id>/manifest.toml`) keeps the `[spend]` table
+and the bundle's `[runtime]` floor: a `car_min_version` above `"0.59.0"` is
+written back as declared, never lowered to the caps' own floor. The new caps apply to the agent's next model
+call with no daemon restart, and spend already counted this period counts
+against them: lowered below what was spent means the next call is refused at
+once; raised means it is admitted at once. Each install that changes the caps
+appends `{ at, version, by: "owner", from: [caps], to: [caps] }` to
+`<CAR_HOME>/spend/agents/<id>.history.jsonl`, which `spend.status` returns as
+`cap_history`; removing the table records a change to `[]`.
+
+**What is counted.** CAR caps an agent's spend on model calls made through
+CAR, and only those: a call that goes around CAR — `claude -p` or another
+agentic CLI the agent runs, a provider called with the agent's own key,
+in-process FFI inference in a host app, or `agents.invoke_external` — is
+neither counted nor stopped by these caps. Local models count $0 and never
+reach a cap. A call already in flight when a cap is reached finishes and
+counts in full. A remote model with no list price is refused for a capped
+agent, except one whose provider reports each call's cost (OpenRouter): a
+capped agent may use it one call at a time, charged the provider's figure
+when the call finishes. A cap cannot stop spending on such a model when the
+provider never reports the cost: that call stays at $0 and is counted in
+`spend.status`'s `unpriced_calls`, which is how an owner sees it (an
+accepted gap). A capped orchestrator's own calls are capped; its workers'
+calls are not counted against its cap until workers PR 5
+(`docs/proposals/orchestrator-workers.md`) adds the orchestrator's key to
+every worker call.
+
 ---
 
 ## `capabilities.toml`
@@ -196,14 +325,14 @@ follow-up rather than guessing.
 
 ## `skills.jsonl`
 
-One JSON object per line, each a fully-formed skill graph node. Loaded into the agent's memory graph at install time.
+One JSON object per line, each a fully-formed skill graph node.
 
 ```jsonl
 {"id": "skill-summarize-meeting", "trigger": "user requests meeting summary", "procedure": "...", "domain": "summarization", "success_count": 0, "fail_count": 0}
 {"id": "skill-extract-action-items", "trigger": "decisions or commitments mentioned", "procedure": "...", "domain": "extraction", "success_count": 0, "fail_count": 0}
 ```
 
-Field shape matches the Skill type in `car-memgine`. Source of truth for that schema is the Rust type — see `car-rs/crates/car-memgine/src/skill.rs`.
+No install path reads `skills.jsonl` today: a bundle may carry it, and `car install` does not load it into the agent's memory graph. A skill reaches an agent through `skill.ingest` (`name` and `code` required), which stores a `MemKind::Skill` node through `Memgine::ingest_skill_full` (`car-rs/crates/car-memgine/src/engine.rs`); its trigger is `SkillTrigger` in `car-rs/crates/car-memgine/src/graph.rs`.
 
 ---
 

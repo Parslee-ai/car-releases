@@ -25,6 +25,7 @@ Runtime discovery for clients that cannot read files or run `car capabilities`.
 
 - **Params:** `{}`.
 - **Returns:** `{ caller_role, count, methods: [{ method, role }] }`, sorted by method through the generated capability table. Each role is one of `agent`, `owner`, `operator`, `operator_only`, or `host` and is the same derived role published in the generated capability manifest (`car capabilities --json`, car.parslee.ai/capabilities.json). `operator_only` means an unbound operator client or host may call the method, but a supervised agent may not.
+- **Host role unavailable (car#3404, then "Host authority fails closed"):** when the daemon has no host token installed (started with `--no-auth`, its host-token write failed at startup, or an embedder built the server state without one), no session can be the host, so every host-management method, and every other host gate, refuses every session. The one exception is `host.resolve_approval`, which still admits an operator session holding the daemon token until it moves to the host role (car#3701). The result then adds `single_principal_mode: "host role unavailable: no host token is installed, so host-management methods refuse; cause: <cause>"`, where the cause is `the daemon was started with --no-auth`, `writing the host token failed: <error>`, or, for an embedder, that nothing installed one. Test for the key's presence; the cause text varies. The field is absent when a host token is installed. `caller_role` and the listed methods are computed exactly as without it.
 - **Filtering:** an agent-scoped session receives `agent`, resource-conditional `owner`, and ungated `operator` rows, but never `operator_only` or `host`; an unbound daemon session receives `operator` and `operator_only`; a host-management session receives `host`, `owner`, `operator_only`, and `operator`. Ownership remains checked against the concrete resource when an owner method is called.
 
 The package form is `daemonCall("capabilities.list", "{}")` / `daemon_call("capabilities.list", "{}")`: the second argument is a JSON string even though the wire params are an object. The generated typed forms are `capabilitiesList("{}")` and `capabilities_list("{}")`.
@@ -41,17 +42,18 @@ Default port `9100`. Each WebSocket connection is its own session — runtime st
 
 The JSON-RPC surface carries a **wire protocol version** (`car-proto::PROTOCOL_VERSION`, currently `3`) that is **independent of the package semver** — it is bumped only on a backward-incompatible change to request/response shapes or method semantics, not on every release. Protocol v3 adds immutable model/catalog identity and capability-negotiated inference controls; the two identity capabilities are mandatory for bundled v3 clients.
 
-Clients negotiate it with `server.handshake`, run once after `session.auth` and before the main request loop:
+Each side speaks a **range** of versions, `PROTOCOL_VERSION_MIN..=PROTOCOL_VERSION` (currently `3..=3`). Clients negotiate with `server.handshake`, run once after `session.auth` and before the main request loop. The client sends its newest version as `protocol_version` and, optionally, its oldest as `protocol_version_min`; the connection settles on the **highest version both ranges contain**, returned as the reply's `protocol_version`. A client that sends only `protocol_version` (every client before this rule, and the native hosts that ship inside CarHost) speaks exactly that one version, so it gets that version back or a refusal, as before. Only a range sharing no version with the daemon's is refused (`-32006`), and the refusal names both ranges and which side to update.
 
 ```json
 // → client request
 {"jsonrpc": "2.0", "id": 1, "method": "server.handshake",
- "params": {"protocol_version": 3, "client_version": "0.51.0",
+ "params": {"protocol_version": 3, "protocol_version_min": 3, "client_version": "0.51.0",
             "required_capabilities": ["infer.model-identity.v1", "models.catalog-identity.v1"],
             "optional_capabilities": []}}
 // ← server reply
 {"jsonrpc": "2.0", "id": 1,
- "result": {"protocol_version": 3, "server_version": "0.51.0", "client_protocol_version": 3,
+ "result": {"protocol_version": 3, "server_protocol_version_min": 3, "server_protocol_version_max": 3,
+            "server_version": "0.51.0", "client_protocol_version": 3,
             "client_version": "0.51.0",
             "assistant_name": "Jarvis",
             "assistant_aliases": ["hey jarvis", "ok jarvis", "jarvis"],
@@ -68,22 +70,26 @@ agent answers to another. They are **additive**, so they did not bump
 `PROTOCOL_VERSION`: an older client ignores them and keeps its built-in
 defaults. `assistant_brand` is the fixed product name and never changes.
 
-Protocol v3 is exact-version and fail-closed:
+**Compatibility rule (car-releases#104).** CAR package minors that share a wire-protocol version connect to each other in both directions: a self-updating daemon one minor ahead of an npm/PyPI `car-runtime` client, or one behind it, still connects, and package-version skew is reported as a warning, not a refusal. A release that raises `PROTOCOL_VERSION` keeps the previous version inside its range, so clients one release behind still connect at the older version; raising `PROTOCOL_VERSION_MIN` (dropping a version) is the breaking change, and its changelog names it. Keeping a version in range is a promise to still implement it per connection: any request or response whose behaviour changes in vN branches on the version that connection negotiated (`ClientSession::protocol_at_least(N)` in car-server-core), never on `PROTOCOL_VERSION`, so a client that settled on an older version keeps the semantics it was written against. A version stays in range only while the daemon still serves it. The rule holds for daemons from this release on: a daemon that predates ranges reads only `protocol_version` and still demands an exact match. `server_protocol_version_min` / `server_protocol_version_max` in the reply say what this daemon speaks, so a client can tell how far it is from the edge.
+
+Negotiation is fail-closed:
 
 - On an auth-enabled daemon, await a successful `session.auth` response first; request dispatch is concurrent, so pipelining `server.handshake` before that response can race the auth gate.
-- `host.subscribe` and every `auth.*` method return `-32005` (`protocol handshake required:`) until the current WebSocket session has negotiated the exact version. This prevents a legacy host from opening a browser flow it cannot safely complete.
-- A missing, non-numeric, or differing request version returns `-32006` (`protocol version mismatch:`) and does not negotiate the session. A same-v3 repeat is idempotent.
+- `host.subscribe` and every `auth.*` method return `-32005` (`protocol handshake required:`) until the current WebSocket session has negotiated a version. This prevents a legacy host from opening a browser flow it cannot safely complete.
+- A missing or non-numeric `protocol_version`, a non-numeric `protocol_version_min`, or a range that shares no version with the daemon's (including `protocol_version_min` above `protocol_version`) returns `-32006` (`protocol version mismatch:`) and does not negotiate the session. The message names the client's range, the daemon's range and version, and the remedy. A repeat is idempotent.
+- A supervised agent's handshake outcome (the settled version or the refusal, both ranges, both package versions) is recorded beside `agents.json` in `agent-handshakes.json` (a worker's in its own root, `workers/<handle>/agent-handshakes.json`, never the shared file). `agents.list` reports it as the row's `handshake`, self-healing turns a refusal or skew into an `agent_protocol_skew` detection, and `car doctor` lists it under "Agent connections", so a client that fell behind is visible outside its own stderr log.
 - `required_capabilities` and `optional_capabilities` must be arrays of non-empty strings. Unsupported mandatory entries return `-32008` (`protocol capability mismatch:`) and do not negotiate; unsupported optional entries are ignored. A success returns the sorted, deduplicated `negotiated_capabilities`.
 - Bundled v3 clients require `infer.model-identity.v1` and `models.catalog-identity.v1`, and fail closed if a nominally successful reply omits either. `infer.cancel.v1` and `infer.deadline.v1` are optional and must not be inferred from protocol version alone.
 - `feedback.v1` is optional and gates every `feedback.*` method: a negotiated v3 session that did not request it is refused with `-32008` (`protocol capability mismatch:`) naming the capability. The bundled host requests it as an optional capability so an older daemon still connects.
+- `workers.start-values.v1` is optional and gates nothing: it says `workers.start` accepts `values`, the per-worker secret values an orchestrator hands a worker at start (see [workers](websocket-protocol/workers.md)). An orchestrator that needs them asks for it in `optional_capabilities` and checks `negotiated_capabilities`; an older daemon refuses `values` as an unknown field.
 - Negotiation is per connection. A reconnect starts unnegotiated and repeats `session.auth` (when enabled) → `server.handshake` → `host.subscribe`.
 - Bundled clients reject an old daemon's unknown-method response, a malformed success, and a handshake timeout instead of proceeding on an unproven protocol.
 
 The bundled NAPI/PyO3/UniFFI clients run this handshake automatically (via
 `car-daemon-client`), the in-tree CLI negotiates on every raw daemon connection,
 and the native macOS/iOS/Android/Windows hosts negotiate before subscribing.
-The bindings expose the constant as `protocolVersion()` /
-`protocol_version()`.
+The bindings expose the range's ends as `protocolVersion()` /
+`protocol_version()` and `protocolVersionMin()` / `protocol_version_min()`.
 
 `client_version` is the build the *client* reported in its request, echoed back
 (truncated to 64 characters, since it is client-controlled). It is an echo, not
@@ -108,6 +114,20 @@ ignores the field.
 
 The MCP endpoint shares the daemon's memgine with WS — facts ingested via MCP `tools/call memory_add_fact` show up in WS `memory.query` and vice versa, and MCP agents can call proactive memory tools such as `memory_save_procedural`, `memory_intervene`, and `memory_evaluate`. Override the bind address via `--mcp-bind <host:port>` or `CAR_MCP_BIND`; pass `disabled` to skip the listener entirely. See `docs/cookbook/07-mcp-server.md` for client wiring examples and the per-tool schema list.
 
+**Credentials on `/mcp`** (car#3185). On a daemon with auth on (the default), anything that reads or changes daemon memory — the `memory_*` and `skill_*` tools, `policy_check`, `resources/list`, `resources/read`, `prompts/get`, `completion/complete` — or starts an assistant run (`assistant_start`, `assistant_poll`, `assistant_cancel`) needs a credential on the HTTP request. Without one the answer is HTTP `401` with a `WWW-Authenticate: Bearer` header and a body naming the remedy (`Authorization: Bearer <contents of …>` with this platform's auth-token path), and no tool runs. Three credentials are accepted:
+
+| Credential | Headers | Memory it acts on |
+|---|---|---|
+| The daemon's auth token — the same token `session.auth` takes | `Authorization: Bearer <contents of the auth-token file>` | the daemon's shared graph |
+| A run credential the daemon minted for a CLI it spawned (`agents.invoke_external`, coder sessions and their Foreman farm-outs) | `X-Car-Agent-Id: cli-run-…` plus `Authorization: Bearer <run token>` | the graph of whoever started that run: the daemon's shared graph for an operator (host session, `car` CLI, CarHost, an operator's coder run), that agent's own graph for a supervised agent |
+| A supervised agent's own token (`CAR_AGENT_TOKEN`), unscoped — no work context, no method allowlist | `X-Car-Agent-Id: <agent id>` plus `Authorization: Bearer <agent token>` | that agent's own graph |
+
+The auth-token file is `~/Library/Application Support/ai.parslee.car/auth-token` on macOS, `$XDG_RUNTIME_DIR/ai.parslee.car/auth-token` (else `~/.config/ai.parslee.car/auth-token`) on Linux, and `$CAR_HOME/ai.parslee.car/auth-token` when `CAR_HOME` is set; it is owner-only (`0600`) and changes on every daemon launch, so read it at connect time. A run credential is revoked when its run ends and expires with the run's own timeout (at most 24 hours); the daemon writes it into the CLI's generated MCP config file (Claude Code) or names it in `-c mcp_servers.car=…` (Codex), and in both cases puts it in the CLI's environment as `CAR_MCP_RUN_TOKEN` and `CAR_MCP_RUN_AGENT_ID` — the marker that makes `car-mcp --local-peers` inside that CLI present the run's credential rather than the operator's token. It does so only for the daemon's own MCP URL (any loopback spelling of it, which the CLI is handed rewritten to the daemon's own address). The daemon token is never written into a spawned CLI's MCP config or command line. A CLI launched for a supervised agent also has the daemon-wide credential environment (`CAR_AUTH_TOKEN`, `CAR_AUTH_TOKEN_FILE`, `CAR_HOST_TOKEN`) removed; an operator-launched CLI inherits the daemon's environment as before. An agent credential (the last two rows) whose graph is not the daemon's shared one gets `403` from the assistant tools, since an assistant run acts on the shared memory, and the daemon read tools (`events_query` and the rest) refuse both kinds — they take only the daemon token. A scoped agent token (work context or method allowlist) is refused with `401`; use it on the agent's WebSocket connection.
+
+A peer message to the built-in assistant (`peer_message` with `to` naming `parslee-core`, or its `car-assistant` alias) needs one of these credentials too, because the assistant runs a turn on what it is sent. Without one the tool call fails with the remedy in its text and nothing is sent. The daemon token and an operator-started run's credential send as the session's own `mcp:` sender, as before; a supervised agent's token, or a run credential for a run a supervised agent started, sends as that agent. Messages to every other peer need no credential. A refused agent or run credential gets a `401` that says so (`MCP agent credential refused …`) rather than pointing at the daemon's token, and the `Bearer` scheme is matched case-insensitively. The plugin's `car-local-peers` entry runs `car-mcp --local-peers`, a stdio forwarder to this endpoint that presents a credential on every request: a CAR-spawned CLI's run credential (never the operator's token), a supervised agent's own identity, or the daemon token read through the daemon client. A CLI the daemon launches for a supervised agent — through `agents.invoke_external`, a coder run the agent started (its external and Foreman rungs), or the agent's own `foreman.run`, for subtasks this host runs itself — always carries `CAR_AGENT_ID` (alone, when nothing was minted for it), which the forwarder treats as "present nothing", and none of the daemon-wide credential environment. Residual: a subtask a supervised agent farms to an enrolled peer (foreman.run distributed, or an agent-owned distributed coder session) runs on the peer under the peer's operator credentials; the dispatch carries no agent attribution (see the `foreman` namespace). The entry declares those variables in `env_vars`, because Codex passes a stdio server only the environment it declares.
+
+These need no credential: `initialize`, `ping`, `tools/list`, `prompts/list`, notifications, the pure plan checks (`verify`, `simulate`, `equivalent`, `optimize`), the peer and Lattice tools (they act as the caller's own `MCP-Session-Id`), and the daemon read tools (they take the bearer themselves). A caller without a credential is shown only those: `tools/list` omits the rest and `initialize` declares only the `tools` capability, so a client without a credential (one with no daemon token to send, or a CLI launched for a supervised agent through the plugin's `car-local-peers` entry) still gets its peer and Lattice tools without tripping a `401`. A daemon started with `--no-auth` keeps token-free access, as `session.auth` does; so does Windows, whose auth-token file holds DPAPI ciphertext rather than the token.
+
 **`initialize` negotiates the protocol version.** The `initialize` result carries back the `protocolVersion` the client asked for when it is one this server supports (`car_mcp::SUPPORTED_VERSIONS` — `2024-11-05`, `2025-06-18` and `2025-11-25` today). Absent, non-string, and unsupported all get `car_mcp::PROTOCOL_VERSION` (`2025-11-25`, the newest entry) instead, as a normal result rather than a JSON-RPC error, leaving the client to proceed or disconnect. The append-plus-move design is what makes each bump safe: a client still asking for `2024-11-05` keeps getting it back rather than being handed a revision it never asked for, and nothing is ever dropped from the list. `2025-03-26` is deliberately absent — that revision makes receiving JSON-RPC batches a MUST, which this server does not implement; `2025-06-18` removed batching again.
 
 **On `2025-11-25`.** Its one normative server requirement is on this HTTP transport — servers must answer `403` to an invalid `Origin` — which CAR has done since before the revision (see the `Origin` table below). Everything else in the delta is a capability a server declares or declines, and CAR declines all of them: no `tasks` (experimental), no icon metadata, no OAuth/OIDC discovery on this transport, and the elicitation and sampling additions extend *client* capabilities CAR-as-server never invokes. One behavioural change rides with it, and it is the only part an *older* client also sees: that revision says input validation errors *should* be returned as tool execution errors, so on `tools/call` an argument CAR's tool schema rejects now comes back as an `isError: true` result rather than a JSON-RPC `-32602`. The envelope is unchanged — a request that fails the `CallToolRequest` schema itself (no `name`, or a non-object `arguments`) is still `-32602`, as is an unknown tool. It applies whatever revision a client negotiated: dispatch is stateless and does not record that, `isError` has existed since `2024-11-05` so the shape is legal in every revision CAR speaks, and the item is a clarification rather than a new wire feature. Clients must check `isError` rather than treating a non-null `result` as success.
@@ -116,9 +136,9 @@ The MCP endpoint shares the daemon's memgine with WS — facts ingested via MCP 
 
 **A notification POST returns `202 Accepted` with an empty body.** A JSON-RPC message with no `id` has no reply, so `POST /mcp` answers it with a bare 202 — do not parse the body.
 
-**Each daemon HTTP client gets a peer identity.** A successful `initialize` response includes `MCP-Session-Id`; send that header on every later POST. That header is a **bearer credential** — treat it the way you would a token, and never publish it. CAR mints a SEPARATE, unforgeable peer id at `initialize` and derives the sender as `mcp:<peer-id>` from that, so concurrent CLI sessions no longer share an audit principal and no principal discloses the value that authenticates its session. `peer_list` publishes names to every caller, so a name derived from the credential would hand one session the means to act as another. A receive-capable session appears in `peer_list` as kind `mcp_session`, and `peer_inbox {limit?}` drains only its queue (default/max 50). The ordinary peer guards apply independently to each session: serialized-size cap, identical-repeat window, 20 messages per sender per recipient per minute, and 50 unread queued messages. `DELETE /mcp` with the session header removes the address and unread queue; 24 hours without a request does the same for clients that disappear without DELETE. An unknown/expired supplied session id gets HTTP 404. Calls that omit the header can still use older non-peer tools, but `peer_list`, `peer_message`, `peer_inbox`, and the node tools refuse rather than falling back to a shared sender.
+**Each daemon HTTP client gets a peer identity.** A successful `initialize` response includes `MCP-Session-Id`; send that header on every later POST. That header is a **bearer credential** — treat it the way you would a token, and never publish it. CAR mints a SEPARATE, unforgeable peer id at `initialize` and derives the sender as `mcp:<peer-id>` from that, so concurrent CLI sessions no longer share an audit principal and no principal discloses the value that authenticates its session. `peer_list` publishes names to every caller, so a name derived from the credential would hand one session the means to act as another. A receive-capable session appears in `peer_list` as kind `mcp_session`, and `peer_inbox {limit?}` drains only its queue (default/max 50). The ordinary peer guards apply independently to each session: serialized-size cap, identical-repeat window, 20 messages per sender per recipient per minute (40 for all senders behind one Lattice connection together), and 50 unread queued messages. `DELETE /mcp` with the session header removes the address and unread queue; 24 hours without a request does the same for clients that disappear without DELETE. An unknown/expired supplied session id gets HTTP 404. Calls that omit the header can still use the non-peer tools their credential allows (see **Credentials on `/mcp`** above), but `peer_list`, `peer_message`, `peer_inbox`, and the node tools refuse rather than falling back to a shared sender.
 
-**Lattice tools.** The same endpoint serves `lattice_join`, `lattice_leave`, `lattice_nodes`, `lattice_find`, `lattice_claim`, `lattice_release`, `lattice_claims`, and `lattice_wait`, which mirror the `lattice.*` methods documented under the method reference, keyed on the session's `mcp:<peer-id>`. The operator-only `lattice.requests` and `lattice.respond` are deliberately **not** MCP tools: an MCP session is never the operator. `peer_message` accepts the same optional `kind` and `in_reply_to` as `agents.message`, can address a human node as `human:<name>`, and `peer_list` rows carry each peer's `node` profile (or `null`) and include human nodes. Nothing pushes to an MCP client, so every node tool result, `peer_list`, and `peer_message` include `inbox_pending` — the session learns it has mail the next time it calls any of them.
+**Lattice tools.** The same endpoint serves `lattice_join`, `lattice_leave`, `lattice_nodes`, `lattice_find`, `lattice_claim`, `lattice_release`, `lattice_claims`, and `lattice_wait`, which mirror the `lattice.*` methods documented under the method reference, keyed on the session's `mcp:<peer-id>`. `lattice.requests`, `lattice.respond` and `lattice.human.status` are deliberately **not** MCP tools: they answer for a person, which only the operator and an agent the operator made that person's delegate may do, and an MCP session is neither. `peer_message` accepts the same optional `kind` and `in_reply_to` as `agents.message`, can address a human node as `human:<name>`, and `peer_list` rows carry each peer's `node` profile (or `null`) and include human nodes. Nothing pushes to an MCP client, so every node tool result, `peer_list`, and `peer_message` include `inbox_pending` — the session learns it has mail the next time it calls any of them.
 
 CAR-spawned batch CLIs remain send-only. Their generated MCP URL carries `car-mcp-mode=batch`; initialize still gives the child a distinct sender principal, but CAR omits it from the peer directory and `peer_inbox` refuses it. This keeps `PeerKind::ExternalCli`'s closed-stdin lifecycle separate from `PeerKind::McpSession`.
 
@@ -141,6 +161,8 @@ Adding push would still require per-connection sinks, a writer handle through th
 `POST /mcp` and `DELETE /mcp` are guarded; a rejected request never reaches dispatch or session teardown. `GET /mcp` needs no guard — it is a constant `405` with no side effect (see the push-channel decline above). **`GET /mcp/health` is exempt** — it has no side effect and no secrets, and the documented uptime `curl` plus browser probes must keep working.
 
 The rule does not widen for a non-loopback `--mcp-bind`: a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin` value, and wider exposure makes the guard more important, not less. To serve browser traffic from another origin, front the daemon with a reverse proxy that owns its own CORS/`Origin` policy.
+
+**`Host` validation on `/mcp`** (car#3185). A rebound DNS name reaches the loopback listener carrying the attacker's hostname, so `POST /mcp` and `DELETE /mcp` also require `Host` to be `localhost` or an IP literal (any port); any other name is `403` with `{"error":"host not allowed"}`, before dispatch. Rebinding needs a name to rebind, so a literal cannot be one, and a wildcard bind's clients — including the CLIs the daemon itself spawns at `http://0.0.0.0:<port>/mcp` — arrive with one. An absent `Host` is allowed — every browser sends one. **Caveat for a wildcard bind** (`--mcp-bind 0.0.0.0:<port>`): reach it by IP address (`http://192.168.1.20:9102/mcp`, or `127.0.0.1` on the machine itself), not by a hostname such as `my-mac.local`, which is refused; the CLIs the daemon spawns are handed a loopback URL for it.
 
 **`MCP-Protocol-Version` on `/mcp`.** Once a client has negotiated a revision on `initialize`, the HTTP transport asks it to name that revision on every later request. Same absent-permissive, present-strict shape as `Origin`:
 
@@ -179,7 +201,7 @@ Bounds, all reported rather than implied:
 - **A 2000-event buffer**, trimmed at the head. `events_skipped` is how many events were dropped before your `since_seq`, so a gap is stated and never silent. Surviving events keep their original `seq`. A poll returns everything at or after `since_seq` with no per-poll cap, so `since_seq: 0` on a long run can hand you all 2000 at once — pass `next_seq` and poll incrementally, because every one of those events lands in the calling model's context.
 - **No cap on retained *records*.** The 8-run limit counts executing runs; a terminal record stays pollable (with its events) until the idle TTL reaps it. A client that starts many short runs and never polls them again holds those buffers for up to an hour.
 
-`assistant_cancel` lands at the next **turn boundary**, not mid-model-call — expect one more turn's worth of activity, then poll for the document describing what the run had done. Cancelling a finished or unknown run is a successful no-op. On an `until` run, a cancel also skips a goal check that has not started, and a check it interrupts is not graded.
+`assistant_cancel` stops the run at once, even while a model call is in flight, and no further reply text is shown or acted on (no tool that reply would have called runs), so poll for the document describing what the run had done before the cancel. Cancelling a finished or unknown run is a successful no-op. On an `until` run, a cancel also skips a goal check that has not started, and a check it interrupts is not graded.
 
 **A run handle is not a durable record.** The registry is in memory: after a daemon restart every `run_id` is unknown, and `assistant_poll` returns `isError: true` saying so rather than an empty `running` forever. A run whose task dies without producing an outcome is likewise settled by the next poll, as `status: "error"` with a `car.do/1` `result` naming `run_task_died` — a dead run is never reported as still running.
 
@@ -187,7 +209,7 @@ Execution posture matches `car do`: sandbox-first (Docker, no network), and `loc
 
 A run works in an organization by `car do`'s rule (proposal §9): `org` (an org id you are signed in to) or `personal: true`, never both. With neither, the repository's declared org under `cwd` applies, then your default org, then personal work. A context that cannot be used refuses the start and names the fix, and a repository that declares an org refuses `personal`. A bound run's model calls go out in that org. Its memory, learned repairs and trajectories stay in that org's private store, and it gets only that org's own-account tools. The run's car.do/1 documents report the binding as `work_context`, `null` for personal work.
 
-Loopback reachability is not caller identity. Every `assistant_start` that resolves to an organization requires `Authorization: Bearer <generic-daemon-token>` on that HTTP request, and every later `assistant_poll` or `assistant_cancel` for its handle requires the same per-launch token. The token is an HTTP header, never a tool argument shown to the model. Missing or invalid credentials return a tool result with `isError: true` before a run starts or an existing org handle is read or changed. Personal runs retain their token-free behavior. On an explicitly auth-disabled daemon (`--no-auth` / `CAR_NO_AUTH=1`) there is no per-launch token, so this gate is a no-op like `session.auth`; that mode keeps its documented trusted single-user posture. The listener restriction remains in addition to authentication: bound beyond loopback with `CAR_MCP_BIND`, the endpoint refuses any run that would bind even with a valid token, and only `personal: true` runs there.
+Loopback reachability is not caller identity. Every `assistant_start` that resolves to an organization requires `Authorization: Bearer <generic-daemon-token>` on that HTTP request, and every later `assistant_poll` or `assistant_cancel` for its handle requires the same per-launch token. The token is an HTTP header, never a tool argument shown to the model. Missing or invalid credentials return a tool result with `isError: true` before a run starts or an existing org handle is read or changed. Personal runs need a credential too (the daemon token, or a run credential or agent token whose graph is the daemon's shared one; see **Credentials on `/mcp`**), and without one the HTTP request is refused with `401` before the tool runs. On an explicitly auth-disabled daemon (`--no-auth` / `CAR_NO_AUTH=true`) there is no per-launch token, so this gate is a no-op like `session.auth`; that mode keeps its documented trusted single-user posture. The listener restriction remains in addition to authentication: bound beyond loopback with `CAR_MCP_BIND`, the endpoint refuses any run that would bind even with a valid token, and only `personal: true` runs there.
 
 #### Daemon-only tool groups: eventlog, workflow, scheduler (car#972 Track C)
 
@@ -564,7 +586,7 @@ also includes `a2ui.event` (after `a2ui/subscribe`),
 > drive-by-RCE chain a security audit walked end-to-end (browser →
 > unauth `ws://localhost:9100/` → `agents.upsert` → LaunchAgent →
 > persistent RCE at next login). Pass `--no-auth` (or set
-> `CAR_NO_AUTH=1`) to opt back into the legacy "any local caller
+> `CAR_NO_AUTH=true`) to opt back into the legacy "any local caller
 > wins" posture — only appropriate for trusted single-user developer
 > machines. The legacy `--require-auth` flag is still accepted but
 > is now a no-op kept for backward compatibility with launchers
@@ -598,8 +620,8 @@ cannot read, replace, or delete it. The complete reserved contract is:
 | `auth.complete` | `code`, `verifier`, `redirect_uri`, `attempt_id` (req), `api_base?`, `client_id?` | Returns `{ state: "accepted", attempt_id }` only after atomically claiming the exact current reservation as a `redeeming` lease and spawning the daemon-owned redemption task. Accepted therefore implies durable claim, but is not commit proof. Duplicate, expired, or stale attempts fail before exchange and never return accepted. `-32004` beginning `auth coordination deadline before redemption; safe to retry auth.complete` means no claim/code exchange began and permits exactly one bounded retry of the same attempt/code. Any response-waiter timeout or transport ambiguity may have claimed and is proof-only: never replay the code. The worker survives a request connection closing, fetches the new session before mutating credentials, stores tokens plus exact completion proof, and after a successful exchange makes at most one additional bounded `/connect/session` check before publishing a consumed-code failure. |
 | `auth.completion_status` | `attempt_id` (req) | One already-published V2 authoritative snapshot: pending `{ state: "pending", attempt_id, generation, phase: "awaiting_callback" \| "redeeming", expires_at_unix_ms }`; success `{ state: "complete", attempt_id, generation, account_id?, session? }`; terminal failure `{ state: "failed", attempt_id, generation, error_code: "completion_failed" \| "attempt_expired" \| "daemon_restarted", message, retryable: true }`; or `{ state: "stale", attempt_id, generation }`. No legacy migration, token refresh, publication barrier, or network call. An expired or old-daemon redeeming worker is atomically closed before return, which may require one terminal publication. The daemon-owned proof operation survives socket loss. Its response waiter has a composed 95-second bound; bounded coordination and waiter timeouts use stable `-32004` retry-later messages, while genuine corruption/internal failures remain terminal `-32603`. Clients use a longer timeout and never overlap proof reads. |
 | `auth.snapshot` | — | `{ authenticated, active_account_id? }`. No token refresh or network call. Its first local read may migrate an attributable legacy login into V2; an ambiguous legacy marker degrades to a signed-out snapshot (`authenticated: false`) and the orphan fixed-slot credential is discarded, so a fresh sign-in can proceed. `active_account_id` is omitted when the fixed credential slots cannot be attributed exactly; registry rows are never substituted as proof. |
-| `auth.status` | `retry_keychain_access?: bool` (default `false`) | `{ authenticated: bool, session? }`. Ordinary calls use the current coordinator state and never clear a failed-read cooldown. Only the literal boolean `retry_keychain_access: true` explicitly clears cooldown and starts one new credential-read generation. |
-| `auth.switch_org` | `organization_id` (req), `api_base?` | `{ authenticated, session }` — **silently** switches the signed-in account's active organization: mints a fresh token scoped to `organization_id` via the refresh grant's `organization_id` override (the backend validates membership; no browser), persists the rotated tokens, and returns the refreshed session. Inference follows immediately (the new token carries `active_org`). The org must be one the login belongs to (`session.Organizations[]`). |
+| `auth.status` | `retry_keychain_access?: bool` (default `false`) | `{ authenticated: bool, session?, generation? }`. `generation` is the durable auth-state generation, taken from the `auth.authority_hint` counter when the check began (every credential mutation and authoritative read republishes it), and omitted while that hint is `unknown`. It is **not** the read generation `auth.credential.event` carries, which counts credential reads; never compare the two. A host drops an answer whose `generation` is older than a `signed_out` passive hint it has already applied, so a sign-out that lands during the check is not undone by its late answer. Ordinary calls use the current coordinator state and never clear a failed-read cooldown. Only the literal boolean `retry_keychain_access: true` explicitly clears cooldown and starts one new credential-read generation. A session check Parslee answers with 401 renews the token once; when the token service cannot renew it, the call fails with `"Parslee session token could not be renewed: … You are still signed in — retry shortly."` rather than the 401. |
+| `auth.switch_org` | `organization_id` (req), `api_base?` | `{ authenticated, session }` — **silently** switches the signed-in account's active organization: mints a fresh token scoped to `organization_id` via the refresh grant's `organization_id` override (the backend validates membership; no browser), persists the rotated tokens, and returns the refreshed session. Inference follows immediately (the new token carries `active_org`). The org must be one the login belongs to (`session.Organizations[]`). The daemon then re-activates its Parslee session for the same login, so host identity, the `parslee` field of `session.auth`, and feedback lane binding follow the new org; skipped when `api_base` names a different authority than the active login. |
 | `auth.accounts` | `api_base?` | `{ accounts: [{ id, email?, name?, active }] }` — every stored Parslee **login** (multiple can coexist; exactly one is `active`). Migrates a pre-multi-login session into the registry on first call. |
 | `auth.switch_account` | `account_id` (req), `api_base?` | `{ authenticated, session }` — make another held login the active view (one compare-and-swap publication of the V2 record; every login keeps its own refresh token), refresh, and return the newly-active login's session. The active login is the CLI/UI default view; it does not change the default org. |
 | `auth.remove_account` | `account_id` (req) | `{ ok, accounts }` — forget a stored login (deletes its stashed tokens). If it was active, another remaining login becomes active, or the session clears when none remain. A default org held by the removed login is cleared, never moved to another login. |
@@ -619,9 +641,11 @@ bills against, and `remove_account` drops a stored login — so an authenticated
 but non-host connection could sign the user out of every Parslee-routed model
 with one call. The reads are gated too: `status` / `accounts` enumerate which
 identities exist and which is active, while `snapshot` / `completion_status`
-expose authentication and attempt state. As with the other host-gated surfaces, the
-gate is a no-op when the daemon runs with no host token configured (`--no-auth` /
-pure-dev), where the connection is the authority.
+expose authentication and attempt state. As with the other host-gated surfaces, a
+daemon with no host token installed (`--no-auth`, a failed host-token write at
+startup, or an embedder that installs none) has no host, so it refuses every
+session here; it reports `single_principal_mode` with the cause in
+`capabilities.list`, `session.auth` and the refusal.
 
 This costs the CLI nothing: `car auth login` / `logout` / `orgs` / `switch-org` /
 `accounts` never call this surface — they use the `car-auth` crate in-process.
@@ -711,9 +735,11 @@ is daemon-private — `secret.put`/`get`/`delete` fail closed on the reserved sl
 — which left `openrouter.disconnect` as the only path that could delete it, and
 it was ungated: any authenticated local connection could log the user out of
 OpenRouter, cancel the host's in-progress connect, or read credential-source
-metadata. The read (`status`) is gated too, for the same reason. As with the
-other host-gated surfaces, the gate is a no-op when the daemon runs with no host
-token configured (`--no-auth` / pure-dev), where the connection is the authority.
+metadata. The read (`status`) is gated too, for the same reason. As with the other host-gated surfaces, a
+daemon with no host token installed (`--no-auth`, a failed host-token write at
+startup, or an embedder that installs none) has no host, so it refuses every
+session here; it reports `single_principal_mode` with the cause in
+`capabilities.list`, `session.auth` and the refusal.
 
 Every authenticated WebSocket connection receives `openrouter.auth.event` with
 the full non-secret status as `params` whenever daemon authority changes or a
@@ -759,7 +785,7 @@ driving the daemon.
 
 ### Opt-out posture (`--no-auth`)
 
-`car-server --no-auth` (or `CAR_NO_AUTH=1`) skips the token handshake
+`car-server --no-auth` (or `CAR_NO_AUTH=true`) skips the token handshake
 and reverts to the pre-2026-05 authorization model: any local process
 that can open a TCP socket to `127.0.0.1:9100` can call any
 method after the non-secret protocol negotiation. This is appropriate **only** when:
@@ -778,9 +804,11 @@ method after the non-secret protocol negotiation. This is appropriate **only** w
 - ✅ **Same-user daemon + their own UI** (auth on, default):
   `car-host` reads the token from the well-known path and
   authenticates transparently, then negotiates the exact wire protocol before
-  its first host request. The locally-served HTML UI
-  fetches the token from the colocated `GET /auth-token`
-  endpoint on `port + 1` (loopback only).
+  its first host request. The locally-served HTML UI never
+  holds the token: it signs in with the one-time `car ui` link
+  and presents a single-use ticket on its own `/ws` (see
+  [ui](websocket-protocol/ui.md#ui)). No HTTP route serves the
+  token; the old `GET /auth-token` was removed in front doors 6c.
 - ✅ **Same-user, multiple unrelated processes** (auth on,
   default): a second user process must read the `0600` token
   file to authenticate — not a fresh exposure (anything running
@@ -836,7 +864,7 @@ When one of those arrives, the dispatcher:
    approval row stays in `Pending` for forensics; the connection
    is *not* closed (the caller may retry with revised params).
 
-`car-server --no-approvals` (or `CAR_NO_APPROVALS=1`) disables
+`car-server --no-approvals` (or `CAR_NO_APPROVALS=true`) disables
 the gate. Only safe on trusted single-user developer machines.
 Embedders override the method set, the timeout, and the on/off
 switch via `ServerStateConfig::with_approval_gate(ApprovalGate)`.
@@ -869,12 +897,18 @@ per-session ownership on every mutation:
     resolve. This is intentional: the parking dispatch is one
     session, the local UI doing the click is a different session,
     and the gate would deadlock the UX if approvals were strictly
-    session-scoped.
-- **Reads** (`host.agents`, `host.approvals`, `host.events`)
-  remain unrestricted so a single dashboard can render every
-  agent and approval across sessions. The trust model is "any
-  authed caller is the user," so cross-session *visibility* is by
-  design; cross-session *mutation* is what the audit closed.
+    session-scoped. The exception is a session walled to a
+    supervised agent: it may not resolve a gate row, its own or
+    another agent's, nor a system-level row attributed to itself
+    (#3453; see `host.resolve_approval`).
+- **Reads** (`host.agents`, `host.approvals`, `host.events`,
+  `host.subscribe`) are scoped by who is asking. A host or operator
+  session sees every agent's records, so a single dashboard can
+  render every agent and approval across sessions. A session bound
+  to a supervised agent sees only its own records, unless the host
+  granted it the watcher view with `agent_permissions.set_observer`
+  (macOS and Windows; `host.agents` stays own-row even then). See
+  [host](websocket-protocol/host.md) (#3419).
 
 ### Token handshake (default behaviour)
 
@@ -950,8 +984,7 @@ whitespace around a real token is trimmed (so `ssh host cat token`
 output works without further cleanup).
 
 Server-side code (the daemon reading its own token to install on
-`ServerState`, the UI server exposing it at `GET /auth-token`)
-continues to use `auth_token::read()` directly — that read is *not*
+`ServerState`) continues to use `auth_token::read()` directly — that read is *not*
 overridable by env var, since the daemon should advertise the token
 it actually minted, not whatever the operator put in their shell.
 
@@ -978,6 +1011,17 @@ The release schema can be read before negotiation through
 [`server.schema`](websocket-protocol/server.md#serverschema), after `session.auth` when daemon auth is
 enabled. A client can therefore check the release's schema digest before using
 application methods.
+
+The schema also describes method **params**, not only results:
+`rpc.<method>.params` is generated from the Rust type the handler parses, and
+`coverage.rpc_params` lists every method as covered, `not_read` (its dispatch
+arm passes the handler no params), or uncovered with a reason. Diffing `wire-schema.json` between
+releases therefore shows a params change the same way `index.d.ts` shows an FFI
+signature change, for every covered method. The approval channel is covered end
+to end: the `host.subscribe` snapshot, the `host.event` notification, and the
+approval record its `approval.requested` / `approval.resolved` payload carries.
+See [`server.schema`](websocket-protocol/server.md#serverschema) for the bucket
+definitions.
 
 #### `session.bind_context`
 
@@ -1016,10 +1060,12 @@ application methods.
   `{ host_token: string, memory_namespace?: string }` (host-role handshake, #254) **or** `{ consumer_id: string, token: string }` (auxiliary inference role; no other selectors accepted)
 - **Returns**: `{ ok: true, auth_enabled: bool, agent_id?: string, method_allowlist?: string[], memory_namespace?: string, parslee?: ParsleeIdentity }`,
   or `{ ok: true, auth_enabled: true, role: "host", memory_namespace?: string }` for the host-token path
+- Every successful non-consumer result also carries `single_principal_mode: "host role unavailable: no host token is installed, so host-management methods refuse; cause: <cause>"` when the daemon has no host token installed — `--no-auth`, a failed host-token write at startup, or an embedder's server state built without one. No session can be the host there, so every host-management method refuses every session, with the same notice in the refusal, except `host.resolve_approval`, which still admits an operator session holding the daemon token (car#3701). Test for the key; the cause text varies. The field is absent when a host token is installed, and never on a consumer result, which is the pinned issuance receipt (car#3404). On such a daemon `session.auth { host_token }` fails with `host auth unavailable: this daemon has no host token; cause: <cause>`.
 - Consumer authentication returns the issuance receipt without `token`, plus `ok: true` and `auth_enabled: true`. The role is `inference_consumer`. It pins the original parent/resource/context, binds that private graph and method subset, and never takes an agent attachment or inbox. It cannot change roles or ownership on the same socket. Current parent generation, expiry, revocation and original context authorization are checked before application calls; background validation cancels this socket's running inference after authority loss. Restart requires a separately reissued grant on the original parent socket. A consumer can control only its own negotiated inference IDs.
 - **`memory_namespace`** binds this connection to a daemon-owned memory graph
   private to that namespace, persisted at
-  `~/.car/memory/memory-namespaces/<encoded-ns>.json`.
+  `~/.car/memory/memory-namespaces/<encoded-ns>.v2.json` (read from the
+  legacy `<encoded-ns>.json` when no `.v2.json` exists yet).
   Omit it and the connection uses the daemon's **shared** graph — see the scope
   table under [memory](websocket-protocol/memory.md#memory) for what that means for a multi-project host.
   Accepted on ordinary agent and host auth paths; consumer auth derives the original resource and refuses this selector. **FFI hosts
@@ -1060,7 +1106,11 @@ application methods.
   attachment. The legacy unbound-token path remains valid for browser/host/CLI
   clients — `agent_id` is optional. Lifecycle-agent SDKs read
   `CAR_AGENT_ID` and `CAR_AGENT_TOKEN` from the env the supervisor
-  set on spawn (#172). When that registration carries `method_allowlist`, the
+  set on spawn (#172). The supervisor withholds the daemon-wide `CAR_AUTH_TOKEN`
+  (and `CAR_AUTH_TOKEN_FILE` / `CAR_HOST_TOKEN`) from an agent whose registration carries
+  `method_allowlist` or a work context, and from every agent on Linux; the allowlist scopes the
+  agent credential, but on the Mac it does not confine a same-user process (the token file is
+  readable; workers and orchestrators, which the Mac walls, are the exception) and on Linux the sandbox makes it a wall (#3008). When that registration carries `method_allowlist`, the
   successful response echoes the canonical list and the daemon checks every
   later request or notification before any method handler runs. `session.auth`
   and `server.handshake` are implicit transport-establishment calls. A method
@@ -1077,21 +1127,24 @@ application methods.
   the host role (`role: "host"` in the response), which
   `authorize_run_access` requires for cross-agent run-trace reads
   (`runs.list` / `runs.get_trace` / `runs.subscribe`). The host token
-  is **never** served over `GET /auth-token`; it is readable only from
-  the `0600` `host-token` file (sibling of the auth-token file), so a
-  different local user — or a generic client that scraped the auth
-  token from the HTTP endpoint — cannot self-elevate to host. Merely
+  is readable only from the `0600` `host-token` file (sibling of the
+  auth-token file); no HTTP route serves it or the daemon token, so a
+  different local user — or a generic client holding only the daemon
+  token — cannot self-elevate to host. Merely
   calling `host.subscribe` no longer grants this access. CarHost reads
   the file and presents it on connect.
 - **Persistent per-agent memgine (#170)**: a successful
   `agent_id` bind also attaches the connection to a daemon-owned
   persistent memgine keyed on the id, lazy-loaded from
-  `~/.car/memory/agents/<id>.json` on first attach and retained
+  `~/.car/memory/agents/<id>.v2.json` (or the legacy `<id>.json` an older
+  daemon wrote) on first attach and retained
   across daemon restart. `memory.add_fact`, `memory.query`,
   `memory.fact_count`, and `memory.consolidate` route through the
   bound engine; bound writes persist to disk synchronously.
-  Connections without an `agent_id` keep the per-WS ephemeral
-  memgine — no behaviour change for non-lifecycle clients.
+  Connections without an `agent_id` (or `memory_namespace`) use the
+  daemon's shared graph, which the MCP endpoint also serves and the daemon
+  saves to `~/.car/memory/daemon-shared.json` after each memory or skill
+  write (car#3225).
 
 #### `parslee.auth`
 
@@ -1103,9 +1156,13 @@ application methods.
 - **Errors**: generic `-32603` with
   `"Parslee account not authenticated; run `car auth login`"` when
   the user has not connected a Parslee account, or Parslee refused the
-  stored session (HTTP 401). When Parslee is rate-limited, failing or
-  unreachable, the error is that failure (for example
-  `"fetch Parslee session: HTTP 503 …"`), not the sign-in message. When
+  stored session (HTTP 401) and renewing its token needs sign-in. A refused
+  token is renewed once first, so a token that had merely expired loads. When
+  Parslee is rate-limited, failing or unreachable, the error is that failure
+  (for example `"fetch Parslee session: HTTP 503 …"`), not the sign-in
+  message — including when Parslee refused the token and the token service
+  could not renew it, which reads `"Parslee session token could not be
+  renewed: … You are still signed in — retry shortly."`. When
   Parslee answers 403 — the session is valid and the account lacks access —
   the error says access was denied, because signing in again does not change
   that.
@@ -1136,14 +1193,16 @@ application methods.
                 "bearer_accepted": true, "probe_status": 200, "note": "..." }
   }
   ```
-- **Returns** (not signed in, Parslee refused the stored session, or the local
-  credential store could not be read): `{ authenticated: false, hint: string,
-  error?: string }`. `error` appears only when the local credential store could
+- **Returns** (not signed in, Parslee refused the stored session and renewing
+  its token needs sign-in, or the local credential store could not be read):
+  `{ authenticated: false, hint: string, error?: string }`. `error` appears only when the local credential store could
   not be read, and carries that reason.
 - **Errors**: generic `-32603` carrying the underlying failure when Parslee
   answered the session check with a rate limit or a server error, answered with
-  something that is not a session answer, or could not be reached; or when it
-  answered 403, meaning the account is signed in and lacks access. None of
+  something that is not a session answer, or could not be reached; when it
+  refused the stored token and renewing it was temporarily unavailable (the
+  token service was rate-limited, failing or unreachable, or a renewal had
+  just failed); or when it answered 403, meaning the account is signed in and lacks access. None of
   these is a missing sign-in, so none is reported as `authenticated: false`.
 - Read-only discovery: resolves the Parslee bearer, reads the account
   identity, fetches the active org's product entitlements from m365
@@ -1236,6 +1295,7 @@ behavior. This section is long — for a compact map of every method with deep l
 - [secret](websocket-protocol/secret.md#secret) <!-- ws-protocol:include -->
 - [server](websocket-protocol/server.md#server) <!-- ws-protocol:include -->
 - [session](websocket-protocol/session.md#session) <!-- ws-protocol:include -->
+- [ui](websocket-protocol/ui.md#ui) <!-- ws-protocol:include -->
 - [skill](websocket-protocol/skill.md#skill) <!-- ws-protocol:include -->
 - [skills](websocket-protocol/skills.md#skills) <!-- ws-protocol:include -->
 - [state](websocket-protocol/state.md#state) <!-- ws-protocol:include -->
@@ -1250,8 +1310,10 @@ behavior. This section is long — for a compact map of every method with deep l
 - [`heal.*` — the self-healing repair loop](websocket-protocol/heal.md#heal--the-self-healing-repair-loop) <!-- ws-protocol:include -->
 - [runs](websocket-protocol/runs.md#runs) <!-- ws-protocol:include -->
 - [tools](websocket-protocol/tools.md#tools) <!-- ws-protocol:include -->
-- [policy](websocket-protocol/policy.md#policy-1) <!-- ws-protocol:include -->
 - [agents](websocket-protocol/agents.md#agents) <!-- ws-protocol:include -->
+- [workers](websocket-protocol/workers.md#workers) <!-- ws-protocol:include -->
+- [spend](websocket-protocol/spend.md#spend) <!-- ws-protocol:include -->
+- [credentials](websocket-protocol/credentials.md#credentials) <!-- ws-protocol:include -->
 - [assistants](websocket-protocol/assistants.md#assistants) <!-- ws-protocol:include -->
 - [foreman](websocket-protocol/foreman.md#foreman) <!-- ws-protocol:include -->
 - [multiplayer](websocket-protocol/multiplayer.md#multiplayer) <!-- ws-protocol:include -->
@@ -1352,6 +1414,15 @@ Same pattern as `tools.execute`, but for delegating per-agent inference during `
 | `-32006` | Protocol version missing, malformed, or incompatible |
 | `-32007` | Content refused — something in front of the model (a managed gateway's content filter, a provider's moderation layer) declined the request's content. Not a fault: record it as a policy refusal and do not retry. Message is prefixed `content refused:` |
 | `-32008` | Protocol capability mismatch — a mandatory handshake capability is unsupported, or a capability-gated method was called without negotiating it. Message is prefixed `protocol capability mismatch:` |
+| `-32013` | Worker start refused — `workers.start`, or any path that would run a worker, refused by one of its checks. `error.data.reason` names which; see [workers](websocket-protocol/workers.md#workers) |
+| `-32014` | Worker limit reached — a cap of the worker's orchestrator; `error.data.cap` names it |
+| `-32015` | Label state — the worker's label is being deleted (`label_deleting`) or already ended (`label_ended`) |
+| `-32017` | Credential request refused — a `credentials.*` request refused; `error.data.reason` names why. See [credentials](websocket-protocol/credentials.md#credentials) |
+| `-32018` | Model call refused on spend — a capped agent's model call made through CAR was refused before anything was sent: `error.data.reason` is `budget_reached` (message `budget reached until <time>`, with `data.cap`, `spent_usd`, `resets_at`, `zone`), `price_unknown` (a pinned model the price list cannot price), `unpriced_call_in_flight` (a second call to a model its provider prices only when the call ends, while the first is running) or `spend_unrecordable` (the meter could not write the ledger). The agent keeps running; nothing was spent. See [spend](websocket-protocol/spend.md#spend) |
+| `-32019` | Outcome report not recorded — `outcomes.resolve_pending` reports that matched no pending trace (`trace_not_pending`, with `data.recorded` and `data.dropped`), or an `outcomes.record_external_grade` refusal; `error.data.reason` names why. See [outcomes](websocket-protocol/outcomes.md#outcomes) |
+| `-32020` | A call on a person's Lattice node refused — `lattice.requests`, `lattice.respond`, `lattice.human.status`, a delegate's forward with `agents.message { on_behalf_of }`, or an `agents.upsert` changing `delegate_for` from anything but the host client. `error.data.reason` is `processing_notice_pending` (with `data.connection`), `consent_is_host_only`, `approval_is_host_only`, `not_a_delegate`, `not_delegate_for_human`, `self_answer`, `forward_not_found` or `forward_not_a_question`. See [lattice](websocket-protocol/lattice.md#lattice) |
+
+A refusal can carry `error.data` with a stable `reason` that code can match; the `-32003` refusals of the worker gate do (`error.data.reason`, for example `not_on_worker_list`), and so do those of an outside credential's session (`not_on_credential_list`, `credential_session_bound`) and `session.auth`'s refusal of an outside credential on this port (`outside_credential_on_private_port`). So do the host approval refusals: `host.resolve_approval` answers `already_resolved` or `owner_not_connected`, and `host.dismiss_approval` answers `approval_pending`, `not_your_approval`, `lattice_mirror` or `unknown_approval` (see [host](websocket-protocol/host.md#host)). A public-door socket CAR closes itself carries close code `4001` (credential revoked), `4002` (expired), `4003` (label ended, reserved) or `4004` (daemon shutting down); see [credentials](websocket-protocol/credentials.md#credentials).
 
 The error `message` field contains a human-readable description.
 
@@ -1363,7 +1434,7 @@ The error `message` field contains a human-readable description.
 - **The built-in session token is local transport admission, not network
   security.** Add TLS plus an authenticated reverse proxy before exposing the
   WebSocket beyond localhost.
-- **API keys** for remote inference (Anthropic, OpenAI, Google) are read from `~/.car/env` at server startup, not per-request. See README "Configuring API keys via `~/.car/env`".
+- **API keys** for remote inference (Anthropic, OpenAI, Google) are resolved on demand (process environment, then CAR's secret store); the daemon does not copy keys into its own environment. See README "Configuring API keys".
 - **Source of truth.** This document is hand-maintained from `car-rs/crates/car-server-core/src/handler.rs`, `host.rs`, and `session.rs`. If you find drift, the Rust dispatcher wins.
 
 <!-- ws-protocol:moved-anchors:begin -->
@@ -1650,6 +1721,7 @@ headings added later are reachable from the namespace files and
 - <a id="outcomes"></a>[outcomes](websocket-protocol/outcomes.md#outcomes)
 - <a id="outcomesscoreboard"></a>[`outcomes.scoreboard`](websocket-protocol/outcomes.md#outcomesscoreboard)
 - <a id="outcomesresolve_pending"></a>[`outcomes.resolve_pending`](websocket-protocol/outcomes.md#outcomesresolve_pending)
+- <a id="outcomesrecord_external_grade"></a>[`outcomes.record_external_grade`](websocket-protocol/outcomes.md#outcomesrecord_external_grade)
 - <a id="memory-additional"></a>[memory (additional)](websocket-protocol/memory.md#memory-additional)
 - <a id="memoryconsolidate"></a>[`memory.consolidate`](websocket-protocol/memory.md#memoryconsolidate)
 - <a id="memoryfact_count"></a>[`memory.fact_count`](websocket-protocol/memory.md#memoryfact_count)
@@ -1730,8 +1802,6 @@ headings added later are reachable from the namespace files and
 - <a id="toolspoll"></a>[`tools.poll`](websocket-protocol/tools.md#toolspoll)
 - <a id="toolscancel"></a>[`tools.cancel`](websocket-protocol/tools.md#toolscancel)
 - <a id="toolsstreamsubscribe"></a>[`tools.stream.subscribe`](websocket-protocol/tools.md#toolsstreamsubscribe)
-- <a id="policy-1"></a>[policy](websocket-protocol/policy.md#policy-1)
-- <a id="policyregister-1"></a>[`policy.register`](websocket-protocol/policy.md#policyregister-1)
 - <a id="agents"></a>[agents](websocket-protocol/agents.md#agents)
 - <a id="agentsregister_basics"></a>[`agents.register_basics`](websocket-protocol/agents.md#agentsregister_basics)
 - <a id="agentslist"></a>[`agents.list`](websocket-protocol/agents.md#agentslist)

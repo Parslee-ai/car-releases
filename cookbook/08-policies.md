@@ -1,7 +1,7 @@
 {% raw %}
 # Policies: deny, gate, require state
 
-Policies are runtime guardrails that run on every action before execution. Four built-in rules cover the common cases without writing a custom callback.
+Policies are runtime guardrails checked before each action a runtime executes (`car do`, daemon sessions and the bindings; see the README's Policies table for the surfaces that do not check them). Four built-in rules cover the common cases.
 
 Those four are registered **by code** — your host calls `registerPolicy`. There is a second set, registered **from files**: TOML rules the project checks into `.car/policies/`, so an operator can govern their own project without touching host code. Both sets land on the same engine and are enforced identically. See [File-loaded rules](#file-loaded-rules-carpoliciestoml) below.
 
@@ -49,20 +49,14 @@ rt.stateSet('tests_passed', JSON.stringify(true));
 
 This is how you enforce DAG ordering at the policy level rather than relying on every model to remember it.
 
-## `deny_tool_callback` (NAPI only) — custom JS gate
-
-For complex predicates, store a JS callback and reference it by tool:
+## `deny_connector` — block a whole remote MCP connector
 
 ```typescript
-import { registerAgentRunner } from 'car-runtime';
-
-// The agent runner doubles as the policy callback host.
-registerAgentRunner(async (specJson, task) => { /* ... */ });
-
-rt.registerPolicy('audit_payment', 'deny_tool_callback', 'payment');
+// Deny every tool of the connector whose slug is "github".
+rt.registerPolicy('no_github', 'deny_connector', 'github');
 ```
 
-The callback receives the tool name and params and must return truthy to deny. Synchronous evaluation on the action hot path — keep it fast.
+Connector tools are named `mcp_<slug>_<tool>`, so one rule covers all of a connector's tools. There is no callback rule: `deny_tool_callback` is not accepted by any binding.
 
 ## File-loaded rules: `.car/policies/*.toml`
 
@@ -82,11 +76,11 @@ Field names must be exact. An unknown field is a load error that names the field
 | Loader | Directory | Use it for |
 |--------|-----------|------------|
 | The daemon (`car-server`), per session | `~/.car/policies/*.toml` | rules that hold for everything you run on this machine. The daemon serves whatever project a client is in, so it cannot have per-project rules |
-| `car do` / the assistant | `<working directory>/.car/policies/*.toml` | rules that belong to one project. Commit them and the whole team gets the same guardrails |
+| `car do` / the assistant | `.car/policies/*.toml` in the nearest `.car/` from the working directory up to the git repository root | rules that belong to one project. Commit them and the whole team gets the same guardrails |
 
-> ⚠️ **`car do` looks in its working directory only — there is no walk-up.** The working directory is `--dir` if you passed one, otherwise the directory you ran the command from. Run `car do` from a subdirectory and the repo-root `.car/policies/` is **not** loaded: no warning, no error, the rules simply do not apply. This fails open, so it is worth being deliberate — run from the project root, or pass `--dir <project root>`.
+> **`car do` looks from its working directory up to the repository root.** The working directory is `--dir` if you passed one, otherwise the directory you ran the command from. Run `car do` from a subdirectory and the repo-root `.car/policies/` still applies. Nothing above the repository root is read, and CAR's own `~/.car` is never read as a project. Outside a git repository only the working directory's own `.car/` applies.
 >
-> Note the inconsistency, because you have been told the opposite elsewhere: `.car/connectors.toml` *does* walk up from cwd, and [10 — The `.car` project directory](10-car-project-directory.md) describes `.car/` discovery in general as walking up. Policies are the exception.
+> `.car/connectors.toml` has the same bound: the nearest team file up to the repository root, never the one in `~/.car`, and outside a repository only the working directory's own. [10 — The `.car` project directory](10-car-project-directory.md) describes the discovery rule in general.
 
 A missing `policies/` directory is fine — most setups have none. A **malformed** file fails the session: the daemon refuses the connection, `car do` exits 2, and the error names the file. That is deliberate. A security rule that silently fails to parse is a control you believe you have and do not.
 

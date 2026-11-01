@@ -19,10 +19,26 @@ surface as ordinary JSON-RPC errors whose message names the cause.
 **Closed world by construction**: no method on this surface accepts a path
 parameter, and unknown params are ignored — a client-sent `path` or
 `log_tails` field is inert. The log set is built daemon-side: the supervised
-agents' `<id>.{stdout,stderr}` log files (ids read from the `agents.json`
+agents' log files, as below (ids read from the `agents.json`
 registry manifest — only the `id` field; env maps never enter the bundle) plus
 the daemon stderr-tee file (`<CAR_HOME>/logs/car-server.stderr.log`). A client
-cannot name a file to include.
+cannot name a file to include. Each agent contributes the newest file of each stream that is safe to read
+(see `agents.tail_log`, Per-run log files): the redacted `.log` of its newest
+finished run, which holds no value CAR handed it, or, for the run still
+writing, its raw file when CAR knows every value it could hold. The running
+daemon includes the raw file of a run it began, or adopted while holding every
+value its record names, with the values it holds replaced with `[REDACTED]`
+in the log tail and in the dedup line, since no redaction pattern recognizes
+them. `car feedback`, and the daemon when no supervisor is running, know no
+values, so they include a raw file only when its run record says the run was
+handed none. Nothing else is read: not a raw file an earlier daemon left, and
+never a withheld file. An agent with no file to include gets a manifest note
+saying its logs were left out and why. The compose asks again after
+collecting and composes again if the answer changed (the daemon tries three
+times, the last with finished runs' redacted logs only), so a run that ended,
+or a value handed out, while it ran never puts an unredacted value in the
+bundle. A value printed in a form no text match finds (encoded or
+transformed) is not redacted by either path.
 
 **Consent semantics (toggles are authoritative)**:
 
@@ -44,9 +60,9 @@ A current-protocol session without `feedback.v1` gets the standard `protocol cap
 - The consent preview: assembles the exact post-redaction bundle `feedback.submit` would spool — both run the one compose path — and **persists nothing to the spool**. The composed bundle is held in a small in-memory daemon cache (5 entries per CAR home, 10-minute TTL) keyed by `preview_id` and the composing WebSocket session, so another session cannot redeem a leaked handle. `feedback.submit { preview_id }` from the owning session enqueues the PREVIEWED bytes byte-for-byte (the same-bytes consent handoff). A supplied screenshot that fails validation (base64 decode, JPEG SOI/EOI magic, ≤5MB decoded) never aborts: it soft-fails to an omitted manifest item with a why-note. A `feedback.submit` carrying an invalid/expired/foreign-session `preview_id` returns a `PREVIEW_EXPIRED` error instead of silently composing unseen bytes — the host re-previews and asks the user to submit again; only a submit WITHOUT a `preview_id` composes fresh (explicit consent to current state).
 
 #### `feedback.submit`
-- **Params**: the `feedback.compose_preview` params **plus** `{ lane: "authenticated" | "anonymous", org_id?: string, preview_id?: string }` — with a valid `preview_id` the daemon enqueues the stored previewed bundle byte-for-byte; an expired/unknown `preview_id` is a `PREVIEW_EXPIRED` error (re-preview and resubmit); omitting `preview_id` composes fresh. For the authenticated lane, `org_id` is optional compatibility input and never authority: the daemon derives the organization from its signed-in Parslee session and rejects a supplied mismatch.
-- **Returns**: `{ submission_id: string, client_submission_id: string, state: { state: "queued" }, source: "local" }`
-- Composes the same bundle and durably enqueues it in the local spool (`<CAR_HOME>/feedback-outbox`), then wakes the upload drain. The identity lane is bound at enqueue — the consent moment — into durable spool state with no rewrite API, so a signed-out submission can never later drain with a bearer: `lane: "authenticated"` requires a signed-in Parslee session with an active organization; that session-derived id is persisted, and any client-supplied `org_id` must match it. `org_id` alongside `lane: "anonymous"` is ignored. `client_submission_id` is the immutable idempotency key. A client-side per-install throttle (10 submissions per rolling hour, checked before enqueue) rejects the call with a message naming `retry in <n>s`.
+- **Params**: the `feedback.compose_preview` params **plus** `{ lane: "authenticated" | "anonymous", org_id?: string, preview_id?: string }` — with a valid `preview_id` the daemon enqueues the stored previewed bundle byte-for-byte; an expired/unknown `preview_id` is a `PREVIEW_EXPIRED` error (re-preview and resubmit); omitting `preview_id` composes fresh. For the authenticated lane, `org_id` is optional compatibility input and never authority: the daemon derives the organization from its signed-in Parslee session (or, when that session is not loaded yet, names a different org than the caller after an org switch, or the caller sends no `org_id` because it could not confirm the account, from the stored sign-in's `active_org` claim when it is readable — a local read that works offline) and rejects a supplied mismatch.
+- **Returns**: `{ submission_id: string, client_submission_id: string, state: { state: "queued" }, source: "local", lane: "authenticated" | "anonymous", sign_in_unconfirmed: boolean }` — `lane` is the lane the report was actually saved on.
+- Composes the same bundle and durably enqueues it in the local spool (`<CAR_HOME>/feedback-outbox`), then wakes the upload drain. The identity lane is bound at enqueue — the consent moment — into durable spool state with no rewrite API, so a signed-out submission can never later drain with a bearer: `lane: "authenticated"` requires a signed-in Parslee account with an active organization (the loaded session, else the stored sign-in's `active_org` claim); that daemon-derived id is persisted, and any client-supplied `org_id` must match it. When the daemon cannot confirm any organization for an authenticated submit (no session and no readable stored sign-in, or a caller org that differs from the session while the stored sign-in is unreadable), the report is still saved — on the anonymous lane — and the result says so with `lane: "anonymous"` and `sign_in_unconfirmed: true`; it is never refused for that reason. `org_id` alongside `lane: "anonymous"` is ignored. `client_submission_id` is the immutable idempotency key. A client-side per-install throttle (10 submissions per rolling hour, checked before enqueue) rejects the call with a message naming `retry in <n>s`.
 
 #### `feedback.status`
 - **Params**: `{ submission_id?: string, limit?: integer }`

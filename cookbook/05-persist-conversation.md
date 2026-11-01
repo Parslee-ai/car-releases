@@ -11,17 +11,20 @@ turns across restarts" below and `docs/solutions/conversation-persistence-remove
 If you only need facts/skills across runs, `persistMemory` and `loadMemory` are enough:
 
 ```typescript
-import { CarRuntime } from 'car-runtime';
+import { CarRuntime, setMemoryNamespace } from 'car-runtime';
 
+// Bind a private graph first. Unbound, loadMemory would replace the daemon's
+// SHARED graph, which it refuses without loadMemory(path, true).
+setMemoryNamespace('my-project');
 const rt = new CarRuntime();
 
 // ... use the runtime; add facts, ingest skills ...
 
-rt.persistMemory('/path/to/state.json');
+await rt.persistMemory('state.json');
 
 // Later, on a fresh process:
 const rt2 = new CarRuntime();
-const factCount = rt2.loadMemory('/path/to/state.json');
+const factCount = await rt2.loadMemory('state.json');
 console.log(`restored ${factCount} facts`);
 ```
 

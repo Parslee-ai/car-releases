@@ -10,6 +10,7 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 - **Params**: `{}`
 - **Returns**: `{ subscribed: boolean, agents: HostAgent[], devices: HostDevice[], approvals: HostApproval[], events: HostEvent[], pending_signins: { conversation_id: string, standing_session: boolean, message: string }[], event_sequence: number, identity?: HostIdentity }`
 - Registers the connection to receive `host.event` notifications. Returns the current snapshot.
+- **Who sees which records (#3419).** A session bound to a supervised agent (`session.auth { agent_id, token }`, or an outside credential acting as one) is subscribed to its own records only: the snapshot's `agents`, `approvals` and `events` hold only what is attributed to that agent (`approvals` also keeps a row its own connection raised), and the later `host.event` broadcasts it receives are only those whose `agent_id` is its own, plus the `approval.resolve_requested` fan-out for an approval its connection owns. `devices`, `pending_signins` and `identity` are unchanged. On macOS and Windows, an agent the host granted the watcher view (`agent_permissions.set_observer`) gets every record, as host sessions, the daemon-token operator and the CLI always do; its snapshot `agents` holds every registered agent too. Granting or withdrawing through `agent_permissions.set_observer` re-scopes a subscription that is already open; the snapshot already returned is not re-sent, so call `host.subscribe` again for it. A grant changed by another process (a hand edit of `agent-permissions.json`) applies to an open subscription only when it subscribes again. On Linux a walled agent cannot call this method at all, so for a walled agent the grant changes nothing there (CAR's own assistant runs unwalled and is scoped like any agent).
 - **`identity` (added 2026-05)**: daemon-identifying metadata so hosts that connect to multiple daemons (e.g. one supervised by CarHost.app plus an ad-hoc `cargo run -p car-server` dev/eval daemon on a different port) can tell which one they're on and whether it's the supervisor lock owner.
   - `version` — `CARGO_PKG_VERSION` of the daemon binary
   - `pid` — daemon process id
@@ -20,6 +21,7 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 #### `host.agents`
 - **Params**: `{}`
 - **Returns**: `HostAgent[]` — agents explicitly registered into host state (callback clients via `host.register_agent`, multi-agent runners), **merged** with any registry-supervised agent that advertises `capabilities` (e.g. the flagship assistant, `parslee-core`, with `["chat"]`) and in-daemon declarative agents (tagged `kind:"declarative"` with `capabilities:["chat"]`). Supervised agents attach via `session.auth { agent_id }` and don't register into host state, so their `AgentSpec.capabilities` are read from the supervisor at request time (status/pid reflect the live supervisor; an explicit registration for the same id wins). This lets a host show a Chat tab by checking `capabilities.contains("chat")`.
+- **Who sees which rows.** A session bound to a supervised agent (`session.auth { agent_id, token }`) gets only the row whose `id` is its own, on every platform. That holds for an agent with the watcher grant too: `agent_permissions.set_observer` covers `host.approvals`, `host.events` and `host.subscribe`, not this method. Host sessions, the daemon-token operator and the CLI get every row.
 
 #### `host.devices`
 - **Params**: `{}`
@@ -45,7 +47,11 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 - Returns the internal runtime payload Parslee can use after account sign-in to
   connect a consumer mobile app to this CAR runtime. `url` is the daemon
   WebSocket URL from `CAR_MOBILE_RUNTIME_URL` or the daemon bind address, and
-  `token` is the current per-launch auth token when auth is enabled.
+  `token` is the current per-launch auth token when auth is enabled **and the
+  caller holds host authority**. A session bound to a supervised agent, and any
+  unbound client on a daemon that has a host token but did not authenticate with
+  it, gets the response without `token`, as does every session on a daemon
+  with no host token, which has no host.
 - This method is protected by the normal `session.auth` gate. It does not grant
   host-management authority and does not expose the host token.
 - For a phone off the local network, run CAR behind a reachable `wss://` relay
@@ -73,10 +79,13 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 #### `host.events`
 - **Params**: `{ limit?: number = 100 }`
 - **Returns**: `{ events: HostEvent[] }`
+- **Who sees which events (#3419).** An agent-bound session gets only the events whose `agent_id` is its own (an unattributed event such as `device.*` is not its own), and `limit` counts those, so it gets its own newest `limit` rather than its share of everyone's. On macOS and Windows, an agent the host granted the watcher view (`agent_permissions.set_observer`) gets every event, as host sessions, the daemon-token operator and the CLI do. On Linux a walled agent cannot call this method at all, so for a walled agent the grant changes nothing there (CAR's own assistant runs unwalled and is scoped like any agent).
 
 #### `host.approvals`
 - **Params**: `{}`
 - **Returns**: `{ approvals: HostApproval[] }`
+- Resolved rows created more than 24 hours ago are dropped when the ledger is read. When an approval is created, every row older than 24 hours is dropped, pending ones included, unless a high-risk-method gate is still waiting on the row; no event is sent for a pending row dropped that way. Resolved rows stay until then, or until `host.dismiss_approval` removes them.
+- **Who sees which approvals (#3419).** An agent-bound session gets only the approvals raised for it (`agent_id` is its own) or by its own connection, so another agent's `details.params_preview` never reaches it. The approval the high-risk-method gate raises for an agent's own call is attributed to that agent, so it stays visible here. On macOS and Windows, an agent the host granted the watcher view (`agent_permissions.set_observer`) gets every approval, as host sessions, the daemon-token operator and the CLI do. On Linux a walled agent cannot call this method at all, so for a walled agent the grant changes nothing there (CAR's own assistant runs unwalled and is scoped like any agent).
 
 #### `host.register_agent`
 - **Params**: `{ id?: string, name: string, kind: string, capabilities?: string[], project?: string, pid?: number, display?: object, metadata?: object }`
@@ -98,23 +107,78 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   intended for another linked device.
 
 #### `host.request_approval`
-- **Params**: `CreateHostApprovalRequest` — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean }`
-- **Returns**: `HostApproval`
+- **Params**: `CreateHostApprovalRequest` — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean, a2ui?: { components: object[], dataModel?: object } }`
+- **Returns**: `HostApproval & { subscribed: boolean, answerable: boolean }`
+- `subscribed` is literal: whether the requesting session is subscribed to host
+  events (the same meaning as `host.subscribe`'s `subscribed`). An unsubscribed
+  session receives neither `approval.resolve_requested` nor
+  `approval.resolved`, whatever kind of row it raised.
+- `answerable` says whether a host's decision can take effect. It is `true` for
+  a `system_level` row, which a host resolves in the ledger directly, and for a
+  session-owned row whose session is subscribed. It is `false` for a
+  session-owned row from a session that never completed `server.handshake` +
+  `host.subscribe`: a host's answer to that row is an
+  `approval.resolve_requested` the session will never receive, so the row stays
+  pending and a host trying to resolve it gets `owner_not_connected`. The daemon
+  logs a warning for that case. A `system_level` row from an unsubscribed
+  session (`subscribed: false, answerable: true`) can be decided, but the
+  requester will not hear `approval.resolved`: it has to poll `host.approvals`
+  to learn the outcome. The row is created in every case. Subscribe first, and
+  set `system_level`.
 - `action` is **required**: the one-line summary every approval surface shows.
   `details` is the structured payload surfaces render underneath it (the macOS
   dashboard as typed fields, the Windows tray and the iMessage/Slack prompts via
   `car_proto::approval_summary`); for a gate-raised row it is
   `{ method, params_preview }`, and for a row mirrored from Chat it is exactly
   `{ source: "chat", session_id, agent_id, tool, target, deadline, params_preview }`,
-  which surfaces render as tool / target / parameters (never `session_id`); a
+  which surfaces render as tool / target / parameters (never `session_id`). An
+  agent can instead name its payload with `details.kind`, which the macOS host
+  renders as typed fields: `message_send` takes `{ text, target: { counterpart?,
+  chatName?, id?, service? }, sourceEmail?: { sender?, subject?, receivedAt?,
+  accountName? } }` and shows the recipient, the message and the email it
+  answers; `message_send` may add `summary`, the agent's reason for the text, shown as
+  Why; `email_reply` takes `{ to, cc?, subject, body, from? }`; `human_request`
+  takes `{ question, context?, options?, approveMeans?, requester? }` and shows
+  the question and what Approve answers. Any other
+  `kind` gets the generic rendering. A
   row that claims `source: "chat"` while carrying any other key, or lacks
-  `session_id`/`tool`, gets the generic rendering. `options` defaults to
-  `["approve", "deny"]`.
+  `session_id`/`tool`, gets the generic rendering. `action` and every
+  parameter name and value are agent-authored, so surfaces show each without
+  its line breaks: collapsed to one line, or kept inside a labelled block of
+  its own. On macOS the generic rendering is never JSON: each field is a
+  labelled row, with nested objects flattened into their parents' labels. A
+  line break in agent text can't add a line that looks like a field the
+  surface wrote. The text summary also prints a parameter's name quoted
+  (`"path": /etc/hosts`), so a parameter named `Agent` can't pass for the
+  renderer's own `Agent:` line. Bidirectional control characters are dropped
+  from those lines, and Slack receives agent text with `&`, `<` and `>`
+  escaped, so it can't open a link or a mention. The iOS and Android cards
+  read Risk and Reason only from the top level of `details`, never from
+  `params_preview`. `options` defaults to `["approve", "deny"]`.
+- `a2ui` draws the approval as an A2UI v0.9 component tree, for a host that
+  renders A2UI (CarHost on macOS). The host shows it under its own header and
+  its own Approve and Deny controls. The daemon checks it with
+  `car_a2ui::approval_surface` and refuses the whole request if it fails:
+  every component needs an `id`, one must be `root`, and only display
+  components are allowed (`Text`, `Row`, `Column`, `List`, `Card`, `Divider`,
+  `Image`, `Icon`, `Chart`, `Spacer`, `Badge`), at most 64 KiB. Anything that
+  takes input, plus `Tabs` and `Modal`, is refused, because an agent-drawn
+  Approve button would be a forged control on the card where a click is a
+  decision. The stored row's `a2ui` is the checked `A2uiSurface`
+  (`surfaceId: "approval"`), not the request as sent. `action` and `details`
+  stay required context: the Windows tray, iOS and Android, and the iMessage
+  and Slack prompts show those, not the tree. When a row has both `a2ui` and a
+  `details.kind` layout, CarHost shows `a2ui`.
 - `system_level: true` opts the row out of per-session ownership so any
   authenticated session (typically CarHost or `car-host approve`) can resolve it.
-  Agents requesting user approval should always set it — session-owned is only
-  correct when the requesting session is also the resolving session, which
-  approval-via-UI never is.
+  Agents requesting user approval should always set it: such a row is the
+  person's decision, and the requesting agent itself is refused if it tries to
+  resolve it (#3453). Session-owned (the default) is the agent's own record,
+  resolved by the requesting connection; a host that resolves it only forwards
+  the decision to that connection as `approval.resolve_requested` (the host
+  gets the row back still `pending`). If that connection is not currently
+  subscribed, the host instead gets the error `approval '<id>' is owned by
+  session '<owner>' which is not currently connected`.
 - `agent_id` is **stamped by the server** from the session's authenticated agent
   binding when the session has one, so an agent cannot attribute its request to
   another agent or leave it unattributed; a client with no binding (the operator
@@ -128,13 +192,50 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 
 #### `host.resolve_approval`
 - **Params**: `ResolveHostApprovalRequest` — `{ approval_id: string, resolution: string }`
-- **Returns**: the `HostApproval` row. `status: "resolved"` with a `resolution`
-  different from the one sent means another decision already won (or the
-  approval expired), and this request was not applied. `status: "pending"`
-  means it was forwarded to the owning session.
+- **Returns**: the `HostApproval` row, resolved with the `resolution` sent.
+  `status: "pending"` means the request was forwarded to the owning session,
+  whose own resolve settles the row and broadcasts `approval.resolved`.
+- **Errors** (`-32003`, with a stable `error.data.reason`):
+  - `already_resolved`: the row was no longer pending. Another decision won,
+    or the daemon closed it as `agent_gone` when the session that raised it
+    disconnected. Nothing was changed: the first resolution stands.
+    `error.data` is `{ reason, approval_id, resolution, resolved_at, approval }`,
+    where `resolution` is the one that stands and `approval` is the row as it
+    is. Daemons before this change answered this case with a success carrying
+    that row, so a client that supports both compares the returned row's
+    `resolution` with the one it sent. A walled agent never gets this for a
+    gate row or for a system-level row attributed to itself: the walled
+    refusal below is checked first, so it gets the plain walled error and
+    never the row.
+  - `owner_not_connected`: the row is owned by a session that is not
+    subscribed to host events, so nothing can deliver the request to it.
+    `error.data` is `{ reason, approval_id, owner_client_id }`. The message
+    still reads "… is owned by session '…' which is not currently connected".
 - `resolution` is the **verb**, matched against the row's `options` (default
   `["approve", "deny"]`); the gate treats anything other than its approve label
   as a denial. Both fields are required.
+- **A supervised agent cannot answer the person's approvals (#3453).** A
+  session walled to an agent (`session.auth { agent_id, token }`, or an outside
+  credential acting as one) gets a plain error (no `error.data.reason`), and the
+  row is left as it is (pending, or as already decided), for:
+  - a row the dispatcher's high-risk-method gate raised (system-level, `action`
+    `ws.method:<method>`), whether the parked call is its own agent's or
+    another agent's;
+  - a system-level row attributed to itself (one it raised with
+    `system_level: true`): it asked the person, so it does not answer.
+
+  Each refusal is recorded as an `approval.resolve_refused` event and a daemon
+  warning. This holds on every platform; on Linux a walled agent is refused the
+  method outright (`agent_default_deny`). Host sessions, the daemon-token
+  operator, the `car-host` CLI and the paired approval transports resolve these
+  rows as before.
+
+  Only system-level approvals, gate rows among them, are the human gate. A
+  **session-owned** approval (raised with `system_level: false`) is the
+  agent's own record, not a human gate, and no CAR gate waits on it. Its owning connection may resolve it,
+  agent or not: that is how an agent records a decision the person made in the
+  agent's own UI, and how it completes a decision a host forwarded to it as
+  `approval.resolve_requested`.
 
 > Earlier revisions documented the params as
 > `{ approval_id, approved: boolean, notes? }`. There is no `approved` or
@@ -142,6 +243,27 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 > required and has no default. The gate description above this section has always
 > described the real contract ("waiting for `host.resolve_approval` to land with
 > `resolution: \"approve\"`").
+
+#### `host.dismiss_approval`
+- **Params**: `{ approval_id: string }`
+- **Returns**: `{ dismissed: true, approval: HostApproval }`, the row removed.
+- **Role**: `agent`: every supervised agent may call it, walled ones on Linux
+  included, because it is scoped in the handler. A session bound to a
+  supervised agent may remove only a resolved row raised for that agent; the
+  watcher grant does not widen this. The agent identity is the same one
+  `host.resolve_approval` walls on, so a `session.auth` rebind in progress on
+  the connection does not lift the restriction. Outside credential sessions cannot call
+  any `host.*` method, this one included. A host client, the daemon-token
+  operator and the CLI may remove any resolved row.
+- Removes a resolved row from `host.approvals`, such as one the daemon closed
+  as `agent_gone` after the agent's session dropped. No event is broadcast: the
+  row's `approval.resolved` already told every host to drop it.
+- **Errors** (`-32003`, `error.data.reason`): `approval_pending` (a pending row
+  is answered, not dismissed), `not_your_approval` (raised for another agent,
+  or for none), `lattice_mirror` (a Lattice review mirror whose review is
+  still unanswered in the Lattice ledger: undecided, or decided on an approval
+  channel and not yet folded in, which the daemon does within about two
+  seconds; once the ledger records the answer, the row can be dismissed), `unknown_approval`.
 
 ### `host.event`
 Broadcast to subscribers after `host.subscribe`.
@@ -160,17 +282,24 @@ Broadcast to subscribers after `host.subscribe`.
   }
 }
 ```
-`kind` values: `agent.registered`, `agent.unregistered`, `agent.status_changed`, `approval.requested`, `approval.resolved`, `approval.resolve_requested`, `approval.self_resolved`, `host.notification`, `device.registered`, `device.updated`, `browser.signin_needed`, `browser.signin_resolved`.
+`kind` values: `agent.registered`, `agent.unregistered`, `agent.status_changed`, `approval.requested`, `approval.resolved`, `approval.resolve_requested`, `approval.self_resolved`, `approval.resolve_refused`, `host.notification`, `device.registered`, `device.updated`, `browser.signin_needed`, `browser.signin_resolved`, `spend.changed` (a principal entered or left "at budget" on its spend caps; payload in [spend](spend.md#spend)), `agent.scheduled_run_refused` (a declarative agent's scheduled run was refused for want of host authority, as on a daemon with no host token; payload `{ scheduled_for, reason }` — see [declagents](declagents.md)), `memory.shared_graph.replaced` (a deliberate `memory.load { replace: true }` replaced the daemon-wide shared memory graph; `agent_id` is null, payload `{ path, records, client_id, host, operator }` — see [memory](memory.md)).
 
 `approval.self_resolved` fires when the agent an approval was raised for is the
 one that resolved it — the requester approving its own request. Payload:
 `{ approval_id, agent_id, action, resolution }`. It is emitted alongside
-`approval.resolved`, not instead of it: the resolution **is** applied. The
-separation of requester from overseer is documented on
-`CreateHostApprovalRequest.system_level` but has never been enforced, so this is
-the observability half of a warn-then-enforce rollout — a later release refuses
-the resolve instead. If you see this event, something is approving its own
-work.
+`approval.resolved`, not instead of it: the resolution **is** applied. A
+supervised agent is refused on a high-risk gate row and on a system-level row
+it raised (see `approval.resolve_refused`), so for a walled agent this event
+now means it resolved its own session-owned row. It still fires for a session
+bound to the agent that is not walled. If you see it on a row meant for the
+person, something is approving its own work.
+
+`approval.resolve_refused` fires when a supervised agent's `host.resolve_approval`
+is refused. It is attributed to the refused agent. Payload:
+`{ approval_id, agent_id, client_id, resolution, reason }`, where `agent_id` is
+the refused agent, `client_id` its connection, and `reason` is `"gate_row"` (a
+high-risk gate row, anyone's) or `"own_system_row"` (a system-level row it
+raised). The row is not touched and no `approval.resolved` follows.
 
 For an `approval.requested` created from `agents.chat.event`, the ledger row
 uses the chat event's `approval_id` and its `details` include

@@ -50,6 +50,10 @@ with `session.identity` (which identifies the connected *client*).
   an engine starts, avoiding two durable copies of the profile.
 - `name` is validated: 1–32 characters, at least one letter or digit, and not a
   conversational role (`system`, `user`, `assistant`, …).
+- `role` and each app name are at most 120 characters after whitespace is
+  collapsed, and `apps` holds at most 32 distinct names (compared ignoring
+  case). Both go into every built-in prompt; a longer value or list is refused
+  and nothing is written.
 - **Host/local-auth gated** (`require_approval_authority`), the same trust root
   as `auth.*` / `openrouter.*` / `messaging.*`. A rename repoints the voice wake
   word; an ungated write would let any authenticated local connection make the

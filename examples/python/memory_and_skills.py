@@ -21,6 +21,11 @@ import car_runtime
 
 
 def main() -> None:
+    # Bind a private memory graph before the first connection. Unbound, these
+    # runtimes would share the daemon's SHARED graph with every other unbound
+    # client, and the daemon refuses to let load_memory replace that one
+    # unless you pass replace=True (car-releases#91).
+    car_runtime.set_memory_namespace("memory-and-skills-example")
     rt = car_runtime.CarRuntime()
 
     # ---- Facts ----
@@ -31,10 +36,10 @@ def main() -> None:
     rt.add_fact("style_rule", "no implicit any", "constraint")
     print(f"  {rt.fact_count()} facts in graph")
 
-    print("\nquerying facts via spreading activation")
+    print("\nquerying facts via Personalized PageRank")
     hits = json.loads(rt.query_facts("what language is this project in?", k=3))
     for h in hits:
-        print(f"  {h['subject']}: {h['body']}  (activation={h['confidence']:.3f})")
+        print(f"  {h['subject']}: {h['body']}  (match={h['score']:.3f}, rank={h['confidence']:.3f})")
 
     # ---- 4-layer context ----
     print("\nbuilding the 4-layer context for an LLM call")

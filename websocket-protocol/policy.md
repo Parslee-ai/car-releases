@@ -5,9 +5,9 @@
 ### policy
 
 #### `policy.register`
-- **Params**: `PolicyDefinition { name: string, rule: "deny_tool" | "deny_tool_param" | "require_state", target?: string, key?: string, pattern?: string, value?: any, session_id?: string }`
+- **Params**: `PolicyDefinition { name: string, rule: "deny_tool" | "deny_tool_param" | "require_state" | "deny_connector", target?: string, key?: string, pattern?: string, value?: any, session_id?: string }`
 - **Returns**: `{ registered: string, scope: "global" | { session_id: string } }`
-- Register a single policy on this WebSocket session's runtime. `session_id`, when set, scopes the policy to a per-session policy registry opened via `session.policy.open`; without it, the policy is global. Mirrors the `PolicyDefinition` shape used by `session.init` (which lets clients submit a batch at startup).
+- Register a single policy on this WebSocket session's runtime. `deny_connector` denies every tool of the remote MCP connector whose slug is `target` (its tools are named `mcp_<slug>_<tool>`). Any other `rule`, including `deny_tool_callback`, is not accepted: a callback cannot ride the JSON-RPC wire. `session_id`, when set, scopes the policy to a per-session policy registry opened via `session.policy.open`; without it, the policy is global. Takes the same `PolicyDefinition` shape as `session.init` (which lets clients submit a batch at startup), but answers an unsupported `rule` with the error `unsupported policy rule '<rule>'`, where `session.init` skips it (see [session.init](session.md#sessioninit)). A `require_state` policy reads the shared store, even for a proposal submitted with a `scope.tenantId`: policies are operator rules, registered globally or per session and never per tenant, so a tenant cannot satisfy one by writing the key into its own tenant namespace (Parslee-ai/car#3121). Preconditions and `state_dependencies` on the actions themselves read the tenant's view instead.
 
 #### `policy.unregister`
 - **Params**: `{ name: string, session_id?: string }`
@@ -19,13 +19,5 @@
 - **Params**: `{ session_id?: string }`
 - **Returns**: `{ policies: [{ name: string, description: string }], scope: "global" | { session_id: string } }`
 - What is currently in force, in registration order. Without it a client could register a policy but never ask what was enforced, so an action rejection could not be explained beyond the single message on the rejection itself.
-
-### policy
-
-#### `policy.register`
-- **Params**: a single `PolicyDefinition`: `{ name, rule, target?, key?, value?, pattern? }`
-- **Returns**: `{ name }`
-- Mirrors `session.init`'s policy slot for callers that want to register one policy at a time. Supported `rule` values: `deny_tool`, `deny_tool_param`, `require_state`. Callback rules (`deny_tool_callback`) are NOT supported on the daemon — the FFI binding is expected to reject them in Daemon mode and route through Embedded mode instead.
-
 
 {% endraw %}

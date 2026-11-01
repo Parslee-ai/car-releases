@@ -1,6 +1,6 @@
 # Common Agent Runtime (CAR)
 
-> Deterministic execution layer for AI agents, written in Rust. Models propose; the runtime validates and executes. Ships as the `car` CLI, a supervised general agent (`car do`), an MCP server (`car-mcp`), and embeddable bindings for Node.js (NAPI), Python (PyO3), and WebSocket (JSON-RPC).
+> The runtime a business runs its agents on: a deterministic execution layer, written in Rust. Models propose; the runtime validates and executes. Ships as the `car` CLI, an MCP server (`car-mcp`), and embeddable bindings for Node.js (NAPI), Python (PyO3), and WebSocket (JSON-RPC).
 
 CAR's source repository is private. This file, and everything it links to, is
 the complete public surface — there is nothing else to discover by browsing
@@ -17,7 +17,7 @@ there; `scripts/check-public-docs-parity.sh` fails the build if this index
 tags a published page as still pending, so a claim like that cannot go stale
 silently again.
 
-Two audiences, two kinds of page. **Using the `car` CLI, `car do`, or
+Two audiences, two kinds of page. **Using the `car` CLI or
 `car-mcp` as a product?** Start at "Product usage" below. **Embedding the
 CAR runtime as a library in your own agent?** Start at "Build with CAR".
 Every page under "Build with CAR" assumes you're writing code against
@@ -40,12 +40,9 @@ plain `.md`, not rendered `.html`.
 
 ## Product usage
 
-The generated `car --help` output is the CLI command list to trust; the
-flagship agent behind `car do` spans files, shell, web search, browser control,
-image/speech/music/video generation, Microsoft 365, and a memory graph —
-ASSISTANT.md enumerates its tools rather than freezing another count here;
-`car-mcp` (built from the `car-mcp-server` crate) exposes CAR's stateless
-capabilities over MCP stdio.
+The generated `car --help` output is the CLI command list to trust;
+ASSISTANT.md documents `car do` and its tools; `car-mcp` (built from the
+`car-mcp-server` crate) exposes CAR's stateless capabilities over MCP stdio.
 
 - [CLI reference](https://car.parslee.ai/CLI.md): the `car` command surface — `do`, `code`, `board`, `image`, `video`, `speech`, `voice`, `auth`, `project`, `agent`, `install`, `browse`, `schedule`, `health`, `doctor`, `update`, `purge`, and the rest.
 - [Flagship assistant](https://car.parslee.ai/ASSISTANT.md): what `car do` is and the tool surface it runs with (browser control, image/video/speech generation, file I/O, shell, memory, web search, and more).
@@ -113,7 +110,7 @@ the relative links between them resolve.
 - [05 — Persist and resume conversation](https://car.parslee.ai/cookbook/05-persist-conversation.md): memory-graph snapshot persistence; explicitly notes the old turn-by-turn `ConversationStore` was removed in 0.25 and is not a live capability.
 - [06 — WebSocket client (non-Node)](https://car.parslee.ai/cookbook/06-websocket-client.md): driving CAR from any language that speaks WebSocket and JSON.
 - [07 — MCP server in Claude Desktop / Cursor](https://car.parslee.ai/cookbook/07-mcp-server.md): wiring `car-mcp-server`'s stateless tools (memory, skills, verification) into an MCP client.
-- [08 — Policies](https://car.parslee.ai/cookbook/08-policies.md): the four built-in rule types (deny_tool, deny_tool_param, require_state, deny_tool_callback), code-registered and file-loaded (`.car/policies/*.toml`) forms.
+- [08 — Policies](https://car.parslee.ai/cookbook/08-policies.md): the four built-in rule types (deny_tool, deny_tool_param, require_state, deny_connector), code-registered and file-loaded (`.car/policies/*.toml`) forms.
 - [09 — Streaming inference](https://car.parslee.ai/cookbook/09-streaming-inference.md): `infer_stream`, `inference.stream.event` notifications, per-token rendering.
 - [10 — The `.car/` project directory](https://car.parslee.ai/cookbook/10-car-project-directory.md): team-shareable identity, constraints, facts, skills, policies; auto-discovered walking up from cwd.
 - [11 — API keys in the OS keychain](https://car.parslee.ai/cookbook/11-keychain-keys.md): env-var-first, keychain-fallback resolution for remote-model provider keys.

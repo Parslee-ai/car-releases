@@ -26,26 +26,163 @@ path  = "/Users/me/git/widgets"  # or `project = "<slug>"`; omit both for watch-
 label = "self-heal"           # optional
 base  = "main"                # optional
 fix_repo = "acme/widgets-src" # optional; when fixes land in a different repo
+
+human_label = "needs-human"   # optional; hands an item to a person
+escalate_to = ["octocat"]     # optional; GitHub logins assigned on escalation
+notify = ["human:sam@sams-car", "codex-3@laptop"]  # optional; Lattice addresses told
+
+# Whole organizations: every repository you can push to AND have checked out
+# under `roots` (matched by origin remote); its labelled issues are worked.
+[[org]]
+owner = "*"                   # you plus every organization you belong to, or a login
+roots = ["~/git", "~/work"]   # searched two levels deep; nothing is ever cloned
+label = "self-heal"           # optional
+base  = "main"                # optional
+
+[unattended]                  # optional; the cadence. LOCAL models only.
+coder_model = "qwen3-coder-30b"           # omit to pick from installed local models
+review_models = ["gemma-4-26b", "gpt-oss-20b"]  # omit to pick; two families or more
 ```
 
-`review_models` is not optional and must resolve to seats served by at least two
-attributable model vendors. The gate refuses a panel of zero, and a one-vendor
-panel is correlated by construction, so either configuration declines to start
-before spending a coder session and says which models resolved to which vendors.
+**Any project, in any organization.** A `[[target]]` names one repository. An
+`[[org]]` names a GitHub organization or user, or `*` for the `gh` login and
+every organization it belongs to, so one entry covers every project you work
+on. Each sweep (and `heal.run`) lists each owner's unarchived repositories the
+`gh` login can push to (`WRITE`, `MAINTAIN` or `ADMIN`; one `gh repo list` per
+owner) and keeps those you have a checkout of under `roots`. A checkout is
+matched by its `origin` remote, never by directory name, at `<root>/<name>` or
+`<root>/<group>/<name>`; symlinks, hidden directories, `Library`,
+`node_modules`, `target` and `Applications` are not entered, nor is a
+checkout's own tree, and a main checkout is preferred over a linked worktree
+of the same repository. Nothing is ever cloned. Each kept repository's
+labelled issues are then worked like a `[[target]]`'s; one a `[[target]]`
+also names keeps that entry.
+
+What decides that a repository is worked, under `*`: you can push to it, and
+you cloned it under a heal root. Its issues still need the opt-in label and an
+author with triage-or-better permission on it (the provenance gate). In an
+organization where every member can label issues, that is every member, so
+list the owners you trust instead of `*` where that matters. A sweep works at
+most three items (`MAX_ITEMS_PER_SWEEP`) across every target, and the next one
+starts just past the last target it reached, so a wide `[[org]]` cannot hold
+the loop for hours or starve the repositories after the first few.
+`heal.status` reports `orgs` and what the last sweep `discovered`.
+
+**Escalation to a person.** Some work needs a person or a stronger model, and
+an unattended sweep never decides that by spending money. An item carrying
+`human_label` (`needs-human` by default) is skipped by the cadence, whoever
+applied it. When local models fail an item twice (`UNATTENDED_ESCALATE_AFTER`),
+or it hits a failure no retry changes, the cadence hands it to a person:
+- it applies the label, creating it in the repository if needed;
+- it assigns the `escalate_to` logins, so GitHub notifies those teammates in
+  whatever organization the repository belongs to;
+- it comments the reason and how to run the item with the attended
+  configuration;
+- it raises a CarHost approval card, `heal:<owner>/<repo>#<number>`;
+- it tells each `notify` address over Lattice: one of your other devices, or a
+  node a consented connection shares, so a teammate's CAR hears about it. The
+  sender is the reserved node `car-self-heal` (no agent may take that id),
+  acting for the operator in the work context of the item's repository: the
+  operator's context for the organization its checkout declares in
+  `.car/config.toml`, or personal when it declares none. An organization the
+  login does not hold, or an unreadable declaration, sends nothing. The message
+  passes every stage `agents.message` applies, with that context: the channel
+  guard, the context rule (an organization's notice reaches only that
+  organization's nodes, on devices in its roster or over a connection it
+  verified), policy and the audit. A first message to another owner's CAR is
+  held for the operator like any other. `notify` takes only `<node>@<car>`
+  addresses; a reply to `car-self-heal@<car>` reaches no agent.
+
+An item is handed over once: the claim ledger records it, so a label edit that
+failed does not make every later failure escalate again. Its escalating failure
+posts one comment, the escalation. A change that passed review but could not
+be delivered (a refusal no retry changes) is escalated at once, without a card:
+a stronger model would hit the same refusal.
+
+The card is a high-risk method gate row (`ws.method:heal.run`), so a supervised
+agent cannot approve the frontier run it starts; a person resolves it in
+CarHost or any host session. Approving it runs that item with the attended
+configuration on the next cadence tick, charged to the operator; the card is
+dismissed once that run has happened, so a tick that finds the loop busy keeps
+it for the next one. Denying it dismisses the card and leaves the item labelled
+for a person. Cards live in the daemon's memory, so a restart, or a pending card
+older than a day, loses one; `car heal run --item owner/repo#N` (`heal.run`
+with `item`) works at any time and is what the escalation comment names first.
+Closing or relabelling the issue is the person's call; the loop never removes
+the label.
+
+The cadence runs `[unattended]`, local models only (see `unattended` under
+`heal.status` below); with the section omitted it picks from installed local
+models. `review_models`, `coder_model` and `engine` at the top level are for a
+sweep a person starts with `heal.run`. That panel is required for such a run and
+must resolve to seats served by at least two attributable model vendors. The
+gate refuses a panel of zero, and a one-vendor panel is correlated by
+construction, so either configuration declines to start before spending a coder
+session and says which models resolved to which vendors.
 
 #### `heal.status`
 - **Params**: `null`
 - **Returns**: `{ config_path, enabled, cadence_secs, disabled_reason?,
   targets[], rejected[{ repo, reason }], review_models[],
   panel[{ model, vendor? }], panel_warning?, coder_pin?{ model, source },
-  run_refusal?, engine }`.
+  run_refusal?, engine, spend_meter, unattended{ coder_model?, review_models[],
+  source?, refusal? }, orgs[], discovered[{ repo, checkout?, reason? }] }`.
+- `orgs` lists the configured `[[org]]` owners. `discovered` is what the most
+  recent sweep found under them: each repository it will work, with its
+  checkout, plus any reason an owner produced nothing (`roots` empty, no
+  checkout under it, or an owner `gh` could not list). It comes from that
+  sweep, so `heal.status` itself makes no network call.
+- `unattended` is what a sweep nobody started, the cadence, runs on. Unattended
+  sweeps use **local models only**, so the loop never spends money with no one
+  watching: the engine is `native` (an outside coding CLI bills its own
+  provider outside CAR's meter), the coder and every panel seat are pinned to
+  installed local models, and the sweep runs under a local-only spend scope, so
+  a remote call refuses at admission (`remote_in_local_only_scope`) whatever
+  chose it. Models come from `[unattended]` in `heal.toml` (`source:
+  "heal_toml"`) or are picked from the installed local catalog (`source:
+  "auto"`). Only downloaded text models with at least 32,768 tokens of context
+  are considered; an image, video or speech model is never seated, and neither
+  is one that cannot run here: a model served by vLLM-MLX while that runtime is
+  missing or outdated, or one larger than the Local Models RAM allocation.
+  Candidates rank by CAR's own measured quality (`car-judged`), then size, so a
+  bigger model that measured worse does not win. The best-ranked one that
+  writes code, calls tools and generates at least 50 tokens per second (when
+  its speed is measured) codes, and the best model of each other vendor
+  reviews, up to three seats, never a model already named for the panel; a
+  reviewer from the coder's own vendor is seated only after every other vendor
+  has one. Named models meet the same bar: a named coder must write code and
+  call tools, a named seat must be a text model with that context, and a named
+  model that is not ready or does not fit the allocation refuses the cadence
+  with that reason. A local seat's independence is its lineage, who trained it, so
+  `qwen3`, `qwen3.5` and `qwen3-vl` are one seat and two vendors satisfy the
+  panel's two-key diversity floor; a model whose vendor CAR cannot name counts
+  for nothing. Under the same scope the verification auditor (`auditor_model =
+  "auto"`) picks a local text model, with the same context floor, from a vendor
+  other than the coder's; a remote `verifier_model`, or an `auditor_model` other
+  than `"auto"` that is not local, in `~/.car/coder.toml` refuses the cadence,
+  because every item would otherwise end refused at verification.
+  `refusal` names what is missing (no local coder, fewer than two vendors, a
+  named model that is not local or not downloaded) and the cadence does not
+  start. The self-heal detector hands detections to this loop only while the
+  unattended cadence is running, and stops when the cadence task ends. `review_models`, `coder_model` and `engine` at the top level
+  apply to a sweep a person starts with `heal.run`, which may use frontier
+  models.
+- `spend_meter` is the spend meter's health, the same object `spend.status`
+  and `spend.costs` report: `{ healthy, last_error, clock, zone, zone_source }`,
+  or `{ healthy: true, last_error: null, note }` when no supervisor is
+  installed. `healthy` is `false` with the error in `last_error` when the
+  meter could not write its ledger; while it stays so, a capped agent's model
+  calls made through CAR are refused `-32018` `spend_unrecordable`, and an
+  uncapped principal's go through uncounted, so this is where the cause is
+  read (see [spend](spend.md#spend)). `clock` is `synchronized |
+  held_until_synchronized | adopted_unsynchronized`; `zone_source` is `TZ |
+  system | utc_fallback`.
 - `heal.toml` is re-read on every call and on every sweep, so an edit takes
   effect without a daemon restart and `heal.status` always reports what the next
   sweep will use. `config_path` names the file it was read from — an operator
   editing the wrong one otherwise learns nothing from a status that reports
   exactly what they did not change.
-- `disabled_reason` distinguishes "no usable targets are configured" from
-  "targets are configured but there is no review panel", and also carries a
+- `disabled_reason` names "no usable targets or organizations are configured", and also carries a
   boot-time ASSEMBLY failure — an unknown model name, fewer than two attributable
   serving vendors, or a `coder_model` that is also a review seat. Those are
   validated when the loop is assembled rather than when the config is parsed,
@@ -196,7 +333,20 @@ before spending a coder session and says which models resolved to which vendors.
 - FFI: `healStatus()` (NAPI) / `heal_status()` (PyO3), returning JSON.
 
 #### `heal.run`
-- **Params**: `null`
+- **Params**: `null` or `{ chat_session_id?: string, item?: string }`
+- `item` (`owner/repo#number`) runs that one item with the attended
+  configuration, the top-level `review_models`/`coder_model`/`engine`, which may
+  be frontier models. Its backoff, exhaustion and human label are set aside,
+  because a person asked for it; the opt-in label, provenance and coverage
+  rules still apply, and the repository must be a configured target. Without
+  `item` the sweep covers every target, at most one item each.
+- **Who may call it (car#2445):** a sweep's coder sessions run the configured
+  engine, `foreman` (an outside coding CLI) by default, so a connection bound
+  to a supervised agent needs the host chat to start a sweep, whatever engine
+  is configured: it passes the `session_id` of the `agents.chat` turn a host
+  started with that agent as `chat_session_id`, the rule `foreman.run` uses.
+  The turn is checked once, when the call arrives. Hosts and connections not
+  bound to an agent send `null` as before.
 - **Returns**: `{ outcomes: [[repo, outcome]], skipped_overlap }`, where each
   `outcome` is tagged. An opened result is
   `{"outcome":"opened", repo, number, pr_url, gate, ci, delivery}`. `ci` is
@@ -234,7 +384,7 @@ before spending a coder session and says which models resolved to which vendors.
   the work.
 - The claim for an item reaches disk **before** its coder session starts, so a
   daemon that dies mid-session does not re-pick work that is already in flight.
-- FFI: `healRun()` (NAPI) / `heal_run()` (PyO3), returning JSON.
+- FFI: `healRun(chatSessionId?)` (NAPI) / `heal_run(*, chat_session_id=None)` (PyO3), returning JSON.
 - `CAR_HEAL_INTERVAL_SECS` changes the cadence only (900 seconds by default).
   The first tick is skipped on boot, so a daemon restart does not start a coder
   session before the operator has seen it come up.
@@ -266,8 +416,8 @@ before spending a coder session and says which models resolved to which vendors.
   enabled; otherwise it is `"watch-only"`. The daemon runs one non-overlapping
   tick immediately at boot and then every 900 seconds by default.
   `CAR_SELFHEAL_INTERVAL_SECS` changes cadence only.
-- The five detector IDs are `metrics_alerts.v1`, `agent_gave_up.v1`,
-  `agent_log_errors.v1`, `recurring_tool_failure.v1`, and
+- The six detector IDs are `metrics_alerts.v1`, `agent_protocol_skew.v1`,
+  `agent_gave_up.v1`, `agent_log_errors.v1`, `recurring_tool_failure.v1`, and
   `capability_miss.v1` (the unversioned detection `kind` values are listed
   below).
 - FFI: `selfhealStatus()` (NAPI) / `selfheal_status()` (PyO3), returning JSON.
@@ -275,7 +425,8 @@ before spending a coder session and says which models resolved to which vendors.
 #### `selfheal.detections`
 - **Params**: optional `{ kind, severity, since, offset, limit }`. `kind` is one
   of `metrics_alert` / `agent_gave_up` / `agent_log_error` /
-  `agent_silently_idle` / `recurring_tool_failure` / `capability_miss`;
+  `agent_silently_idle` / `recurring_tool_failure` / `capability_miss` /
+  `agent_protocol_skew`;
   severity is `warning` / `critical`; `since` is RFC 3339.
   Default limit is 100 and the server clamps it to 1..500.
 - **Returns**: `{ detections, total, offset, limit, next_offset }`, latest first.
@@ -296,7 +447,9 @@ before spending a coder session and says which models resolved to which vendors.
   `spawned`, `exit_code`, and `failure_class`). Remote deduplication adds
   `auto_fix_awaiting_review`, `auto_fix_parked`, `remote_pr_number`, and
   `remote_pr_url`; an open stable-key PR is awaiting review, while a
-  closed-unmerged PR is parked and never reopened.
+  closed-unmerged PR is parked and never reopened. A detection handed to the
+  repair loop carries `heal_issue` (`{repo, number, url}`); see
+  [Detector to repair loop](../self-healing.md#detector-to-repair-loop).
 - FFI: `selfhealDetections(queryJson?)` / `selfheal_detections(query_json=None)`.
 
 #### `selfheal.dismiss`
@@ -327,12 +480,15 @@ before spending a coder session and says which models resolved to which vendors.
 #### `selfheal.run`
 - **Params**: `null`
 - **Returns**: a tick summary with `route`, `source_checkout?` or
-  `refusal_reason?`, evidence counts, and new/changed/suppressed detection
-  counts. A concurrent tick fails instead of overlapping.
+  `refusal_reason?`, evidence counts, new/changed/suppressed detection
+  counts, and `observed_keys` (omitted when empty): the dedup keys this tick
+  observed, dismissed keys excluded. `selfheal.detections` reports a key's
+  `last_observed_at` from the newest tick listing it, so it survives a daemon
+  restart. A concurrent tick fails instead of overlapping.
 - Runs the same path as the cadence. It reads active session event slices since
   the prior tick, current supervised-agent state, bounded activity/stderr tails
   and activity-log metadata, and the observe-only registry, then invokes all
-  five deterministic detectors. After the detector ledger commit, an enabled
+  six deterministic detectors. After the detector ledger commit, an enabled
   local route may start the first round for one eligible recurring-tool key.
   Later ticks never start that key's initial round again. Other detectors remain
   watch-only and CAR never executes a proposed repair or merges a PR itself.
@@ -340,7 +496,8 @@ before spending a coder session and says which models resolved to which vendors.
 
 All five methods share the daemon-wide private append-only ledger at
 `<CAR_HOME>/selfheal/detections.jsonl`. JSONL records are tagged `detection`,
-`dismissal`, `tick`, `fix_started`, or `fix_attempt`; new ticks append only
+`dismissal`, `tick`, `fix_started`, `fix_attempt`, `remote_pr`, or
+`heal_issue`; new ticks append only
 new/changed detections plus their summary, while every accepted coder round has
 one durable start and terminal exit/failure-class record. A `local` route
 additionally renders one owner-private
@@ -352,12 +509,36 @@ Directories and files are 0700/0600 on Unix. Auto-fix creates only its isolated
 edits the maintainer's working tree or index.
 
 #### `events.cost_by_agent`
-- **Params**: `null`
+- **Params**: `null`, or `{ agent }` — optional; a bare agent id or a full
+  spend-meter key (`agent:<id>`, `operator`, `car:<purpose>`, …). With it, the
+  method reads that principal's call ledger, every model call it made through
+  CAR, daemon-wide, and returns that principal's one row over it, instead of
+  folding this connection's in-memory log. A host or operator session may name
+  any principal; a session bound to a supervised agent, or an outside
+  credential's session, only itself (another is refused `-32003`,
+  `data.reason: "not_your_agent"`, and recorded). Without it, the method
+  behaves exactly as before.
 - **Returns**: array of `{ agent, calls, tokens_in, tokens_out, cost_usd }` —
   the per-agent token/cost report, folded from `InferenceMetered` events by
-  their `agent` field (EPIC G / G3). A multi-agent run reports cost per agent;
+  their `agent` field (EPIC G / G3). It reads only the calling connection's
+  session log (see [events](events.md) for scope and journal retention). A
+  multi-agent run reports cost per agent;
   provenance (which tool/workflow) is queryable via
   `events.query {data_matches:{agent}}`.
+- A `multi.*` run writes one row per sub-agent, and in the daemon that row
+  is a **summary** of the sub-agent's run: `agent` is the paying principal's
+  meter key (`agent:<id>`, `operator`), `sub_agent` the sub-agent's name,
+  `cause` the request's, and `reported_cost_usd` the figure the runner
+  reported. The sub-agent's model calls are the client's own `infer`
+  requests, each recorded on its own `infer` row with its own `call_id`, so
+  the summary row carries no `call_id` or `cost_source` of its own and adds no
+  cost on top of those rows (see [events](events.md) for the exact fields and
+  the fold rule). Rows written by earlier versions (`agent` = the sub-agent's
+  name, `cost_usd` self-reported) fold exactly as they always did. The
+  daemon's own `infer`, `infer_stream` and assistant-loop records carry
+  `agent` as the paying principal's meter key (see `events.query`), so an
+  `infer` from an agent-bound session is reported under `agent:<id>` and one
+  from the daemon token under `operator`, never `unknown`.
 
 #### `replan.set_config`
 - **Params**: `{ max_replans, delay_ms, verify_before_execute, replan_on_rejected }` flat shape

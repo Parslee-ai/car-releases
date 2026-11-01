@@ -6,7 +6,7 @@
 
 #### `bookmarks.list`
 - **Params**: `{ limit?: number = 100 }`
-- **Returns**: `{ available, backend, reason?, bookmarks: Bookmark[] }`
+- **Returns**: `{ available, backend, reason?, bookmarks: Bookmark[], skipped: number }`. `Bookmark` is `{ title, url, source }`. macOS reads Safari's `Bookmarks.plist` (backend `safari_bookmarks`); elsewhere every Chromium profile (Chrome, Edge, Brave; backend `chromium_bookmarks`). `skipped` counts entries that looked like bookmarks but could not be read (a Safari leaf with no usable URL, a Chromium `url` node with no string `url`) and were left out, rather than failing the whole listing; only entries visited before `limit` was reached are counted. When `available` is false, a read macOS refused (no Full Disk Access) names Full Disk Access in `reason`, a file whose own permissions deny reading says so instead, and a file that reads but does not parse says it is not a readable property list.
 
 
 {% endraw %}

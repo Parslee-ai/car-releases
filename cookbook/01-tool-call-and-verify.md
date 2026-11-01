@@ -7,7 +7,7 @@ The canonical CAR lifecycle: register a tool, build a proposal, verify it static
 > thin client to the singleton `car-server` daemon. Start it once
 > per host before running these snippets:
 > ```bash
-> npx --package=car-runtime car-server &     # or: python -m car_runtime.server &
+> npx --package=car-runtime car-server --port 9100 &   # Python users: the pip wheel ships no car-server, so use this too
 > ```
 > The daemon owns inference, the per-session memory graph, and tool
 > dispatch. The TypeScript snippet below uses `executeProposal` with

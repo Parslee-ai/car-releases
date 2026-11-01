@@ -1,7 +1,7 @@
 {% raw %}
 # `.car/` project directory
 
-`.car/` is the team-shareable knowledge layer for a project. Checked into git. Auto-discovered by walking up from `cwd`. Where rubrics, policies, identity, and project-scoped facts live.
+`.car/` is the team-shareable knowledge layer for a project. Checked into git. Auto-discovered by walking up from `cwd` to the git repository root. Where rubrics, policies, identity, and project-scoped facts live.
 
 ## Initialize
 
@@ -29,7 +29,7 @@ One directory `car init` does **not** create, because most projects have none �
 
 ```
 .car/
-  policies/            # *.toml guardrails the runtime enforces on every action
+  policies/            # *.toml guardrails read by car do, the coder and the Claude Code hook
     security.toml      #   deny_tool / deny_keyword / deny_tool_param / …
     messaging.toml     #   allow_tool_param / deny_tool_param_matching / rate_limit_tool
 ```
@@ -40,10 +40,10 @@ One wrinkle worth knowing before you put a file here: `car do` loads the **proje
 
 ## How discovery works
 
-When you instantiate a runtime, CAR walks up from `cwd` looking for an existing `.car/` directory. The first one found wins — same convention as `.git/`. This means:
+When you instantiate a runtime, CAR walks up from `cwd` looking for an existing `.car/` directory. The first one found wins. The walk stops at the git repository root — the first directory holding a `.git` — so a `.car/` in a folder above your checkout never applies to it. This means:
 
 - a runtime instantiated in any subdirectory of your project picks up the project's `.car/`
-- a runtime instantiated outside the project falls back to `~/.car/`
+- CAR's own state directory (`~/.car`, or `$CAR_HOME`) is never read as a project, even from a directory under your home with no `.car/` of its own; machine-wide settings in its `config.toml` still apply outside a project
 - you can override explicitly via `MeetingOptions::root` and similar config knobs
 
 ## What goes in vs. out
@@ -54,7 +54,7 @@ When you instantiate a runtime, CAR walks up from `cwd` looking for an existing 
 - `constraints.md` — hard rules everyone on the team should follow
 - `policies/*.toml` — guardrails the runtime *enforces*, as opposed to `constraints.md`, which the agent merely reads
 - `facts/*.md` — durable project knowledge (architecture, conventions, decisions)
-- `skills/*.json` — learned procedures the team should share
+- `skills/` — created by `car init`; no runtime reads it yet (below)
 - `rubrics/*.toml` — eval specs for `car-bench` task definitions
 - `config.toml` — speech policy, model preferences, feature flags
 
@@ -119,28 +119,25 @@ When CAR boots in a project, it ingests `identity.md` and `constraints.md` into 
 
 You can write these as plain markdown — CAR parses headings as fact subjects and bodies as fact bodies. No special syntax beyond standard markdown.
 
-## Skills checked into git
+## Skills
 
-Skills under `.car/skills/` are loaded on boot. To share a skill the team should use:
+No runtime reads `.car/skills/` today, so a JSON file committed there does not reach anyone's agent. A skill reaches an agent through `skill.ingest` on its runtime, with `name` and `code` required:
 
-```bash
-# After ingesting a skill that worked, dump it:
-echo '{
+```json
+{"jsonrpc":"2.0","method":"skill.ingest","id":1,"params":{
   "name": "deploy-staging",
   "code": "pnpm build && pnpm deploy --env staging",
   "platform": "node",
-  "trigger": {"persona": "engineer", "url_pattern": "", "task_keywords": ["deploy", "staging"]},
+  "task_keywords": ["deploy", "staging"],
   "description": "Deploy current branch to staging"
-}' > .car/skills/deploy-staging.json
+}}
 ```
-
-Commit it. Now everyone on the team gets the skill on next runtime boot.
 
 ## When NOT to use `.car/`
 
 - if the knowledge is per-user, not per-project — use `~/.car/` instead
 - for transient runtime state — use `state_set` / `state_get`
-- for credentials / API keys — use `car-secrets` (OS keychain) and `~/.car/env`
+- for credentials / API keys — use `car-secrets` (CAR's secret store) and `car keys set`
 
 The split is the same as `.git/` (project) vs `~/.gitconfig` (user) — knowledge that's about *the project* belongs in `.car/`, knowledge that's about *the user* belongs in `~/.car/`.
 

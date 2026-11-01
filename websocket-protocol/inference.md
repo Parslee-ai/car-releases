@@ -26,6 +26,7 @@
 - **Returns**: `{ query, source, results: [{ title, url, snippet, score, published_date? }] }`, where `source` is `"parslee"`, `"tavily"`, or `"duckduckgo"`.
 - **Backend resolution** (daemon-side, from its environment): a signed-in Parslee session (`PARSLEE_ACCESS_TOKEN`) → Parslee's hosted search (`/api/v1/orgs/{org}/search`); else `TAVILY_API_KEY` (env or keychain) → Tavily direct; else the keyless DuckDuckGo fallback (zero-config, lower quality). No params control the backend — it's environment-resolved.
 - Results cached ~60s; rate-limited 10/min (per the `search` ToolSchema).
+- **DuckDuckGo pacing**: DuckDuckGo throttles by address, so the daemon asks it with a form POST and spaces its requests to it at least 2.5 s apart (shared with Parslee Core's `web_search` in the same process). Pacing and back-off are per process: another CAR process on the machine keeps its own, and neither survives a restart; one search waits and requests for at most 60 s; and after DuckDuckGo throttles a request it is not asked again for 60 s. A throttled search (HTTP 202, 403 or 429, or its challenge page), a search inside that window, and one whose turn would come after its 60 s return an error saying so, never an empty `results` list. DuckDuckGo's own ad links (paths under `duckduckgo.com/y.js`) are not returned as results.
 
 #### `web_fetch`
 - **Params**: `{ url: string }`.
@@ -55,8 +56,12 @@
   `model_id` **or** a `model_name` — the two differ for most models, and
   `model_name` is what a result reports as the model it used, so the identifier
   you have in hand always works (car#889). Exclusion is soft — if it leaves
-  no candidate it is dropped rather than failing. Absent `intent` routes
-  exactly as before.
+  no candidate it is dropped rather than failing. `on_device_only: true`
+  routes only to models CAR runs on this machine and returns no route when
+  none is left (see `IntentHint` in the top-level reference).
+  `never_download: true` routes only to models usable without a download (a
+  local model must already be installed) and returns no route when none is
+  left. Absent `intent` routes exactly as before.
 - **Returns**: route decision JSON for the adaptive router —
   `{ model_id, model_name, task, complexity, reason, strategy,
   predicted_quality, fallbacks: string[], context_length, needs_compaction,
@@ -67,11 +72,75 @@
   cost-free outcome-derived band key, `score` is the full blended score
   (reliability plus cost/latency/context tie-breakers), `selected` flags the
   chosen model, `in_band` marks models inside the outcome-first reliability band
-  (the eligible set). Lets a UI/operator see *why* a model won and what the
+  (the eligible set). A candidate that outside sources graded through
+  `outcomes.record_external_grade` also carries `external_grades: [{ source,
+  quality, observations, evidence }]`, the grades pooled into its
+  `reliability` for the routed task (`source` is the stored key, `agent:<id>/<name>`
+  for a supervised agent's report; `evidence` is `observations` capped at 8,
+  or `0` for a source not updated in 90 days, before the per-reporter and total
+  caps); the field is absent otherwise. Lets a UI/operator see *why* a model won and what the
   alternatives cost in reliability terms. Empty on explicit-model and
   cold-start/error paths where no ranking occurred. The FFI `route_model()`
   (NAPI/PyO3) returns this same JSON as a string and takes an optional
   `intentJson` / `intent_json` carrying the same `IntentHint`.
+- **Where `reliability` and `score` come from.** `reliability` is a quality
+  estimate in `[0, 1]`: a per-model *prior* from the catalog, shrunk toward
+  the model's observed quality EMA as graded evidence accumulates.
+  `score` is that quality blended with cost and latency, plus the
+  local-model bonuses. Neither comes from a measurement made at route
+  time. The prior is the first rule that applies:
+  1. **Published benchmarks** on the catalog row (`public_benchmarks`, today
+     `car-judged`), normalized onto one tier scale so a
+     benchmark's best-in-class score lands near the top of the measured band
+     `[0.40, 0.92]`. A local's self-measured score on a suite no frontier
+     model anchors maps into the local band `[0.30, 0.60]` instead.
+  2. **Unmeasured curated remote rows**, any provider: a reviewed `frontier`
+     tag gives `0.85`, a `balanced` tag `0.72`, an untagged row `0.60`. These
+     are tier claims made when the row was curated, not measurements, and
+     they stay below the measured ceiling, so a benchmarked frontier model
+     still outranks them. Before car-releases#105 the tag priors applied to
+     OpenRouter rows only, and every native frontier row (for example
+     `openai/gpt-5.6-sol:latest`) sat at `0.60`.
+  3. **Community rows** (auto-discovered, unreviewed): `0.48`. A discovered
+     row inherits its template's tags, so it never takes a tag prior.
+  4. **Local models without a benchmark**: a size proxy from `0.30` (0.6B) to
+     `0.60` (30B+), capped below the measured band.
+
+  The EMA is the model's quality average that graded outcomes move, kept
+  per task once the model has task-level history. It enters with confidence `e / (e + 4)`, where `e = n + 2g` (`n` benchmark
+  cases behind a `benchmark_priors.json` entry, `g` graded live outcomes).
+  External grades join the same shrinkage as a second observed mean: with `x`
+  external cases (capped at 8 per source, 8 per reporter and 16 in all) at
+  mean `q`, the target is
+  `((n + 2g) * ema + x * q) / e` and `e = n + 2g + x`.
+  With no evidence, `reliability` is exactly the prior: a model with no
+  history is never pulled toward a neutral `0.5`. Ungraded completions credit
+  success counts only and never move the EMA.
+- **Reporting graded outcomes from outside the daemon.** Three channels:
+  - **Live, per call:** run the call through `infer_tracked` (or
+    `infer_tracked_with_request`), keep its `trace_id`, and send
+    `outcomes.resolve_pending` with one tuple
+    `[trace_id, success, confidence, output]` (operator role). A single
+    successful tuple with non-empty `output` records quality `confidence`,
+    and a failed one records `(1 - confidence) * 0.3`. The trace must still
+    be pending: it stays gradeable for 900 seconds after the call **ended**,
+    however long the call ran, and a call still in flight is not swept. A
+    report that matches no pending trace is refused with `-32019`
+    (`trace_not_pending`) naming the dropped trace ids, instead of being
+    counted (see [`outcomes.resolve_pending`](outcomes.md#outcomesresolve_pending)).
+  - **A model CAR did not serve:** `outcomes.record_external_grade` with
+    `{ model_id, task, quality, n?, source }` (operator role) records a graded
+    result that no trace stands behind, such as a head-to-head run outside
+    CAR. It is pooled as above, bounded per source, per reporter and in
+    total, and listed on the
+    candidate's `external_grades` (see
+    [`outcomes.record_external_grade`](outcomes.md#outcomesrecord_external_grade)).
+  - **Offline, at startup:** a car-bench `BenchmarkResult` JSON
+    (`{ model_id, overall_score, cases: [{ category, score }] }`, or an array
+    of them) in `<state>/models/benchmark_priors.json`,
+    `<state>/benchmark_priors.json`, or the file `CAR_BENCHMARK_PRIORS_PATH`
+    names. It is loaded when the daemon starts and seeds the EMA only for a
+    model with no recorded calls yet.
 
 #### `models.stats`
 - **Params**: `null`

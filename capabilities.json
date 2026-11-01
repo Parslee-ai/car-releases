@@ -621,6 +621,13 @@
           "description": "Executable target from car-bench: Benchmark harness for CAR — proves runtime value via frontier model benchmarks"
         },
         {
+          "id": "bin:car-harness-train",
+          "name": "car-harness-train",
+          "kind": "binary",
+          "entry_point": "crates/car-bench/src/harness_train_cli.rs",
+          "description": "Executable target from car-bench: Benchmark harness for CAR — proves runtime value via frontier model benchmarks"
+        },
+        {
           "id": "bin:car-memgine-eval",
           "name": "car-memgine-eval",
           "kind": "binary",
@@ -729,6 +736,10 @@
     {
       "path": "approvals reset-tool",
       "description": "Remove one exact agent/tool approval override"
+    },
+    {
+      "path": "approvals set-observer",
+      "description": "Grant (`on`) or withdraw (`off`) one agent's watcher view. An agent sees only its own approvals and host events unless it holds this. It applies on macOS and Windows; on Linux a walled agent cannot call those methods at all, so for a walled agent the grant changes nothing there. While a watcher is granted, a daemon or `car` older than this release reading the same state treats agent-permissions.json as damaged (it asks before every gated call); withdraw the grant before downgrading"
     },
     {
       "path": "approvals set-tool",
@@ -1072,7 +1083,7 @@
     },
     {
       "path": "keys",
-      "description": "Store cloud-provider API keys in the OS keychain, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then `$CAR_HOME/env`, then keychain"
+      "description": "Store cloud-provider API keys in CAR's secret store, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then the secret store"
     },
     {
       "path": "keys list",
@@ -1204,7 +1215,7 @@
     },
     {
       "path": "lattice org join",
-      "description": "Join your org on this machine: trust the granter keys in an enrollment code, checked against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to $CAR_HOME/env; restart the daemon afterwards. Works without a running daemon"
+      "description": "Join your org on this machine: trust the granter keys in an enrollment code, checked against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store; restart the daemon afterwards. Works without a running daemon"
     },
     {
       "path": "lattice org policy",
@@ -1455,6 +1466,10 @@
       "description": "Free-text note search"
     },
     {
+      "path": "notes read",
+      "description": "Read one note's stored HTML body by the id `car notes find` prints. Read-only"
+    },
+    {
       "path": "onboard",
       "description": "Onboarding readiness — what's set up and what's still pending (the headless equivalent of the CarHost setup wizard)"
     },
@@ -1473,6 +1488,10 @@
     {
       "path": "parslee generate-document",
       "description": "Generate a Word document from a natural-language brief and save it to your connected drive (OneDrive/Google Drive). Requires the `aie` product"
+    },
+    {
+      "path": "peer-inbox-hook",
+      "description": "Tell a running Claude Code session that colleagues' messages wait for it. Wired by the CAR plugin as a Claude Code hook (after a prompt or a tool call, and before stopping); reads the count `car claude`'s collaboration server keeps. Prints nothing outside a `car claude` session, and always exits 0"
     },
     {
       "path": "permissions",
@@ -1584,7 +1603,7 @@
     },
     {
       "path": "schedule list",
-      "description": "List scheduled commands and whether each is OS-durable"
+      "description": "List every scheduled task record and what runs it (os, daemon, orphaned, or none), with its last run"
     },
     {
       "path": "schedule reconcile",
@@ -1612,7 +1631,7 @@
     },
     {
       "path": "secrets migrate-from-env",
-      "description": "Walk known remote-model env vars and copy any non-empty values from process env into the OS keychain. Idempotent — running again only rewrites entries when the env value differs from what's stored"
+      "description": "Import a leftover `~/.car/env` into the secret store and delete it, and copy provider keys set in this shell's environment into the store. Prints one line per entry, by name only"
     },
     {
       "path": "secrets put",
@@ -1687,6 +1706,10 @@
       "description": "Run end-to-end speech smoke tests through CAR"
     },
     {
+      "path": "spend",
+      "description": "Spend on model calls made through CAR. `car spend <agent>` prints one agent's spend this hour, today and this month beside its declared caps, when it is at budget and until when, and its cap history (the daemon's `spend.status`); inside a supervised agent's environment (`CAR_AGENT_ID` / `CAR_AGENT_TOKEN` set) the agent may be left out and the agent's own is printed. `car spend --all` prints every principal's spend today, over the last 7 days and this month (the daemon's `spend.costs`): agents, workers, labels, the operator and CAR's own background work. Only calls routed through CAR are counted"
+    },
+    {
       "path": "start",
       "description": "Start an installed contributed agent"
     },
@@ -1708,7 +1731,7 @@
     },
     {
       "path": "ui",
-      "description": "Open the browser dashboard served by the daemon"
+      "description": "Sign a browser in to the daemon's dashboard with a one-time link"
     },
     {
       "path": "uninstall",
@@ -1741,6 +1764,34 @@
     {
       "path": "voice remove",
       "description": "Remove an enrolled voiceprint by label"
+    },
+    {
+      "path": "worktree",
+      "description": "Lease a warm git worktree from this repo's pool instead of creating one per task (acquire, release, status, reclaim, clean, and `hook` for the CAR Claude Code plugin). Off until the repo commits .car/worktree-pool.toml with `enabled = true`"
+    },
+    {
+      "path": "worktree acquire",
+      "description": "Lease a slot checked out on BRANCH and print its path (the only line on stdout)"
+    },
+    {
+      "path": "worktree clean",
+      "description": "Find stale ad-hoc worktrees of this repo; archive, then remove them with --apply (dry run otherwise)"
+    },
+    {
+      "path": "worktree hook",
+      "description": "Claude Code's WorktreeCreate, WorktreeRemove and SubagentStop hook, wired by the CAR plugin; reads the hook's JSON on stdin"
+    },
+    {
+      "path": "worktree reclaim",
+      "description": "Free leases whose holder process is gone (clean slots only, unless --archive-dirty)"
+    },
+    {
+      "path": "worktree release",
+      "description": "Give a slot back: park it detached on the base, keep its build output, lock it, and drop the lease"
+    },
+    {
+      "path": "worktree status",
+      "description": "Show the pool: each slot free or leased (branch, owner, pid, DEAD when the holder is gone, since when), and this repo's other worktrees"
     }
   ],
   "model_tools": {
@@ -1779,7 +1830,7 @@
       },
       {
         "name": "browser_await_signin",
-        "description": "Ask the USER to sign in, on whatever surface this browser has, and wait until they have. Use this the moment a site needs authentication — you cannot and must not type someone's credentials, but the person can complete any flow (SSO, MFA, a device prompt) themselves: in the CAR app's browser drawer when the app is running, or in the browser window if one is open. TELL THE USER what to sign into before calling this, and say to look in the CAR app if they do not see a browser window; it blocks while they do it. The session persists in the browser profile, so this is a one-time cost per site rather than per run."
+        "description": "Ask the USER to sign in, on whatever surface this browser has, and wait until they have. Use this the moment a site needs authentication — you cannot and must not type someone's credentials, but the person can complete the flow (SSO, MFA, a device prompt) themselves: on a Mac with the CAR app running this opens a browser window for it that sites do not refuse as automated (\"Sign in with Google\"); otherwise in the CAR app's browser drawer when the app is running, or in the browser window if one is open. TELL THE USER what to sign into before calling this, and say to look for a browser window, or in the CAR app if they do not see one; it blocks while they do it. You keep browsing in that same browser afterwards. The session persists in the browser profile, so this is a one-time cost per site rather than per run."
       },
       {
         "name": "browser_record_start",
@@ -1867,7 +1918,7 @@
       },
       {
         "name": "http_request",
-        "description": "Fetch a URL or call an HTTP API. Defaults to GET. Returns the requested URL, final URL after redirects, response status, HTML title when present, and a size-capped body. A non-text or undecodable response comes back flagged `binary` or `undecodable` with no body. Runs from the host, so it works even when the filesystem/shell are sandboxed offline."
+        "description": "Fetch a URL or call an HTTP API. Defaults to GET. Returns the requested URL, final URL after redirects, response status, HTML title when present, and a size-capped body. Redirects are followed only on the requested URL's origin; a redirect to another origin is returned with its `location`, not followed — request that URL separately to go there. A non-text or undecodable response comes back flagged `binary` or `undecodable` with no body. Runs from the host, so it works even when the filesystem/shell are sandboxed offline."
       },
       {
         "name": "linked_devices",
@@ -1891,7 +1942,7 @@
       },
       {
         "name": "mail_inbox",
-        "description": "Read per-account unread counts and newest subjects from the current Mac user's local Mail.app. This on-device path does not use Parslee or require a Microsoft 365 connection."
+        "description": "Read per-account unread counts and newest subjects from the current Mac user's local Mail.app. This on-device path does not use Parslee or require a Microsoft 365 connection. An account listed in `unresolved` could not be read: its counts are unknown, not zero, so say that rather than counting it as an empty inbox."
       },
       {
         "name": "mail_message_body",
@@ -1906,12 +1957,24 @@
         "description": "Send a message through the current Mac user's local Mail.app. This sends externally and requires chat approval unless the session has full access. Returns the sent message id."
       },
       {
+        "name": "notes_find",
+        "description": "Find notes in the current Mac user's local Notes.app by words in their title or text. Returns rows with each note's stable id, name, folder and modification time, but no body; pass the id to notes_read. Read-only."
+      },
+      {
+        "name": "notes_read",
+        "description": "Read one note's body from the current Mac user's local Notes.app by the id notes_find returns. The body is the HTML exactly as Notes stores it, so after writing a note, read it back here (not with run_applescript, which needs approval) and check it: a `<li><br></li>` is an empty list item, not content. Read-only."
+      },
+      {
         "name": "notify_linked_device",
         "description": "Send a short CAR notification to a linked consumer device that advertises notifications.deliver, such as the user's iPhone. This only delivers title/body notification text through the CAR host event channel; it does not access contacts, location, photos, microphone, files, or arbitrary phone actions."
       },
       {
         "name": "produce_commercial",
         "description": "Produce a short COMMERCIAL VIDEO (shots, voiceover, and music) from a creative brief via Parslee Studio's video pipeline. Give it a brief describing the product and the ad you want; Studio plans shots, generates keyframes and video, adds a voiceover and a music bed, and assembles a finished MP4. Writes the video under the working directory and returns its path. This is SLOW — a real production runs many minutes (up to ~25). Use it when the user wants an actual video ad, promo, or commercial (for music/jingles/images use the other Studio tools). The result is a file path; embed it (<video src>) or read it like any file."
+      },
+      {
+        "name": "propose_agent",
+        "description": "Show the person a draft of a standing agent to review, inside this chat. Call it only once they want one (they agreed to make one, or their first message asked for repeating work and they haven't declined or said just this once) and answered what only they can decide. It builds and adds nothing: the person does that from the draft with their own clicks. Every answer carries the person's own words (person_said) and a status: present (they said it clearly), partial (they said some of it), too_vague (too vague to build from) or assumed (you filled it in). Anything but present comes back with the question to ask next. The schedule and the folder are choices you recommend; the person can change them on the draft. To change one of their agents, pass existing_agent_id and only the answers that change. This ends your reply."
       },
       {
         "name": "read_file",
@@ -1931,7 +1994,7 @@
       },
       {
         "name": "run_applescript",
-        "description": "Run an AppleScript or JavaScript-for-Automation (JXA) script to control macOS and its apps — Finder, System Events, Notes, Calendar, Mail, Reminders, notifications, window/app control, clipboard, and anything scriptable. Returns the script's stdout/stderr. This drives the real host desktop (it cannot be sandboxed), so it requires full-access approval — a capability no sandboxed or text-only agent has. Prefer JXA (`language: \"javascript\"`), which models generate more cleanly than AppleScript."
+        "description": "Run an AppleScript or JavaScript-for-Automation (JXA) script to control macOS and its apps — Finder, System Events, Notes, Calendar, Mail, Reminders, notifications, window/app control, clipboard, and anything scriptable. Returns the script's stdout/stderr. This drives the real host desktop (it cannot be sandboxed), so it requires full-access approval — a capability no sandboxed or text-only agent has. Prefer JXA (`language: \"javascript\"`), which models generate more cleanly than AppleScript. A Notes body is HTML: write a list as `<ol><li>First</li><li>Second</li></ol>` (or `<ul>`) with nothing between one `</li>` and the next `<li>` — never a `<br>` between items, which Notes stores as an empty list item. A `<li><br></li>` in a note read back is an empty item, not content. When a script creates a note, return the new note's id (`note.id()`) and pass it to `notes_read` to check what was stored."
       },
       {
         "name": "run_powershell",
@@ -1997,7 +2060,7 @@
       },
       {
         "name": "browser_await_signin",
-        "description": "Ask the USER to sign in, on whatever surface this browser has, and wait until they have. Use this the moment a site needs authentication — you cannot and must not type someone's credentials, but the person can complete any flow (SSO, MFA, a device prompt) themselves: in the CAR app's browser drawer when the app is running, or in the browser window if one is open. TELL THE USER what to sign into before calling this, and say to look in the CAR app if they do not see a browser window; it blocks while they do it. The session persists in the browser profile, so this is a one-time cost per site rather than per run."
+        "description": "Ask the USER to sign in, on whatever surface this browser has, and wait until they have. Use this the moment a site needs authentication — you cannot and must not type someone's credentials, but the person can complete the flow (SSO, MFA, a device prompt) themselves: on a Mac with the CAR app running this opens a browser window for it that sites do not refuse as automated (\"Sign in with Google\"); otherwise in the CAR app's browser drawer when the app is running, or in the browser window if one is open. TELL THE USER what to sign into before calling this, and say to look for a browser window, or in the CAR app if they do not see one; it blocks while they do it. You keep browsing in that same browser afterwards. The session persists in the browser profile, so this is a one-time cost per site rather than per run."
       },
       {
         "name": "browser_record_start",
@@ -2099,7 +2162,7 @@
       },
       {
         "name": "memory_query",
-        "description": "Query CAR graph memory using spreading activation. Returns top-k nodes with activation scores."
+        "description": "Query CAR graph memory using spreading activation. Returns top-k nodes with activation scores: a direct match scores how well it matches the query (0-1), and a node that matches no query term, reached through graph edges, scores lower than the match it came from."
       },
       {
         "name": "memory_save_knowledge",
@@ -2119,7 +2182,7 @@
       },
       {
         "name": "policy_check",
-        "description": "Evaluate a proposed tool call against CAR's policy layer BEFORE it runs. Built for a host's PreToolUse hook: pass the tool name and its parameters, get back allow/deny with the rule that decided it. Merges the operator's declarative rules from <CAR_HOME>/policies/ and .car/policies/ (under the working directory; neither is walked upward) with CAR's stateless egress guardrail. Read 'basis' as well as 'decision' — 'no_rules_configured' means nothing was loaded and the allow reviewed nothing, which is NOT the same as 'passed_rules'. An unparseable policy file denies ('policy_load_failed') rather than failing open. Findings carry 'source' so an operator-authored rule is distinguishable from a built-in guardrail, and 'severity' so a warn is distinguishable from a deny."
+        "description": "Evaluate a proposed tool call against CAR's policy layer BEFORE it runs. Built for a host's PreToolUse hook: pass the tool name and its parameters, get back allow/deny with the rule that decided it. Merges the operator's declarative rules from <CAR_HOME>/policies/ and every project .car/policies/ from the working directory up to its repository root (the walk stops at the worktree's .git, skips the state root, and outside a repository reads only the working directory's own .car; car do and the coder read only the nearest .car) with CAR's stateless egress guardrail, a heuristic, not egress control: it pattern-matches commands and URLs, and a call it does not recognize is not blocked. The guardrail inspects CAR's shell, http and webfetch tools and the host tools mapped onto them (Claude Code's Bash as shell, WebFetch as webfetch, plus CAR's own http_request, browser, browse_navigate, browser_await_signin, web_fetch, run_command and pty_start); 'inspected_as' names the CAR tool a call was inspected as. It is null for an unmapped tool with neither a command nor a url; read_file, write_file and edit_file (Claude Code's Read, Write and Edit) are mapped but the egress guardrail does not inspect them; a policy_load_failed deny carries no inspected_as. Operator rules match the tool name exactly as sent. An unmapped tool carrying a command or url string is inspected too, but its guardrail findings only warn. Loopback hosts count as allowlisted, but nc, netcat and /dev/tcp/ are denied even toward loopback. Read 'basis' as well as 'decision' — 'no_rules_configured' means nothing was loaded and the allow reviewed nothing, which is NOT the same as 'passed_rules'. An unparseable policy file denies ('policy_load_failed') rather than failing open. Findings carry 'source' so an operator-authored rule is distinguishable from a built-in guardrail, and 'severity' so a warn is distinguishable from a deny."
       },
       {
         "name": "simulate",
@@ -2150,7 +2213,7 @@
         {
           "method": "a2a.peers.add",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "a2a.peers.list",
@@ -2160,7 +2223,7 @@
         {
           "method": "a2a.peers.remove",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "a2a.send",
@@ -2328,6 +2391,11 @@
           "role": "host"
         },
         {
+          "method": "agent_permissions.set_observer",
+          "documented": true,
+          "role": "host"
+        },
+        {
           "method": "agent_permissions.set_tool",
           "documented": true,
           "role": "host"
@@ -2408,9 +2476,14 @@
           "role": "operator"
         },
         {
+          "method": "agents.register_basics",
+          "documented": true,
+          "role": "operator_only"
+        },
+        {
           "method": "agents.remove",
           "documented": true,
-          "role": "host"
+          "role": "agent"
         },
         {
           "method": "agents.restart",
@@ -2768,6 +2841,11 @@
           "role": "operator"
         },
         {
+          "method": "coder.discuss.archive",
+          "documented": true,
+          "role": "operator"
+        },
+        {
           "method": "coder.discuss.close",
           "documented": true,
           "role": "operator"
@@ -3005,6 +3083,31 @@
       ]
     },
     {
+      "namespace": "credentials",
+      "methods": [
+        {
+          "method": "credentials.issue",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "credentials.list",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "credentials.refusals",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "credentials.revoke",
+          "documented": true,
+          "role": "host"
+        }
+      ]
+    },
+    {
       "namespace": "declagents",
       "methods": [
         {
@@ -3021,6 +3124,11 @@
           "method": "declagents.list",
           "documented": true,
           "role": "operator"
+        },
+        {
+          "method": "declagents.pause",
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "declagents.remove",
@@ -3053,7 +3161,17 @@
           "role": "operator"
         },
         {
+          "method": "declagents.runs",
+          "documented": true,
+          "role": "host"
+        },
+        {
           "method": "declagents.set_enabled",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "declagents.set_schedule",
           "documented": true,
           "role": "host"
         }
@@ -3105,7 +3223,7 @@
         {
           "method": "events.clear",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "events.cost_by_agent",
@@ -3135,7 +3253,7 @@
         {
           "method": "events.truncate",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         }
       ]
     },
@@ -3195,12 +3313,12 @@
         {
           "method": "fleet.composite",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "fleet.inventory",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "fleet.worker.get",
@@ -3311,6 +3429,11 @@
           "method": "host.devices",
           "documented": true,
           "role": "operator"
+        },
+        {
+          "method": "host.dismiss_approval",
+          "documented": true,
+          "role": "agent"
         },
         {
           "method": "host.events",
@@ -3488,6 +3611,16 @@
           "role": "owner"
         },
         {
+          "method": "lattice.human.status",
+          "documented": true,
+          "role": "agent"
+        },
+        {
+          "method": "lattice.inbox",
+          "documented": true,
+          "role": "owner"
+        },
+        {
           "method": "lattice.join",
           "documented": true,
           "role": "owner"
@@ -3585,12 +3718,12 @@
         {
           "method": "lattice.requests",
           "documented": true,
-          "role": "host"
+          "role": "agent"
         },
         {
           "method": "lattice.respond",
           "documented": true,
-          "role": "host"
+          "role": "agent"
         },
         {
           "method": "lattice.wait",
@@ -4080,12 +4213,12 @@
         {
           "method": "multiplayer.get",
           "documented": true,
-          "role": "operator_only"
+          "role": "agent"
         },
         {
           "method": "multiplayer.list",
           "documented": true,
-          "role": "operator_only"
+          "role": "agent"
         },
         {
           "method": "multiplayer.merge_check",
@@ -4139,6 +4272,11 @@
         },
         {
           "method": "notes.find",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "notes.read",
           "documented": true,
           "role": "operator"
         }
@@ -4207,6 +4345,11 @@
     {
       "namespace": "outcomes",
       "methods": [
+        {
+          "method": "outcomes.record_external_grade",
+          "documented": true,
+          "role": "operator"
+        },
         {
           "method": "outcomes.resolve_pending",
           "documented": true,
@@ -4610,12 +4753,12 @@
         {
           "method": "scheduler.os_install",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "scheduler.os_list",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "scheduler.os_reconcile",
@@ -4630,7 +4773,7 @@
         {
           "method": "scheduler.os_uninstall",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "scheduler.run",
@@ -4655,7 +4798,7 @@
         {
           "method": "secret.delete",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "secret.get",
@@ -4665,17 +4808,17 @@
         {
           "method": "secret.list",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "secret.put",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "secret.status",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         }
       ]
     },
@@ -4885,6 +5028,21 @@
       ]
     },
     {
+      "namespace": "spend",
+      "methods": [
+        {
+          "method": "spend.costs",
+          "documented": true,
+          "role": "operator_only"
+        },
+        {
+          "method": "spend.status",
+          "documented": true,
+          "role": "operator"
+        }
+      ]
+    },
+    {
       "namespace": "state",
       "methods": [
         {
@@ -5025,7 +5183,7 @@
         {
           "method": "tasks.list",
           "documented": true,
-          "role": "operator"
+          "role": "operator_only"
         },
         {
           "method": "tasks.schedule",
@@ -5111,6 +5269,21 @@
           "method": "tools.unregister",
           "documented": true,
           "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "ui",
+      "methods": [
+        {
+          "method": "ui.sign_in",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ui.sign_out",
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -5226,6 +5399,26 @@
           "method": "voice.tts_stream.start",
           "documented": true,
           "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "workers",
+      "methods": [
+        {
+          "method": "workers.report",
+          "documented": true,
+          "role": "agent"
+        },
+        {
+          "method": "workers.spend",
+          "documented": true,
+          "role": "agent"
+        },
+        {
+          "method": "workers.start",
+          "documented": true,
+          "role": "agent"
         }
       ]
     },

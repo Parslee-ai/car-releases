@@ -181,6 +181,17 @@ On every state transition or artifact append, the bridge POSTs the current `Task
 
 The listener `car-server` starts by default is **peer-authenticated** — ed25519 signatures from CAR daemons this host already trusts — and messaging-only; see *Two listeners* above. The `a2a.start` listener and the `build_router` embedder path have **no auth**, which is correct for local development and for deployments behind an authenticating reverse proxy. Direct internet exposure is a Bad Idea.
 
+### Browser requests
+
+A loopback bind is not an authentication boundary against the operator's own browser: any page they have open can POST to `127.0.0.1`, and a rebound DNS name makes that page same-origin with the listener. So on every router `car_a2a::http` builds, the JSON-RPC and stream routes refuse:
+
+- a request carrying a non-loopback `Origin` — `403`, `{"error":"origin not allowed"}`. The opaque `null` origin is refused with the rest. A request with **no** `Origin` is served: a browser always sends one cross-origin, and CLI and SDK callers send none.
+- on a router built for a loopback bind (`build_router_bound_to`, `build_router_with_auth_bound_to`, and so `a2a.start` on loopback), a request whose `Host` is not a loopback name — `403`, `{"error":"host not allowed"}`. One other name is served: the host of an explicitly supplied `public_url` (`a2a.start`'s parameter, the bound builders' argument), compared case-insensitively with the port ignored. This keeps working a tunnel or reverse proxy in front of a loopback bind that forwards the public host name as `Host`, and a rebinding page cannot choose that name. A tunnel or proxy that rewrites `Host` to the loopback address needs no `public_url` for this. A listener bound to a reachable address (`a2a.start` with `allow_non_loopback_bind`, the peer-authenticated listener) does not check `Host`, since a legitimate remote caller sends its own. `build_router`, `build_router_with_auth`, `serve` and `serve_with_auth` are not told to check `Host` and check `Origin` only, so an embedder already serving one behind a tunnel keeps working.
+
+Loopback means `localhost`, anything in `127.0.0.0/8`, or `[::1]`, on any port, matched exactly — `localhost.evil.com` is not loopback. The `Origin` rule and the loopback set live in `car_a2a::loopback`, shared with the daemon's MCP endpoint and dashboard; the MCP endpoint's own `Host` check is looser and also accepts any IP literal. The Agent Card routes stay public, as A2A requires. None of this is a credential: a local process that sends no `Origin` and a loopback `Host` is served exactly as before.
+
+On the routers that check `Origin` only (`serve`, `serve_with_auth`, `build_router`, `build_router_with_auth`), a DNS-rebinding page can still make same-origin GET requests, which carry no `Origin`, so on a loopback bind it can read the `/a2a/stream/:task_id` task stream that the validator admits (read-only: writes are POSTs, which always carry `Origin`; the peer-authenticated router needs a signature for that GET as well). A loopback embedder that isn't behind a tunnel should use `build_router_bound_to` or `build_router_with_auth_bound_to`, which also blocks a DNS-rebinding page from reading `/a2a/stream`. `a2a.start` already does.
+
 A2A's spec defines API-key, HTTP-basic, OAuth2, OIDC, and mTLS schemes; declaring them in the Agent Card and enforcing them is the embedder's responsibility for now.
 
 ## Python and Node.js consumers
@@ -292,6 +303,13 @@ multiple A2A agents:
 | codebase indexer | 9102 | `http://127.0.0.1:9102/.well-known/agent-card.json` |
 | code reviewer    | 9103 | `http://127.0.0.1:9103/.well-known/agent-card.json` |
 
+A daemon whose card URL is loopback, as in this layout, is not announced on the
+local network over mDNS, because nothing else on the network can reach it; it
+logs that once at startup. Daemons on the same machine pair through
+`a2a.peers.add <url>`, after which `discovery.resolve` and `lattice.knock`
+reach each other. Bind a LAN address with `--a2a-bind` (or declare a LAN
+`--a2a-public-url`) to be discoverable on the local network.
+
 For team or CI deployments there is **no CAR-provided registry yet**. Most
 deployments either (a) put each agent behind its own DNS name + reverse
 proxy and let callers cache the resolved card URL, or (b) stand up a static
@@ -311,7 +329,7 @@ authenticated caller is allowed to *ask for*:
 | Listener | How it starts | Auth | Tool `data` parts |
 |----------|---------------|------|-------------------|
 | Peer-authenticated | `car-server` starts it by default, bound to this host's LAN address | ed25519 peer signature; only keys this host already trusts | **Refused** (`-32600`) |
-| `a2a.start` | An operator explicitly calls the `a2a.start` JSON-RPC method | `NoAuth` — **not configurable**; `StartParams` has no auth field and `build_router` hardcodes it | Dispatched, as documented above |
+| `a2a.start` | An operator explicitly calls the `a2a.start` JSON-RPC method | `NoAuth` — **not configurable**; `StartParams` has no auth field and `build_router_bound_to` hardcodes it | Dispatched only with `share_session_runtime: true`, to the calling session's tools; otherwise its runtime registers no tools |
 
 The peer-authenticated listener is **messaging-only**: a message carrying a
 `data` part with a `tool` key is refused before a task is created, and its agent
@@ -333,11 +351,15 @@ this host" would collapse two very different grants into one. Adding a peer with
 `a2a.peers.add` grants the first and not the second.
 
 If you want a peer to drive tools on this host, `a2a.start` is the surface that
-does it — but read what you are getting first. It binds whatever address you
-pass with no loopback check, serves `NoAuth` with no way to change that, and
-registers the agent-basics filesystem tools. It is opt-in and operator-initiated,
-which is the only reason it is not the same defect described above; do not put it
-on an untrusted network.
+does it — but read what you are getting first. It refuses a non-loopback bind
+unless `allow_non_loopback_bind` is passed, refuses browser requests from other
+sites (see *Browser requests*), and serves `NoAuth` with no way to change that.
+It serves tools only with `share_session_runtime: true`, and then only the ones
+the calling session registered and answers for; without it the runtime registers
+no tools at all, because any local process, a walled agent included, can reach a
+credential-free loopback listener (car#3643). It is opt-in and
+operator-initiated, which is the only reason it is not the same defect described
+above; do not put it on an untrusted network.
 
 ## What a verified peer identity puts on the record
 

@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CAR — A home for your AI agents | Parslee</title>
-<meta name="description" content="CAR runs AI agents on your own computer, keeps them alive, asks before anything risky, and re-runs real checks before it ever says done.">
+<title>CAR — The runtime a business runs its agents on | Parslee</title>
+<meta name="description" content="CAR runs a business's AI agents on machines the business owns, keeps them alive, asks before anything risky, and re-runs real checks before it ever says done.">
 <link rel="canonical" href="https://car.parslee.ai/">
-<meta property="og:title" content="CAR — A home for your AI agents | Parslee">
-<meta property="og:description" content="CAR runs AI agents on your own computer, keeps them alive, asks before anything risky, and re-runs real checks before it ever says done.">
+<meta property="og:title" content="CAR — The runtime a business runs its agents on | Parslee">
+<meta property="og:description" content="CAR runs a business's AI agents on machines the business owns, keeps them alive, asks before anything risky, and re-runs real checks before it ever says done.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://car.parslee.ai/">
 <meta property="og:image" content="https://car.parslee.ai/img/og.png">
@@ -43,7 +43,6 @@
   --muted:#94A3B8;
   --muted-2:#64748B;
   --line:rgba(255,255,255,.08);
-  --grad:linear-gradient(90deg,#00A991 0%,#3FE0DE 100%);
   --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --display:"Instrument Sans","Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
@@ -268,35 +267,6 @@ h2{
 }
 .step p{color:var(--muted);font-size:14.5px}
 
-/* Manifesto */
-.manifesto{
-  background:
-    radial-gradient(700px 400px at 30% 20%,rgba(0,169,145,.14),transparent 70%),
-    radial-gradient(700px 420px at 75% 85%,rgba(63,224,222,.09),transparent 70%),
-    var(--navy);
-}
-.manifesto .inner{
-  max-width:880px;margin:0 auto;
-  padding:96px 24px;
-  text-align:center;
-}
-.grad-rule{
-  height:2px;width:120px;
-  background:var(--grad);
-  border:none;border-radius:2px;
-  margin:0 auto;
-}
-.manifesto blockquote{
-  font-family:var(--display);
-  font-weight:600;
-  font-size:clamp(22px,3vw,31px);
-  line-height:1.4;
-  letter-spacing:-.01em;
-  color:#fff;
-  margin:36px 0;
-}
-.manifesto blockquote em{font-style:normal;color:var(--cyan)}
-
 /* Install */
 .install-grid{
   display:grid;
@@ -316,7 +286,16 @@ h2{
   font-weight:600;font-size:19px;color:#fff;
 }
 .install-card p{color:var(--muted);font-size:14.5px}
-.install-card .btn{align-self:flex-start}
+.install-card .btn{align-self:flex-start;justify-self:start}
+/* The download cards share row tracks, so every button starts on the same
+   line however many lines the description above it wraps to. */
+.install-downloads .install-card{
+  display:grid;grid-row:span 4;grid-template-rows:subgrid;
+  row-gap:16px;align-content:start;
+}
+/* A card with no button runs its commands from the button row down. */
+.install-downloads p + .codelines{grid-row:3 / span 2}
+.codelines{display:flex;flex-direction:column;gap:16px}
 .codeline{
   display:flex;align-items:center;gap:10px;
   background:var(--page);
@@ -328,12 +307,9 @@ h2{
   font-family:var(--mono);
   font-size:12.5px;
   color:var(--grey);
-  overflow-x:auto;
   min-width:0;
   flex:1;
-  white-space:nowrap;
-  flex:1;
-  scrollbar-width:thin;
+  overflow-wrap:anywhere;
 }
 .copy-btn{
   flex-shrink:0;
@@ -387,7 +363,6 @@ h2{
 @media (max-width:560px){
   .site-nav a:not(.btn){display:none}
   .hero-ctas .btn{width:100%}
-  .manifesto .inner{padding:72px 20px}
 }
 </style>
 </head>
@@ -413,11 +388,11 @@ h2{
     <div class="wrap">
       <div>
         <p class="kicker">CAR — Common Agent Runtime</p>
-        <h1>A home for your AI&nbsp;agents. On your machine.</h1>
+        <h1>The runtime a business runs its agents on. On machines it owns.</h1>
         <p class="subhead">The supervised runtime where agents live, restart, and prove their work.</p>
-        <p class="lede">CAR is a program you install on your own computer that runs AI agents and looks after them: it keeps them alive in the background, restarts them when they crash, and stops to ask your permission before anything risky — it can even text you for the OK.</p>
+        <p class="lede">CAR is a program a business installs on a server or Mac it owns, which runs AI agents and looks after them: it keeps them alive in the background, restarts them when they crash, and stops to ask your permission before anything risky — it can even text you for the OK.</p>
         <div class="hero-ctas">
-          <a class="btn btn-primary" href="https://github.com/Parslee-ai/car-releases/releases/latest">View the macOS release</a>
+          <a class="btn btn-primary" href="https://github.com/Parslee-ai/car-releases/releases/latest/download/CAR-darwin-arm64.pkg">Download for Mac (.pkg)</a>
           <a class="btn btn-outline" href="https://github.com/Parslee-ai/car-releases/releases/latest/download/CAR-setup-x64.exe">Download for Windows (.exe)</a>
         </div>
         <p class="hero-meta">Apple Silicon, macOS 26+ &middot; Windows x64 &middot; Free for commercial use</p>
@@ -449,7 +424,7 @@ AGENT            STATUS     RESTARTS
         <p class="eyebrow">What is CAR</p>
         <h2>A runtime that never takes the AI&rsquo;s word for it.</h2>
         <div class="prose">
-          <p>CAR is a program you install on your own computer that runs AI agents and looks after them: it keeps them alive in the background, restarts them when they crash, and stops to ask your permission before anything risky — it can even text you for the OK.</p>
+          <p>CAR is a program a business installs on a server or Mac it owns, which runs AI agents and looks after them: it keeps them alive in the background, restarts them when they crash, and stops to ask your permission before anything risky — it can even text you for the OK.</p>
           <p style="margin-top:16px">Its signature habit is <strong>proof</strong>: for coding jobs and goal runs it writes down up front what done must look like as real checks, then re-runs those checks itself and refuses to say finished until they actually pass — it never just takes the AI&rsquo;s word for it.</p>
           <p style="margin-top:16px">The thinking can come from cloud models, local models, or agents like Claude Code; either way the work, the rules, and the receipts stay on your machine. We run our own fleet of agents on it every day — it&rsquo;s the harness we trust them with.</p>
         </div>
@@ -489,7 +464,7 @@ AGENT            STATUS     RESTARTS
         <div class="step">
           <div class="num" aria-hidden="true">1</div>
           <h3>Install CAR</h3>
-          <p>One installer puts the runtime and the <code>car</code> CLI on your machine. Sign in with your Parslee account to use the built-in assistant; local models are optional.</p>
+          <p>One installer puts the runtime and the <code>car</code> CLI on your machine. Connect the models your agents run on, such as your provider API keys; you can pin a model on a declarative agent, and local models are optional.</p>
         </div>
         <div class="step">
           <div class="num" aria-hidden="true">2</div>
@@ -510,50 +485,44 @@ AGENT            STATUS     RESTARTS
     </div>
   </section>
 
-  <section class="manifesto">
-    <div class="inner">
-      <hr class="grad-rule">
-      <blockquote>
-        The thinking is rented from clouds and chat windows; the work itself — <em>the files it changes, the rules it must obey, the evidence that it did what it claims</em> — deserves to live somewhere you own.
-      </blockquote>
-      <hr class="grad-rule">
-    </div>
-  </section>
-
   <section id="install" class="section-pad">
     <div class="wrap">
       <p class="eyebrow">Install</p>
       <h2>Get CAR on your machine.</h2>
-      <div class="install-grid">
+      <div class="install-grid install-downloads">
         <div class="install-card">
           <h3>macOS</h3>
           <p>One double-click installs CAR Host.app and the <code>car</code> CLI.</p>
-          <a class="btn btn-primary" href="https://github.com/Parslee-ai/car-releases/releases/latest">View macOS release</a>
-          <p class="hero-meta">Apple Silicon, macOS 26+</p>
+          <a class="btn btn-primary" href="https://github.com/Parslee-ai/car-releases/releases/latest/download/CAR-darwin-arm64.pkg">Download .pkg</a>
+          <p class="hero-meta">For Apple Silicon Macs, macOS 26+</p>
         </div>
         <div class="install-card">
           <h3>Windows</h3>
           <p>Run the installer, or use Scoop.</p>
           <a class="btn btn-primary" href="https://github.com/Parslee-ai/car-releases/releases/latest/download/CAR-setup-x64.exe">Download .exe</a>
-          <div class="codeline">
-            <code>scoop bucket add car https://github.com/Parslee-ai/scoop-car</code>
-            <button class="copy-btn" type="button" data-copy="scoop bucket add car https://github.com/Parslee-ai/scoop-car">Copy</button>
-          </div>
-          <div class="codeline">
-            <code>scoop install car</code>
-            <button class="copy-btn" type="button" data-copy="scoop install car">Copy</button>
+          <div class="codelines">
+            <div class="codeline">
+              <code>scoop bucket add car https://github.com/Parslee-ai/scoop-car</code>
+              <button class="copy-btn" type="button" data-copy="scoop bucket add car https://github.com/Parslee-ai/scoop-car">Copy</button>
+            </div>
+            <div class="codeline">
+              <code>scoop install car</code>
+              <button class="copy-btn" type="button" data-copy="scoop install car">Copy</button>
+            </div>
           </div>
         </div>
         <div class="install-card">
           <h3>Developers</h3>
           <p>Embed the runtime in your own projects.</p>
-          <div class="codeline">
-            <code>npm install car-runtime</code>
-            <button class="copy-btn" type="button" data-copy="npm install car-runtime">Copy</button>
-          </div>
-          <div class="codeline">
-            <code>pip install car-runtime</code>
-            <button class="copy-btn" type="button" data-copy="pip install car-runtime">Copy</button>
+          <div class="codelines">
+            <div class="codeline">
+              <code>npm install car-runtime</code>
+              <button class="copy-btn" type="button" data-copy="npm install car-runtime">Copy</button>
+            </div>
+            <div class="codeline">
+              <code>pip install car-runtime</code>
+              <button class="copy-btn" type="button" data-copy="pip install car-runtime">Copy</button>
+            </div>
           </div>
         </div>
       </div>

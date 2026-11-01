@@ -22,12 +22,14 @@ rt.addFact('user_prefers_short_responses', 'true', 'pattern', 0.8);
 
 ## Query facts
 
-`queryFacts` runs spreading activation over the graph and returns the top-k matches:
+`queryFacts` runs Personalized PageRank over the graph, seeded by how well each fact matches the query, and returns the top-k matches:
 
 ```typescript
 const hits = JSON.parse(rt.queryFacts('what runtime do we deploy to?', 5));
-// [{subject: 'deploy_target', body: 'Cloudflare Workers', confidence: 0.78}, ...]
+// [{subject: 'deploy_target', body: 'Cloudflare Workers', confidence: 0.78, score: 0.5, ...}, ...]
 ```
+
+`confidence` ranks hits within one call. `score` is each hit's own match strength (0–1; 0 for a hit that matches no query term), so filter weak matches on `score`.
 
 ## Build the full context
 
@@ -80,10 +82,20 @@ Skips: embedding flush, skill lookup, PPR-based scoring, inline repairs, known-u
 ## Persisting memory
 
 ```typescript
-rt.persistMemory('/path/to/memory.json');
+import { setMemoryNamespace } from 'car-runtime';
+
+// Before the first connection: keep this project's memory in its own graph.
+setMemoryNamespace('my-project');
+// ...
+await rt.persistMemory('memory.json');
 // later:
-const factCount = rt.loadMemory('/path/to/memory.json');
+const factCount = await rt.loadMemory('memory.json');
 ```
+
+`loadMemory` replaces the graph the connection is bound to. Without a namespace
+(or a supervised agent's `agent_id`) that is the daemon's SHARED graph, used by
+every other unbound client and the MCP endpoint, and the daemon refuses to
+replace it unless you pass `loadMemory(path, true)`.
 
 The on-disk format is backward-compatible JSON — safe to commit alongside a project's `.car/` directory if the facts are team knowledge rather than per-user.
 

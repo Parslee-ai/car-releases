@@ -16,8 +16,8 @@ in `models.list_unified` report `available: true`.
 **All four methods require the host-management role** (`session.auth {
 host_token }`), the same trust root as `openrouter.*`: signing the user out,
 starting a sign-in that replaces theirs, or reading which account is signed in
-is not another client's business. As with the other host-gated surfaces, the
-gate is a no-op when the daemon runs with no host token configured.
+is not another client's business. As with the other host-gated surfaces, a
+daemon with no host token has no host, so every session is refused.
 
 No result carries a token or the ChatGPT account id.
 
@@ -91,14 +91,26 @@ or another local program cannot end the sign-in.
 #### `openai_codex.sign_out`
 - **Params**: `{}`
 - **Returns**: status. Ends any waiting sign-in and deletes the stored ChatGPT
-  sign-in, after any token refresh already in flight finishes (so that refresh
-  cannot save the sign-in back). The Parslee sign-in and any `OPENAI_API_KEY`
-  are unchanged.
+  sign-in, after any token refresh already in flight in any CAR process
+  finishes (so that refresh cannot save the sign-in back). That holds for a
+  CAR process under any `CAR_HOME`: the ChatGPT sign-in is one per-user
+  secret, so its locks are per user. The Parslee sign-in and any
+  `OPENAI_API_KEY` are unchanged. The sign-out waits at most 3 minutes in
+  total for this process's refreshes and the credential lock together, which
+  covers one refresh in flight: up to 90 s waiting for the credential lock,
+  then its 30 s token request and the secret-store reads and writes around it.
 - **Errors**: `A ChatGPT sign-in is already running in Terminal. Finish or
   close it, then try again.` while `car auth login --provider openai-codex`
   holds the login lock, because that sign-in would save after the sign-out.
   `CAR is still finishing the ChatGPT sign-in. Try signing out again in a
   moment.` when a sign-in this daemon is finishing hasn't let go in time
   (sign-out waits up to 30 s once its save has begun, 2 s otherwise).
+  `A ChatGPT token refresh or sign-in is still updating the credential; try
+  again in a minute.` when this process's refreshes queued ahead have not
+  finished within that wait. `Another CAR process is still updating the
+  ChatGPT sign-in; try again in a minute. (lock: <path>)` when the credential
+  lock is still held, by this or another CAR process, when the wait runs out.
+  A sign-in waits up to 90 s for that lock; one that cannot save for this
+  reason reports the same text in its result.
 
 {% endraw %}

@@ -46,9 +46,11 @@ A single signed binary with:
   `equivalent`, `optimize`) before anything side-effecting runs. This is static
   verification, not formal verification: some checks are decision procedures,
   some are heuristics, and `equivalent` only samples.
-- **Policies in Rust** — enforced on every action before a tool fires
-  (`deny_tool`, `deny_tool_param`, `require_state`), plus risk tiers with
-  human-in-the-loop approval and per-agent permissions.
+- **Policies in Rust** — checked before a tool fires in `car do`, daemon
+  sessions and the Claude Code hook (`deny_tool`, `deny_tool_param`,
+  `require_state`, `deny_connector`), plus risk tiers with human-in-the-loop
+  approval and per-agent permissions. A default A2A listener and the external
+  CLIs CAR launches as agents are not checked.
 - **Graph memory + skills** — spreading-activation memory, 4-layer context
   assembly for grounding LLM calls, and learned procedures that distill from
   traces and evolve when they degrade.
@@ -120,7 +122,7 @@ package is in **[DISTRIBUTION.md](./DISTRIBUTION.md)**.
 # macOS + Linux convenience installer (Windows: use CAR-setup-x64.exe or Scoop above;
 # inspect-then-run guidance in SECURITY.md):
 curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/install.sh | sh
-# pin a version with CAR_VERSION=v0.58.0
+# pin a version with CAR_VERSION=v0.60.0
 ```
 
 macOS is Apple Silicon only (15+). Linux x86_64/aarch64 and Windows x86_64 are

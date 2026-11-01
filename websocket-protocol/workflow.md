@@ -34,12 +34,14 @@ Declarative multi-stage orchestration with conditional edges and saga compensati
 - **Params**: `{ run_id: string, input?: object }`
 - **Returns**: the next workflow execution result — `status: "completed"` (or `failed`/`compensated`), or `status: "paused"` again if the run hits another approval gate.
 - `input` is a JSON object of the human's response fields; it is validated against the gate's declared `fields` (`required` present, `options` in range) and rejected with an error otherwise (resubmit with corrected input). On resume the response is written to the gate's `output_key`, flattened to `output_key.<field>` for edge conditions, and mirrored to `stage.<id>.answer`.
+- **Own runs only for a supervised agent.** A session bound to a supervised agent (`session.auth { agent_id, token }`) may resume only a run it owns (see `workflow.list_paused`). Naming any other run, one that does not exist included, is refused with `workflow.resume is not available to a supervised agent for run '<run_id>': it is not one of this agent's own paused runs`, the refusal is logged, and the run stays paused for its owner. A run that pauses again at a later gate keeps its owner, whoever resumed it.
 - **Exactly-once**: the daemon atomically claims the checkpoint before resuming, so a duplicate or racing `workflow.resume` for the same `run_id` returns an error rather than re-running side-effecting downstream stages.
 
 #### `workflow.list_paused`
 - **Params**: `null`
 - **Returns**: array of `{ run_id, paused_stage_id, prompt, created_at }` — every resumable run, skipping in-flight and corrupt checkpoints.
 - The discovery half of durable resume (EPIC H / H1): after a daemon restart a client no longer holds the paused `run_id`s, so it enumerates them here and resumes each by `run_id` via `workflow.resume`. Durable checkpoints are saved on pause and re-armed at boot (`recover_workflow_checkpoints`), so paused runs survive a restart.
+- **Who sees which runs.** The daemon stamps each checkpoint it saves with `owner`, the agent id of the session that started the run (absent when a person did: a host, the CLI or an operator client). A session bound to a supervised agent (`session.auth { agent_id, token }`) is listed only the runs it owns, on every platform; a run a person started, or another agent started, is not listed to it. Host sessions, the daemon-token operator and the CLI get every run, and each summary carries `owner` when it has one. Checkpoints saved before this field existed have no owner and read as person-owned.
 - FFI: also exposed as the embedded free function `listPausedWorkflows(runsDir)` (NAPI) / `list_paused_workflows(runs_dir)` (PyO3), which reads a caller-managed checkpoint directory.
 
 #### `workflow.verify`

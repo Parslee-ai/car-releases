@@ -1,7 +1,7 @@
 {% raw %}
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.58.0**. Check yours with `car --version`; if it
+> Describes CAR **0.60.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -62,11 +62,13 @@ running anything:
 
 Either way, execution goes through the runtime's admission gates before
 anything runs: a **static verification gate** (tool exists, parameters are
-well-formed) and, by default, an **information-flow gate** that blocks
-confidential local data (files, recalled memories) from reaching an outbound
-tool like `web_search` in the same proposal — CAR calls this out explicitly
-because assistants that let persistent, high-privilege context flow straight
-into outbound tools are a known failure class.
+well-formed) and an **information-flow gate**, installed by default. The
+information-flow gate refuses a proposal in which confidential local data
+(files, recalled memories) flows into an outbound tool like `web_search`
+within that same proposal. `car do` proposes one action at a time, so a read
+in one step and a search in the next are separate proposals, and the gate
+decides nothing for `car do` today. It is a check on multi-action proposals,
+not a block on what the assistant sends out.
 
 ## What it can actually do
 
@@ -182,7 +184,7 @@ nothing for it.
 | `browse_wait` | `condition` (`"page_loaded"` or `"url_changed"`), `timeout_ms?` (default 5000) |
 | `browse_observe` | `include_screenshot?`, `ocr?` — screenshot + accessibility tree + a fused `ui_map`; OCR recovers labels a polished SPA's accessibility tree misses |
 | `browser_await_answer` | `timeout_seconds?` (default 45) — blocks until a page stops changing after you submit something, so you don't screenshot mid-load |
-| `browser_await_signin` | `url?`, `success_url_contains?`, `timeout_seconds?` (default 300, max 1800) — asks the human to complete a sign-in the agent can't (SSO, MFA); the session persists afterward. `success_url_contains` is matched against the URL without its query string; omitted, the wait ends when the URL leaves a login/SSO page. A start page that already passes the test (the needle matches it, or with no needle it does not look like a login page) is refused, since it cannot tell signed in from not |
+| `browser_await_signin` | `url?`, `success_url_contains?`, `timeout_seconds?` (default 300, max 1800) — asks the human to complete a sign-in the agent can't (SSO, MFA, passkey, "Sign in with Google"); on macOS, while the CAR app is connected or before the browser has launched, it opens a visible browser window that is not flagged as automation, and the agent keeps browsing in it until its process restarts (on the same browser profile, so persistent cookies and site storage carry over); the session persists afterward. `success_url_contains` is matched against the URL without its query string; omitted, the wait ends when the URL leaves a login/SSO page. A start page that already passes the test (the needle matches it, or with no needle it does not look like a login page) is refused, since it cannot tell signed in from not |
 | `browser_record_start` | `quality?` (JPEG 1–100, default 80) |
 | `browser_record_stop` | `output_path?` — writes an MP4 (requires ffmpeg), captures only frames where the page actually changed |
 
@@ -276,6 +278,13 @@ This proxies the daemon's `agent_permissions.*` JSON-RPC surface: it moves the
 override, so setting it once changes the fallback for every agent the daemon
 supervises, not just one `car do` invocation. The three presets are the only
 accepted values; anything else is rejected before it reaches the daemon.
+
+`car approvals default`, `set-tool` and `reset-tool` ask `... with CAR's
+permission? [y/N]` at a terminal and present CAR's local host key only after a
+yes. With `--yes`, with no terminal, or from a process with `CAR_AGENT_ID` or
+`CAR_AGENT_TOKEN` set, they never present it, so a CAR with a host key refuses
+the change; use CarHost's Approvals screen, or run the command in your own
+terminal (car#2444).
 
 A per-agent posture cannot widen the environment that was actually bound.
 **Approve for me** auto-allows `sandbox_edit` actions only when a sandbox exists

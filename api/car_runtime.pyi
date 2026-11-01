@@ -24,7 +24,7 @@ WebSocket directly for the equivalent flow (see
 - ``infer_stream``, ``dispatch_voice_turn`` — daemon streams events over
   WS notifications
 - ``open_session``, ``close_session``, ``register_policy(session_id=...)``
-  — use ``session.open`` / ``session.close`` JSON-RPC methods
+  — use ``session.policy.open`` / ``session.policy.close`` JSON-RPC methods
 - ``state_snapshot``, ``state_keys`` — daemon-side endpoints pending
 
   (``register_model`` was re-exposed in Parslee-ai/car-releases#39
@@ -45,7 +45,7 @@ Daemon URL override: ``CAR_DAEMON_URL=ws://...`` (default
 """
 
 from types import ModuleType
-from typing import Any, Callable, List, NoReturn, Optional, overload
+from typing import Any, Callable, Dict, List, Literal, NoReturn, Optional, TypedDict, Union, overload
 
 # Importable, versioned agent-loop helper: ``import car_runtime.agent_loop``.
 # Its ``run_agent`` outcome includes ``run_id: str | None``; pass a non-null id
@@ -65,6 +65,36 @@ class DaemonRpcError(Exception):
     data: Any
 
 
+class SpendRefusedError(DaemonRpcError):
+    """The daemon refused a model call on spend before anything reached a
+    provider (JSON-RPC code ``-32018``; ``docs/proposals/spend-caps.md``,
+    "The refusal"). Raised by ``infer``, ``infer_stream`` (before the stream
+    opens) or whichever method's model call was refused; every other daemon
+    error stays a plain :class:`DaemonRpcError`.
+
+    ``message`` is the text the agent reads: ``budget reached until 3:00 PM
+    EDT`` (or ``... until 12:00 AM EST on Dec 1`` on a later local date),
+    ``price unknown for <model>; this agent has a spend cap``, or ``spend
+    could not be recorded``. ``reason``, ``cap``, ``resets_at`` and ``zone``
+    are copied out of ``data`` (``None`` when the refusal did not carry
+    them); ``data`` itself is unchanged and also carries ``holding`` and
+    ``spent_usd`` (budget) or ``model`` (price unknown, unpriced call in
+    flight). The agent process is
+    never stopped or paused: the next call after the period resets goes
+    through by itself. Only model calls made through CAR are refused this
+    way."""
+
+    code: Literal[-32018]
+    reason: Optional[Literal["budget_reached", "price_unknown", "unpriced_call_in_flight", "spend_unrecordable"]]
+    cap: Optional[Union["SpendCap", Literal["shared"]]]
+    """The cap reached (``budget_reached`` only); ``"shared"`` below a worker
+    tree's root."""
+    resets_at: Optional[str]
+    """RFC 3339 instant the refusing period rolls over (``budget_reached`` only)."""
+    zone: Optional[str]
+    """The server's IANA zone (``budget_reached`` only)."""
+
+
 class TerminalToolError(Exception):
     """A tool callback failure that cannot recover by retrying.
 
@@ -72,6 +102,265 @@ class TerminalToolError(Exception):
     terminal, and rejects later proposals on the same daemon session until a
     host clears the halt or the client reconnects.
     """
+
+
+# ---------------------------------------------------------------------------
+# Spend (``spend.costs`` / ``spend.status``; reached through the generated
+# ``spend_costs`` / ``spend_status`` wrappers)
+# ---------------------------------------------------------------------------
+
+class SpendCostsRow(TypedDict):
+    """One key's row of ``spend.costs``. Dollars are rounded up to the cent;
+    the counts are this month's. Only model calls made through CAR are
+    counted."""
+
+    agent: str
+    """The key's full id: ``agent:<id>``, ``worker:wk_...``,
+    ``label:<orchestrator>/label-<key>``, ``operator``, ``car:<purpose>``,
+    ``declarative:<id>``, ``credential:<id>``."""
+    kind: Literal["agent", "worker", "label", "operator", "car", "declarative", "credential"]
+    today_usd: float
+    last_7_days_usd: float
+    this_month_usd: float
+    """The open month period: the same figure the key's own page shows."""
+    calls: int
+    tokens_in: int
+    tokens_out: int
+    cost_not_reported_calls: int
+    """Calls nobody could price, plus calls to a local model."""
+    capped: bool
+    """``True`` for a key with a declared ``[spend]`` cap (an agent's
+    installed bundle)."""
+    at_budget: Optional["SpendAtBudget"]
+    """The cap this key is at right now, or ``None`` while it is under every
+    cap (or uncapped)."""
+
+
+class SpendCostsTotal(TypedDict):
+    """Every row summed except ``label`` rows, whose workers' calls are
+    already counted."""
+
+    today_usd: float
+    last_7_days_usd: float
+    this_month_usd: float
+
+
+class SpendCostsPrices(TypedDict):
+    """All ``None``/empty until the price refresh arrives."""
+
+    refreshed_at: Optional[str]
+    last_refresh_error: Optional[str]
+    stale: List[str]
+
+
+class SpendCostsMeter(TypedDict):
+    healthy: bool
+    last_error: Optional[str]
+    clock: Literal["synchronized", "held_until_synchronized", "adopted_unsynchronized"]
+    zone_source: Literal["TZ", "system", "utc_fallback"]
+    prices: SpendCostsPrices
+
+
+class SpendCostsResult(TypedDict):
+    """Result of ``spend.costs`` (``json.loads(runtime.spend_costs("{}"))``):
+    the CAR-wide cost view over the one spend meter. Refused (``-32003``
+    ``car_wide_not_allowed``) to an agent-bound or credential session."""
+
+    zone: str
+    """The server's IANA zone the periods are computed in."""
+    rows: List[SpendCostsRow]
+    total: SpendCostsTotal
+    at_budget: List["SpendCostsAtBudget"]
+    """Every key at a cap right now; ``[]`` when none is."""
+    meter: SpendCostsMeter
+
+
+class SpendCap(TypedDict):
+    """One declared spend cap: US dollars per rolling calendar period in the
+    server's zone."""
+
+    usd: float
+    """As declared in the bundle (``2``, not ``2.0``)."""
+    per: Literal["hour", "day", "month"]
+
+
+class SpendAtBudget(TypedDict):
+    """Why a principal is "at budget": the cap that was reached, who holds it
+    (``agent``; worker trees add ``orchestrator``, ``name``, ``label
+    <key>=<value>`` in workers PR 5), and when the refusing period rolls
+    over."""
+
+    cap: SpendCap
+    holding: str
+    resets_at: str
+    """RFC 3339, in the server's zone."""
+    zone: str
+    """The server's IANA zone, e.g. ``America/New_York``."""
+
+
+class SpendCostsAtBudget(SpendAtBudget):
+    """A ``spend.costs`` result ``at_budget`` entry: :class:`SpendAtBudget`
+    plus the key's full meter id."""
+
+    agent: str
+    """``agent:<id>``, or another full meter key."""
+
+
+class SpendPeriodStatus(TypedDict):
+    """One period of ``spend.status``. ``spent_usd`` is rounded up to the
+    cent from micro-dollars; ``left_usd`` is ``max(0, cap - spent)`` rounded
+    down to the cent. ``cap_usd`` and ``left_usd`` are ``None`` for a period
+    with no declared cap."""
+
+    start: str
+    """RFC 3339 start of the open period, in the server's zone."""
+    resets_at: str
+    """RFC 3339 instant the period rolls over."""
+    spent_usd: float
+    calls: int
+    unpriced_calls: int
+    """Calls nobody could price, plus calls to a local model."""
+    refused_calls: int
+    """Model calls refused on spend (``-32018``) in this period."""
+    cap_usd: Optional[float]
+    left_usd: Optional[float]
+    at_budget: bool
+
+
+# One ``agents.install`` that changed an agent's caps
+# (``<CAR_HOME>/spend/agents/<id>.history.jsonl``). Functional syntax because
+# the wire key ``from`` is a Python keyword. ``version`` (the installed bundle
+# version that declared ``to``) is absent when the bundle had none; ``by`` is
+# who installed it (``owner``, the host token, until sign-in names the
+# person); ``at`` is RFC 3339 UTC; every key but ``version`` is always present.
+SpendCapHistoryEntry = TypedDict(
+    "SpendCapHistoryEntry",
+    {"at": str, "version": str, "by": str, "from": List[SpendCap], "to": List[SpendCap]},
+    total=False,
+)
+
+
+class SpendMeterHealth(TypedDict):
+    """The spend meter's own health, as ``spend.status["meter"]`` and
+    ``heal.status["spend_meter"]`` report it."""
+
+    healthy: bool
+    last_error: Optional[str]
+    clock: Literal["synchronized", "held_until_synchronized", "adopted_unsynchronized"]
+    zone: str
+    zone_source: Literal["TZ", "system", "utc_fallback"]
+
+
+class SpendStatusParams(TypedDict, total=False):
+    """Params of ``spend.status`` (``runtime.spend_status(json.dumps({"agent":
+    "invoice-bot"}))``). A host or operator session must name the agent; a
+    session bound to a supervised agent (or a credential session) may omit
+    it, or name itself. Naming another agent is refused ``-32003`` with
+    ``data["reason"] == "not_your_agent"`` and recorded in that agent's
+    refusal rows.
+
+    The same optional ``agent`` (a bare agent id or a full meter key such as
+    ``agent:<id>``, ``operator``, ``car:<purpose>``) is accepted by
+    ``events.query`` and ``events.cost_by_agent``: with it, both read that
+    principal's durable call ledger (``inference_metered`` and
+    ``model_call_refused`` rows) instead of the connection's in-memory log,
+    under the same visibility rule. Without it they behave as before."""
+
+    agent: str
+
+
+class SpendStatusResult(TypedDict):
+    """Result of ``spend.status`` (``json.loads(runtime.spend_status(...))``):
+    one principal's spend against its declared caps, computed by the meter
+    from the same ledger rows ``spend.costs`` sums. Only model calls made
+    through CAR are counted."""
+
+    agent: str
+    """The bare agent id."""
+    zone: str
+    """The server's IANA zone the periods are computed in."""
+    zone_label: str
+    """The zone's current abbreviation, e.g. ``EDT``."""
+    capped: bool
+    """``True`` when the agent's installed bundle declares ``[spend]`` caps."""
+    periods: Dict[Literal["hour", "day", "month"], SpendPeriodStatus]
+    declared: List[SpendCap]
+    """The caps as declared, in bundle order; ``[]`` when uncapped."""
+    at_budget: Optional[SpendAtBudget]
+    """The cap currently refusing calls, or ``None``."""
+    caps_from_version: Optional[str]
+    """The installed bundle version the caps came from; ``None`` when
+    uncapped."""
+    cap_history: List[SpendCapHistoryEntry]
+    """Every install that changed the caps, oldest first."""
+    meter: SpendMeterHealth
+
+
+class ManagedAgentSpendFields(TypedDict, total=False):
+    """The three additive ``agents.list`` row fields (:func:`agents_list` /
+    ``runtime.agents_list("{}")``, each row of the returned ``ManagedAgent``
+    list): ``spend_caps`` is the installed bundle's ``[spend]`` caps as
+    declared (``[]`` = no cap), ``budget`` is ``"uncapped"``, ``"under"`` or
+    ``"at_budget"``, and ``at_budget`` is present only while ``budget`` is
+    ``"at_budget"``. ``status`` keeps its existing variants: a refusal never
+    stops, pauses or restarts the agent."""
+
+    spend_caps: List[SpendCap]
+    budget: Literal["uncapped", "under", "at_budget"]
+    at_budget: SpendAtBudget
+
+
+class ModelCallRefusedRecord(TypedDict, total=False):
+    """The ``model_call_refused`` record of a run's trace
+    (``runs.get_trace``): one model call the spend gate refused (``-32018``)
+    in a run that then continued. The run is not marked failed. ``record``,
+    ``at``, ``model``, ``reason`` and ``message`` are always present;
+    ``cap``, ``spent_usd``, ``resets_at`` and ``zone`` travel with
+    ``reason == "budget_reached"`` only."""
+
+    record: Literal["model_call_refused"]
+    at: str
+    """RFC 3339."""
+    model: str
+    reason: Literal["budget_reached", "price_unknown", "unpriced_call_in_flight", "spend_unrecordable"]
+    message: str
+    """The refusal's ``error.message``, e.g. ``budget reached until 3:00 PM
+    EDT``."""
+    cap: SpendCap
+    spent_usd: float
+    resets_at: str
+    zone: str
+
+
+class SpendChangedEvent(TypedDict):
+    """Payload of the ``spend.changed`` host event (``host.event`` with
+    ``kind == "spend.changed"`` and ``agent_id`` set to the bare agent id,
+    delivered on ``host.subscribe``). Published when a principal enters "at
+    budget" (on the refusal) and again when the minute tick clears it after
+    the period resets."""
+
+    agent: str
+    """The principal's full meter key, e.g. ``agent:<id>``."""
+    at_budget: Optional[SpendAtBudget]
+    periods: Optional[Dict[Literal["hour", "day", "month"], SpendPeriodStatus]]
+    """``None`` only when the meter could not be read at publish time."""
+
+
+class ScheduledRunRefusedEvent(TypedDict):
+    """Payload of the ``agent.scheduled_run_refused`` host event
+    (``host.event`` with ``kind == "agent.scheduled_run_refused"`` and
+    ``agent_id`` set to the declarative agent's id, delivered on
+    ``host.subscribe``). Published when the daemon refuses a scheduled run
+    (``declagents.invoke`` with ``trigger: "schedule"``) for want of host
+    authority, as on a daemon with no host token installed. The launch also
+    records the time ``failed`` with the same reason."""
+
+    scheduled_for: Optional[str]
+    """The scheduled time the launch asked for (RFC 3339), or ``None`` when
+    it named none."""
+    reason: str
+    """The refusal, e.g. ``this operation requires the host-management role
+    (…; cause: …)``."""
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +422,19 @@ class CarRuntime:
     against itself on a per-instance lock.
     """
 
-    def __init__(self) -> None: ...
+    def __init__(self, *, url: Optional[str] = None, bearer: Optional[str] = None) -> None:
+        """Connect to the default local daemon, or to ``url``.
+
+        ``bearer`` is an outside credential (``car_oc_`` followed by 43
+        base64url characters) for a daemon's public door. It needs ``url``,
+        which must be ``wss://`` (plain ``ws://`` only to a loopback host). It
+        is sent as ``Authorization: Bearer`` on the WebSocket upgrade; no
+        ``session.auth`` is sent and no local credential is ever used.
+        Host-management calls are refused locally. Raises ``ValueError`` for a
+        malformed credential, a missing ``url`` or a cleartext URL, without
+        echoing the credential.
+        """
+        ...
 
     @staticmethod
     def with_scoped_consumer(
@@ -172,7 +473,13 @@ class CarRuntime:
         """Invoke any daemon JSON-RPC method and return result JSON.
 
         ``daemon_call`` is the call-by-name escape hatch; use the typed wrappers
-        as the primary API. Daemon rejections raise :class:`DaemonRpcError`;
+        as the primary API. In a process launched as a supervised agent
+        (``CAR_AGENT_ID`` or ``CAR_AGENT_TOKEN`` set) the connection
+        authenticates with the agent credential (both variables) and never
+        silently falls back to the daemon-wide token: ``CAR_AUTH_TOKEN`` is
+        used only if the supervisor put it in the environment, the token file
+        is never read, and an incomplete agent credential raises an error
+        naming it. A process that is not an agent is unchanged. Daemon rejections raise :class:`DaemonRpcError`;
         transport failures raise ``RuntimeError`` and do not invent a JSON-RPC
         code.
         """
@@ -184,7 +491,24 @@ class CarRuntime:
         ``coder.approve_merge``, ``coder.cancel``), but refuses
         ``coder.confirm_contract`` and ``coder.approve_merge`` on an agent
         build: building an agent needs the CAR app or ``car agent new`` in your
-        terminal."""
+        terminal. In a process launched as a supervised agent (``CAR_AGENT_ID``
+        or ``CAR_AGENT_TOKEN`` set; car#3072) it never presents the host
+        credential: a dual-role method (``lattice.find``/``join``/``leave``/
+        ``nodes``, the Coder methods above, ``agents.start``/``stop``/``restart``,
+        ``agents.invoke_external``, ``models.register``) is sent under the
+        agent's own identity for the daemon to judge, and a host-only method is
+        refused with "this command needs the operator (host); a supervised
+        agent can't run it".
+
+        Host-management methods need a daemon with a host token: one started
+        with ``--no-auth``, or whose host-token write failed, has no host and
+        refuses them to every client, including this call and
+        :meth:`daemon_call`, with ``this operation requires the
+        host-management role (host role unavailable: …; cause: …)``. A Rust
+        embedder that builds the daemon's ``ServerState`` itself gets host
+        authority by calling ``ServerState::install_host_token`` once with a
+        token it generates, and presenting that token as
+        ``session.auth { host_token }``."""
 
     def agent_permissions_list_grants(self, params_json: str) -> str:
         """List durable permission grants using host-management authority."""
@@ -195,7 +519,13 @@ class CarRuntime:
     def register_daemon_handler(
         self, method: str, handler: Callable[[str], str]
     ) -> None:
-        """Register a server-initiated request handler using JSON strings."""
+        """Register a server-initiated request handler using JSON strings.
+
+        The handler's return value is the response the daemon waits for. For
+        ``agent.peer_message`` it is the acknowledgement, and the daemon waits
+        5 s for it before reporting ``unacknowledged`` to the sender (the
+        message was written, is not redelivered, and may still be handled):
+        return at once and do the work afterwards."""
 
     def register_daemon_notification_handler(
         self, method: str, handler: Callable[[str], None]
@@ -240,13 +570,13 @@ class CarRuntime:
     # Generated daemon wrapper for `SubscribeToTask` (operator).
 
     def a2a_peers_add(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `a2a.peers.add` (operator).
+    # Generated daemon wrapper for `a2a.peers.add` (operator_only).
 
     def a2a_peers_list(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `a2a.peers.list` (operator).
 
     def a2a_peers_remove(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `a2a.peers.remove` (operator).
+    # Generated daemon wrapper for `a2a.peers.remove` (operator_only).
 
     def a2a_send(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `a2a.send` (operator).
@@ -331,6 +661,12 @@ class CarRuntime:
 
     def agents_list_external(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `agents.list_external` (operator).
+
+    def agents_register_basics(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.register_basics` (operator_only).
+
+    def agents_remove(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agents.remove` (agent).
 
     def agents_restart(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `agents.restart` (agent).
@@ -531,7 +867,7 @@ class CarRuntime:
     # Generated daemon wrapper for `events.chain.verify` (operator).
 
     def events_clear(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `events.clear` (operator).
+    # Generated daemon wrapper for `events.clear` (operator_only).
 
     def events_cost_by_agent(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `events.cost_by_agent` (operator).
@@ -549,7 +885,7 @@ class CarRuntime:
     # Generated daemon wrapper for `events.stats` (operator).
 
     def events_truncate(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `events.truncate` (operator).
+    # Generated daemon wrapper for `events.truncate` (operator_only).
 
     def evolution_plan(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `evolution.plan` (operator).
@@ -580,6 +916,9 @@ class CarRuntime:
 
     def goal_suggest(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `goal.suggest` (agent).
+
+    def host_dismiss_approval(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `host.dismiss_approval` (agent).
 
     def host_subscribe(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `host.subscribe` (operator).
@@ -614,6 +953,12 @@ class CarRuntime:
     def lattice_find(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `lattice.find` (owner).
 
+    def lattice_human_status(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.human.status` (agent).
+
+    def lattice_inbox(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.inbox` (owner).
+
     def lattice_join(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `lattice.join` (owner).
 
@@ -625,6 +970,12 @@ class CarRuntime:
 
     def lattice_release(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `lattice.release` (owner).
+
+    def lattice_requests(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.requests` (agent).
+
+    def lattice_respond(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `lattice.respond` (agent).
 
     def lattice_wait(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `lattice.wait` (owner).
@@ -768,10 +1119,10 @@ class CarRuntime:
     # Generated daemon wrapper for `multiplayer.abandon` (operator_only).
 
     def multiplayer_get(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.get` (operator_only).
+    # Generated daemon wrapper for `multiplayer.get` (agent).
 
     def multiplayer_list(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `multiplayer.list` (operator_only).
+    # Generated daemon wrapper for `multiplayer.list` (agent).
 
     def multiplayer_merge_check(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `multiplayer.merge_check` (operator_only).
@@ -796,6 +1147,9 @@ class CarRuntime:
 
     def notifications_local(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `notifications.local` (operator).
+
+    def outcomes_record_external_grade(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `outcomes.record_external_grade` (operator).
 
     def outcomes_resolve_pending(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `outcomes.resolve_pending` (operator).
@@ -885,10 +1239,10 @@ class CarRuntime:
     # Generated daemon wrapper for `scheduler.create` (operator).
 
     def scheduler_os_install(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `scheduler.os_install` (operator).
+    # Generated daemon wrapper for `scheduler.os_install` (operator_only).
 
     def scheduler_os_list(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `scheduler.os_list` (operator).
+    # Generated daemon wrapper for `scheduler.os_list` (operator_only).
 
     def scheduler_os_reconcile(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `scheduler.os_reconcile` (operator).
@@ -897,7 +1251,7 @@ class CarRuntime:
     # Generated daemon wrapper for `scheduler.os_render` (operator).
 
     def scheduler_os_uninstall(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `scheduler.os_uninstall` (operator).
+    # Generated daemon wrapper for `scheduler.os_uninstall` (operator_only).
 
     def scheduler_run(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `scheduler.run` (operator).
@@ -986,11 +1340,17 @@ class CarRuntime:
     def speech_prepare(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `speech.prepare` (operator).
 
+    def spend_costs(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `spend.costs` (operator_only).
+
+    def spend_status(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `spend.status` (operator).
+
     def sync_knowledge(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `sync.knowledge` (agent).
 
     def tasks_list(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `tasks.list` (operator).
+    # Generated daemon wrapper for `tasks.list` (operator_only).
 
     def tasks_cancel(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `tasks/cancel` (operator).
@@ -1094,6 +1454,15 @@ class CarRuntime:
     def voice_tts_stream_start(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `voice.tts_stream.start` (operator).
 
+    def workers_report(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workers.report` (agent).
+
+    def workers_spend(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workers.spend` (agent).
+
+    def workers_start(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `workers.start` (agent).
+
     def workflow_build_automation(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `workflow.build_automation` (operator).
 
@@ -1119,8 +1488,16 @@ class CarRuntime:
         """Register CAR's built-in agent utility tools.
 
         Adds: read_file, write_file, edit_file, list_dir, find_files,
-        grep_files, calculate. Read-only tools run in-process; mutating
-        tools go through the normal approval flow.
+        grep_files, calculate. Against a daemon (``agents.register_basics``)
+        the tools run in the daemon, on its host, and refuse CAR's own
+        credential and authority files (the ``auth-token``/``host-token``
+        copies, ``env``, ``secrets/``, the approval journal,
+        ``agent-permissions.json``), ``peer-identity.key`` and host
+        configuration (``agents.json``, agent manifests, worker specs,
+        ``declagents.json``, ``tasks/``, ``messaging.json``) by any spelling that resolves to one, and do not create a new
+        non-ASCII name in CAR's state, run, token or secrets folder. The
+        user's own files stay reachable. Mutating tools go through the normal
+        approval flow.
         """
 
     # --- Agent run tracing (U1) ---------------------------------------
@@ -1224,11 +1601,16 @@ class CarRuntime:
         """
 
     def query_facts(self, query: str, k: Optional[int] = None) -> str:
-        """Query facts via spreading activation. Returns JSON array.
+        """Query facts via Personalized PageRank. Returns JSON array.
 
         Each result has the shape
         ``{"fact_id": Optional[str], "subject": str, "body": str, "kind": str,``
-        ``"confidence": float, "tags": List[str], "source": str}``.
+        ``"confidence": float, "score": float, "tags": List[str], "source": str}``.
+        Matches are weighted by how well they match ``query``, so a full match
+        ranks above a one-word overlap; ``confidence`` is the hit's share of
+        PageRank mass in this result, comparable within one call only.
+        ``score`` is the hit's own match strength (0..1; 0 for a hit that
+        matches no query term) and is the field to threshold on.
         """
 
     def fact_count(self) -> int:
@@ -1662,9 +2044,10 @@ class CarRuntime:
         ``tier`` is ``"read_only" | "sandbox_edit" | "full_access"``. Lets a
         binding client govern its own session — most usefully by tightening it:
         dropping to ``read_only`` makes the runtime escalate any write this
-        client proposes to a human instead of running it. Raising the tier is
-        host-gated whenever the daemon runs under a host token, so an agent
-        connection cannot self-elevate.
+        client proposes to a human instead of running it. Whenever the daemon
+        runs under a host token, every tier change, lowering included, needs
+        the host role; a connection without it is refused, so an agent
+        connection can neither self-elevate nor change its own tier at all.
         """
 
     def ingest_skill_governed(self, request_json: str) -> str:
@@ -1712,19 +2095,27 @@ class CarRuntime:
         facts (car-releases#79/#80).
         """
 
-    def load_memory(self, path: str) -> int:
+    def load_memory(self, path: str, replace: bool = False) -> int:
         """Load memory from ``path``. Returns the number of facts loaded.
 
         Daemon-side read with the same ``~/.car/memory/`` sandboxing as
-        :func:`persist_memory`.
+        :func:`persist_memory`. Reads the :func:`persist_memory` format. The
+        daemon's own snapshot files are refused (``daemon-shared.json`` and any
+        ``*.v2.json``, and for a supervised agent anything but its own graph's
+        file): the daemon loads and saves those itself. The daemon saves the
+        loaded graph, so it survives a restart.
 
         **``path`` names a file, not a namespace.** This REPLACES the graph the
         connection is bound to — by default the daemon's SHARED graph, common to
-        every unbound session and to facts ingested over MCP. On a multi-project
-        host that both discards other projects' in-memory facts and leaves the
-        loaded ones visible to them. Set ``CAR_MEMORY_NAMESPACE`` in the host process to bind a private graph
+        every unbound session and to facts ingested over MCP. Replacing that one
+        discards every other session's in-memory facts, so the daemon refuses it
+        unless ``replace=True`` (car-releases#91), and announces a
+        ``memory.shared_graph.replaced`` host event when it does. To load your
+        own memory instead, set ``CAR_MEMORY_NAMESPACE`` in the host process or
+        call :func:`set_memory_namespace` to bind a private graph
         (car-releases#79/#80); the shared daemon transport puts it on the
-        ``session.auth`` handshake for you.
+        ``session.auth`` handshake for you. ``replace`` has no effect on a
+        private graph, which a load always replaces.
         """
 
     def chat_event(
@@ -1738,7 +2129,23 @@ class CarRuntime:
         ``agents.chat.event`` for the host that issued ``agents.chat``, keyed
         by ``session_id``. ``kind`` is one of ``token`` | ``tool_call`` |
         ``done`` | ``error``; ``delta`` carries the text (omit for a bare
-        signal).
+        signal). Matched to the turn by ``session_id`` alone; use
+        :meth:`chat_turn_event` to name the turn.
+        """
+
+    def chat_turn_event(
+        self,
+        session_id: str,
+        turn_id: str,
+        kind: str,
+        delta: Optional[str] = None,
+    ) -> None:
+        """:meth:`chat_event` for the turn the daemon named ``turn_id``.
+
+        Pass the ``turn_id`` from the turn's ``agent.chat`` params, and the
+        daemon matches the frame to that turn rather than to whichever turn
+        holds ``session_id`` when it arrives, so a turn the host replaced
+        cannot end its successor (car#2668).
         """
 
     # --- Foreman ------------------------------------------------------
@@ -1761,12 +2168,19 @@ class CarRuntime:
         max_attempts: int | None = ...,
         distributed: bool | None = ...,
         workers: list[str] | None = ...,
+        *,
+        chat_session_id: str | None = ...,
     ) -> str:
         """Plan a coding ``goal``, then farm the subtasks to an external coding
         CLI (``adapter``, default ``claude-code``) in isolated worktrees, gating
         each worktree and the integrated union. ``verify_command`` is the
         per-worktree regression check; ``union_verify_command`` is the
         integrated-union goal check (falls back to ``verify_command``).
+
+        ``chat_session_id`` is for a caller bound to a supervised agent: the
+        ``session_id`` of the host's ``agents.chat`` turn it is answering,
+        which it needs to call this at all. Such a caller may not pass
+        ``verify_command`` or ``union_verify_command``.
 
         ``distributed`` spreads the subtasks over every CAR instance that has
         this repository and is enrolled as a fleet worker; ``workers`` narrows
@@ -1883,17 +2297,17 @@ class CarRuntime:
         value_json: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> None:
-        """Register a policy enforced on every action.
+        """Register a policy, checked before each action this runtime runs.
 
         ``rule`` is one of: ``"deny_tool"``, ``"deny_tool_param"``,
-        ``"require_state"``. See ``docs/agent-ir-spec.md`` for the
+        ``"require_state"``, ``"deny_connector"``. See ``docs/agent-ir-spec.md`` for the
         semantics of each.
 
-        ``session_id`` — when set, scopes the policy to a session
-        opened via :meth:`open_session`. Without it, the policy is
-        global. Embedded only — daemon mode session-scoped policies
-        go through the WS ``policy.register`` JSON-RPC method. See
-        ``docs/proposals/per-session-policy-scoping.md``.
+        ``session_id`` is refused with ``RuntimeError``: these bindings
+        run against the daemon, which scopes a policy only through
+        ``policy.register {session_id}`` on a session opened with the
+        ``session.policy.open`` JSON-RPC method. Without it, the policy
+        is global. See ``docs/proposals/per-session-policy-scoping.md``.
         """
 
     def unregister_policy(self, name: str) -> int:
@@ -1925,7 +2339,7 @@ class CarRuntime:
         to subsequent :meth:`register_policy` and
         :meth:`execute_proposal` calls so per-context rules stack on
         top of any global ones. Embedded only; daemon mode uses the
-        ``session.open`` WS JSON-RPC method.
+        ``session.policy.open`` WS JSON-RPC method.
         """
 
     def close_session(self, session_id: str) -> bool:
@@ -1978,7 +2392,13 @@ class CarRuntime:
 
         ``query_json`` is an ``EventQuery`` object
         (kinds/action_id/proposal_id/since/until/data_matches/limit); returns
-        ``{count, events}`` as a JSON string, most-recent-first.
+        ``{count, events}`` as a JSON string, most-recent-first. Reads only
+        this connection's session log, not other connections'. The
+        exception: for a host or orchestrator session the daemon first
+        copies ``worker_started`` / ``worker_starts_omitted`` events into
+        that log (docs/websocket-protocol/workers.md). ``events_stats``,
+        ``event_cost_by_agent`` and ``verify_event_log_chain`` read the same
+        per-connection log.
         ``ActionFailed.data`` includes ``params_digest``, ``expected_effects``,
         and ``error_class``
         (``timeout|rejected_by_policy|tool_error|validation|unknown``), never
@@ -1986,10 +2406,13 @@ class CarRuntime:
         """
 
     def event_retention(self, policy_json: Optional[str] = None) -> str:
-        """Get/set the event-log retention policy (G2).
+        """Get/set this connection's event-log retention policy (G2).
 
         Pass a ``{max_events, max_age_secs}`` JSON string to install it, or
         ``None`` to read the current policy. Returns a JSON string.
+        Separately, the daemon deletes finished per-client journals at
+        startup once they are older than 30 days or beyond the 1,024 newest;
+        that limit is fixed, not set by this policy.
         """
 
     def enable_event_log_hash_chaining(self) -> None:
@@ -2000,7 +2423,7 @@ class CarRuntime:
         """
 
     def verify_event_log_chain(self) -> str:
-        """Verify the session event log's tamper-evidence chain (A9).
+        """Verify this connection's session event log's tamper-evidence chain (A9).
 
         Returns ``{"verified": n}`` (chained events verified) or
         ``{"tampered_at": i}`` (index of the first interior
@@ -2009,8 +2432,8 @@ class CarRuntime:
         """
 
     def event_cost_by_agent(self) -> str:
-        """Per-agent token/cost report (G3), folded from metered inference
-        events. Returns a JSON array of
+        """Per-agent token/cost report (G3), folded from this connection's
+        metered inference events. Returns a JSON array of
         ``{agent, calls, tokens_in, tokens_out, cost_usd}``.
         """
 
@@ -2037,8 +2460,15 @@ class CarRuntime:
         rejected targets, review panel, engine."""
         ...
 
-    def heal_run(self) -> str:
-        """Run one self-healing repair sweep now. May open a pull request; never merges."""
+    def heal_run(
+        self, *, chat_session_id: str | None = None, item: str | None = None
+    ) -> str:
+        """Run one self-healing repair sweep now. May open a pull request; never merges.
+        ``chat_session_id`` is for a caller bound to a supervised agent: the
+        ``session_id`` of the host's ``agents.chat`` turn it is answering, which
+        it needs to start a sweep. ``item`` (``owner/repo#number``) runs that one
+        item with the attended configuration, setting aside its backoff and its
+        ``needs-human`` label."""
         ...
 
     def selfheal_status(self) -> str:
@@ -2057,7 +2487,9 @@ class CarRuntime:
         ``auto_fix_in_progress``, and ``last_auto_fix_attempt`` (including
         ``exit_code`` and ``failure_class``). Remote deduplication adds
         ``auto_fix_awaiting_review``, ``auto_fix_parked``,
-        ``remote_pr_number``, and ``remote_pr_url``. ``query_json``
+        ``remote_pr_number``, and ``remote_pr_url``. A detection handed to
+        the repair loop carries ``heal_issue`` (``{repo, number, url}``).
+        ``query_json``
         carries ``kind``, ``severity``, ``since``, ``offset``, and bounded
         ``limit``.
         """
@@ -2216,7 +2648,25 @@ class CarRuntime:
         This request-shaped form exposes every generation field, including
         ``params.strict_model``. It mirrors NAPI
         ``inferTrackedWithRequest(requestJson)`` and returns the daemon's full
-        inference-result JSON unchanged.
+        inference-result JSON unchanged. It is the full path:
+        :meth:`infer_tracked` is intentionally basic and does not take
+        sampling or reasoning knobs.
+
+        Generation controls live under ``params``: ``stop`` (list of str) ends
+        the output before the earliest stop sequence (sent natively where the
+        provider takes it and cut by CAR on every backend; ``stop_reason`` is
+        ``"stop_sequence"`` when CAR cut it); ``reasoning_effort`` (``"low"``,
+        ``"medium"``, ``"high"``, ``"xhigh"``) sets effort on remote reasoning
+        models (OpenAI, OpenRouter, Codex, Anthropic), is dropped silently on
+        Google, Vertex, Bedrock, Parslee-managed lanes (``parslee/*``), local
+        and non-reasoning models (except gpt-oss on vllm-mlx, which takes an
+        explicit level as its chat template's ``reasoning_effort``), and
+        overrides the level derived
+        from ``budget_tokens`` (below 4096 low, below 16384 medium, otherwise
+        high); ``thinking`` is Qwen3-only and does nothing on remote models.
+        ``usage.reasoning_tokens`` is present when the provider reports it
+        (OpenAI chat and Responses, non-streaming), as a subset of
+        ``completion_tokens`` (car-releases#107, #108).
 
         ``client_ref`` is an opaque correlation token echoed verbatim in the
         ``inference.runner.invoke`` payload and otherwise ignored by CAR. A
@@ -2288,7 +2738,8 @@ class CarRuntime:
         means the output was truncated at the token cap. On local Qwen3
         hybrid-thinking models it is also set to ``"thinking_recovered"``
         when reasoning consumed the whole token budget and the runtime
-        retried with reasoning suppressed to produce a direct answer, or
+        retried with reasoning suppressed to produce a direct answer (its
+        usage and latency then count both passes), or
         ``"thinking_truncated"`` when even that retry was empty
         (car-releases#60).
 
@@ -2407,7 +2858,10 @@ class CarRuntime:
         """Web search. The daemon resolves the backend: the signed-in Parslee
         account's hosted search when available, else a bring-your-own
         ``TAVILY_API_KEY``, else a keyless DuckDuckGo fallback. Returns JSON
-        ``{query, source, results[]}``."""
+        ``{query, source, results[]}``. A DuckDuckGo search the provider
+        throttles (HTTP 202, 403 or 429, or its challenge page), or one made
+        while CAR is backing off from it, raises an error rather than
+        returning empty results."""
 
     def web_fetch(self, url: str) -> str:
         """Fetch a URL and extract readable text (keyless; companion to
@@ -2448,8 +2902,14 @@ class CarRuntime:
     def pull_model(self, name: str) -> str:
         """Download a model by name. Returns its filesystem path."""
 
-    def remove_model(self, model_id: str) -> str:
-        """Remove a receipt-backed CAR-managed artifact. Returns result JSON."""
+    def remove_model(self, model_id: str, *, force: bool = False) -> str:
+        """Remove a receipt-backed CAR-managed artifact. Returns result JSON.
+
+        ``force=True`` also removes an artifact CAR holds no install receipt
+        for — a link, or an interrupted install (links into the Hugging Face
+        cache, no weights) — at the model's managed path. Shared cache blobs
+        are never deleted.
+        """
 
     def adopt_model(self, model_id: str) -> str:
         """Adopt an already-usable local artifact into CAR ownership."""
@@ -2506,10 +2966,14 @@ class CarRuntime:
 
         ``cost`` is the model's declared prices —
         ``{input_per_mtok, output_per_mtok, cache_read_input_per_mtok,
-        cache_write_input_per_mtok, pricing_tiers, size_mb, ram_mb}`` — in
-        USD per 1M tokens, with ``pricing_tiers`` a list of
-        ``{min_prompt_tokens, ...prices}`` prompt-size overrides (the
-        highest threshold not above the prompt size wins). Every price is
+        cache_write_input_per_mtok, pricing_tiers, audio_per_minute?,
+        per_1k_characters?, size_mb, ram_mb}`` — in USD per 1M tokens, with
+        ``pricing_tiers`` a list of ``{min_prompt_tokens, ...prices}``
+        prompt-size overrides (the highest threshold not above the whole
+        prompt, cached tokens included, wins). ``audio_per_minute`` and
+        ``per_1k_characters`` are speech prices (USD per minute of audio,
+        per 1,000 characters) that will price speech calls once those calls
+        are metered; they are omitted when unset. Every price is
         nullable and ``null`` means **unpriced, not free**: a local model
         declares no prices, and a caller that reads that as ``0`` publishes
         a fabricated cost. The managed ``parslee/…`` alias rows carry the
@@ -2543,6 +3007,20 @@ class CarRuntime:
         daemon is tracked as a separate follow-up. Register
         before the daemon's inference path starts using the model,
         or restart the daemon after registration.
+
+        A reserved credential (``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``,
+        the AWS keys, the other names ``car keys`` stores, and the
+        credentials CAR stores for itself, in any case) may be sent only to
+        its provider's own host unless the operator registers the row. An
+        unsupervised runtime on the daemon's machine presents the local host
+        credential and is the operator; a runtime in a process launched as a
+        supervised agent (``CAR_AGENT_ID`` or ``CAR_AGENT_TOKEN`` set) never
+        does, and is refused such a row, with
+        an error naming the remedy: a gateway-specific credential name in
+        ``api_key_env``, or ``car models register``. Only this method
+        presents the host credential: the generated ``models_register``
+        wrapper and ``daemon_call("models.register", …)`` make the
+        ordinary call.
 
         Returns JSON ``{"id", "registered", "path", "note"}``.
         """
@@ -2663,12 +3141,16 @@ class CarRuntime:
         trust_source_repo: str | None = None,
         organization_id: str | None = None,
         personal: bool | None = None,
+        chat_session_id: str | None = None,
     ) -> str:
         """Start a coder session (built-in coding agent): provisions an
         isolated git worktree of ``repo`` and derives a verifiable outcome
         contract from ``intent``. ``contract_json`` supplies caller-owned
         OutcomeContract JSON instead: the daemon validates it, skips model
         derivation, and runs it verbatim; it is invalid for Agent projects.
+        Supplying it approves none of its network checks: a check that needs
+        network adds ``"network_approved": true``, and an unflagged network
+        check is held under Not verified.
         ``contract_source`` is ``"supplied"`` by default; ``"derived"``
         preserves model-derived network and credential restrictions while the
         provided contract is evaluated on another tree.
@@ -2676,7 +3158,11 @@ class CarRuntime:
         or ``ask_user`` prompts; approval-required actions fail closed
         immediately while policy-allowed actions remain allowed.
         ``engine`` is ``"auto" | "native" |
-        "external[:agent_id]"`` (default auto). ``model`` pins the native
+        "external[:agent_id]"`` (default auto). A caller bound to a supervised
+        agent runs ``external``/``foreman`` engines only with
+        ``chat_session_id``, the ``session_id`` of the host's ``agents.chat``
+        turn it is answering, and without it runs ``auto`` on the native
+        loop. ``model`` pins the native
         loop's inference model for this session (e.g. ``"parslee/reasoning"``),
         overriding ``~/.car/coder.toml``; blank/omitted = the config default,
         then adaptive routing. ``max_iterations`` is an explicit cap; ``None``
@@ -2785,7 +3271,7 @@ class CarRuntime:
         the edited JSON may carry ``network_approved: true`` and
         ``approved_credentials: list[str]``. Credential approval is limited to
         names declared by that exact check; changing its name, command, or
-        declarations drops carried approval. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
+        declarations drops carried approval. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     def coder_list(self) -> str:
         """List coder sessions (live and persisted), newest first.
@@ -2817,8 +3303,13 @@ class CarRuntime:
         billing,models}`` where billing is ``"metered" | "subscription" |
         "unknown" | None``; derivation usage is separate from execution-loop usage.
         After independent verification starts, ``verification`` carries
-        ``{round,grades,probes,isolation,audit?}``; delivery requires every
-        grade to be ``PASS`` and a clean different-family audit attestation."""
+        ``{round,grades,probes,isolation,audit?,not_checked?,kept_on_this_mac?}``;
+        delivery requires every grade to be ``PASS`` and a clean
+        different-family audit attestation. A Build an Agent session may instead
+        carry no audit and ``not_checked`` (why it was saved without an
+        independent check); with ``kept_on_this_mac: True`` (an agent that keeps
+        everything on this Mac) it also has no grades, and delivery needs
+        neither."""
 
     @overload
     def coder_respond(self, session_id: str, text: str) -> str: ...
@@ -2826,7 +3317,7 @@ class CarRuntime:
     @overload
     def coder_respond(self, session_id: str, text: str, steer: bool) -> str:
         """Answer a question, or queue native guidance with steer=True.
-        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
+        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     @overload
     def coder_approve_merge(
@@ -2840,7 +3331,7 @@ class CarRuntime:
         and the reply is ``{"state": "reported", "branch": None}``. A plain
         approve on a finding, or ``accept_finding`` on a diff, is refused.
         Successful delivery replies include ``excluded_artifacts`` from the
-        exact staging pass used by the commit. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
+        exact staging pass used by the commit. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     @overload
     def coder_approve_merge(
@@ -2860,7 +3351,7 @@ class CarRuntime:
         An already-finished session **succeeds** rather than raising: ``state``
         keeps its pre-existing name and type, ``already_terminal`` is ``True``,
         and ``message`` names what already happened. Callers that cancel
-        unconditionally on shutdown depend on that. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
+        unconditionally on shutdown depend on that. Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     def coder_watch(self, renew: bool | None = None) -> str:
         """The current session list AND registration for
@@ -2882,10 +3373,11 @@ class CarRuntime:
         None``), ``needs_you_label`` (daemon-owned wording so every client says
         the same thing), ``question_prompt``, ``auth_message``,
         ``auth_wait_secs``; ``state`` may be ``"verifying"``; and
-        ``failure_kind`` (``"budget_exhausted" |
-        "stalled" | "no_progress" |
-        "auth_required" | "configuration" | "infrastructure" | "verification" | "error"``
-        when failed),
+        ``failure_kind`` (``"checks_red" | "already_satisfied" | "stalled" |
+        "no_progress" | "cancelled" | "inference_unavailable" | "model_not_found" |
+        "engine_fallback_then_failed" | "delivery_failed" | "interrupted" |
+        "budget_exhausted" | "auth_required" | "configuration" | "infrastructure" |
+        "verification" | "error"`` when failed),
         ``worktree`` (only when it still exists on disk), ``project``,
         ``result_branch``, ``model``, ``discussion_id`` and ``next_seq`` (live
         only — the ``coder.subscribe`` cursor).
@@ -2908,7 +3400,7 @@ class CarRuntime:
         arrives on the event stream. Passing checks return the session to
         ``needs_approval`` with a new diff; failing checks fail it and keep the
         worktree. Delivery still needs a separate ``coder_approve_merge``.
-        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
+        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     def coder_revise_contract(self, session_id: str, request: str) -> str:
         """Redraft a PROPOSED outcome contract from a plain-English request
@@ -2922,7 +3414,7 @@ class CarRuntime:
         previous contract comes back byte-identical with ``revised: False`` and
         a ``message`` explaining why, and the daemon emits a
         ``contract_revision_rejected`` event.
-        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent, and an agent's run also accepts unbound connections when the daemon has no host token. To act on an agent's run with host authority, send the method through the host-management call."""
+        Only the agent that started the run or the CAR app may call this; a run a person started also accepts any connection not bound to an agent; an agent's run never does, whether or not the daemon has a host token. To act on an agent's run with host authority, send the method through the host-management call."""
 
     def coder_discuss_start(
         self,
@@ -2966,10 +3458,23 @@ class CarRuntime:
         discussion otherwise outlives the connection that opened it; it stays
         saved and reopens with ``coder_discuss_start(repo, resume_id=...)``."""
 
+    def coder_discuss_archive(self, discussion_id: str, archived: bool = True) -> str:
+        """Hide one of the caller's saved conversations from the default
+        list, or bring it back with ``archived=False``. Nothing is removed:
+        the row stays in ``coder_discuss_list()["saved"]`` with ``archived``
+        true, and the conversation still reopens. Another principal's id, or
+        an unknown one, is refused as unavailable. Returns
+        ``{"ok": true, "archived": ...}``."""
+
     def coder_discuss_list(self) -> str:
         """The caller's principal's discussions: ``{"discussions":
-        [{"discussion_id", "repo", "created_at", "turns", "answering"}],
-        "saved": [{"discussion_id", "repo", "created_at"}]}``. Also the capability probe — a daemon
+        [{"discussion_id", "repo", "created_at", "turns", "answering", "work_context"}],
+        "saved": [{"discussion_id", "repo", "created_at", "work_context", "open", "archived"}]}``.
+        ``saved`` lists every saved conversation, the open ones too (``open``
+        true) and archived ones (``archived`` true; the binding asks the daemon
+        for them). For the default view with archived conversations hidden,
+        call ``daemon_call("coder.discuss.list", "{}")``, or filter on
+        ``archived``. Also the capability probe — a daemon
         predating this surface answers JSON-RPC ``-32601``."""
 
     def project_create(
@@ -2983,7 +3488,11 @@ class CarRuntime:
         """Create (or load) a CAR-managed git-backed project under
         ``~/.car/projects/``. For an agent edit, ``existing_agent_id`` names
         the registered agent to replace and ``builder_draft_json`` carries the
-        seven answers plus ``template_id``. Returns CoderProject JSON."""
+        seven answers plus ``template_id``, and optionally ``mail_access``,
+        ``local_only`` (keep everything the agent reads on this Mac: it runs
+        only on models on this Mac, its build calls no verifier or auditor
+        model, and Parslee never stands in for its saved model) and
+        ``working_folder``. Returns CoderProject JSON."""
 
     def project_list(self) -> str:
         """List managed projects, newest first."""
@@ -2996,8 +3505,9 @@ class CarRuntime:
         product entitlements, and Studio reachability. Read-only. Returns JSON.
         Returns ``{authenticated: false, hint, error?}`` when signed out; raises
         with the underlying failure when Parslee could not answer the session
-        check (a rate limit, an outage, or no session answer) or denied this
-        signed-in account access (HTTP 403)."""
+        check (a rate limit, an outage, or no session answer), refused the
+        stored token while renewing it was temporarily unavailable, or denied
+        this signed-in account access (HTTP 403)."""
 
     def parslee_m365_generate_document(
         self,
@@ -3012,10 +3522,13 @@ class CarRuntime:
         defaults to `Report`. Returns JSON `{ file_id, web_url, ... }`."""
 
     def declagent_list(self) -> str:
-        """List registered in-daemon declarative agents."""
+        """List registered in-daemon declarative agents. Each row carries
+        ``registration_id`` once the registry has assigned one: new when the id
+        is registered anew, kept across a rebuild, rename or revert."""
 
     def declagent_get(self, id: str) -> str:
-        """One declarative agent's spec plus daemon-derived ``registry_path``."""
+        """One declarative agent's spec (with its ``registration_id``) plus
+        daemon-derived ``registry_path``."""
 
     def declagent_remove(self, id: str) -> str:
         """Unregister a declarative agent."""
@@ -3031,8 +3544,12 @@ class CarRuntime:
 
     def declagent_invoke(self, id: str, input: str) -> str:
         """Run a declarative agent on an input with its saved inference
-        selection. Returns ``{output, turns, tool_calls, model_served?, error?}``
-        JSON."""
+        selection. Returns ``{output, agent_said?, turns, tool_calls,
+        model_served?, model?, stood_in?, error?, goal?}`` JSON; ``stood_in``
+        (``{for_model, on_model, notice}``) is set when Parslee served a turn in
+        place of the agent's unavailable saved model. ``agent_said`` holds the
+        final answer, with ``output`` empty, when the run failed in a way that
+        answer can't speak for."""
 
     def declagent_route(self, need: str, invoke: bool) -> str:
         """Route a need to the best-matching declarative agent by capability
@@ -3127,7 +3644,27 @@ class CarRuntime:
         model id **or** a model name — the two differ for most models, and the
         name is what a result reports as the model it used, so the identifier
         you have in hand always works (car#889). Add ``strict_exclusions: true``
-        when generation must fail rather than use an excluded last resort."""
+        when generation must fail rather than use an excluded last resort.
+        ``on_device_only: true`` routes only to models CAR runs on this machine
+        (MLX, Candle GGUF, a CAR-managed vLLM-MLX, Apple's on-device model; not
+        an Ollama or external vLLM-MLX endpoint) and returns no route when none
+        is left; generation with it refuses a requested model elsewhere.
+        ``never_download: true`` routes only to models usable without a
+        download (a local model must already be installed) and returns no
+        route when none is left; generation with it refuses a requested model
+        that is not installed, naming the ``car models pull`` command that
+        installs it.
+
+        ``reliability`` is a catalog prior (published benchmark, else the
+        curated ``frontier``/``balanced`` tier tag, else conservative-unknown)
+        shrunk toward the model's graded-outcome quality as evidence
+        accumulates; a model with no history sits exactly at its prior. To feed
+        a graded result back, keep the ``trace_id`` from ``infer_tracked`` and
+        send ``outcomes.resolve_pending`` within 900 seconds of the call
+        ending; for a model CAR did not serve, use ``record_external_grade``.
+        Each candidate lists the outside grades it pooled under
+        ``external_grades``. The prior ladder and the outcome channels are in
+        the ``models.route`` section of the WebSocket protocol reference."""
 
     def model_stats(self) -> str:
         """Return per-model performance profiles as JSON."""
@@ -3141,6 +3678,22 @@ class CarRuntime:
         overall_usd_per_success, model_count, receipts}``. Rows are sorted
         cheapest-correct-outcome first. Cross-session and outcome-denominated
         (unlike ``model_stats``, the live in-memory profiles)."""
+
+    def record_external_grade(self, grade_json: str) -> str:
+        """Record a graded result for a model the daemon did not serve, such as
+        an outside head-to-head (``outcomes.record_external_grade``).
+        ``grade_json`` is ``{model_id, task, quality, n?, source,
+        allow_unknown_model?}``: ``quality`` in ``[0, 1]`` is the mean over
+        ``n`` cases (default 1, at most 100), ``task`` is ``generate | embed |
+        classify | code | reasoning``, ``source`` names the grader. Returns JSON
+        ``{model_id, known_model, task, source, source_key, n, source_quality,
+        source_observations, source_evidence}``; a supervised agent's source is
+        stored as ``agent:<id>/<source>`` (``source_key``). Routing pools
+        grades into ``reliability`` capped at 8 cases per source, 8 per
+        reporter and 16 in all; a source not updated for 90 days stops
+        counting. A refusal (unknown model, bad bounds, a ninth current source,
+        over 30 reports a minute, a failed write to disk) is JSON-RPC
+        ``-32019`` with ``data.reason``."""
 
     # --- Skills -------------------------------------------------------
 
@@ -3268,24 +3821,48 @@ class CarRuntime:
         domain: str,
         target_bundle_id: Optional[str] = None,
     ) -> str:
-        """JSON `{domain, status, target_bundle_id}`. `status` is granted |
-        denied | not_determined | restricted | not_applicable | restart_required
-        | signature_changed | unknown. The `calendar` domain uses a real,
-        non-prompting EventKit query and can additionally return `write_only`
-        (macOS-14 write-only grant). (car-releases#71)"""
+        """JSON `{domain, status, target_bundle_id}`. `domain` is browser |
+        contacts | calendar | mail | accessibility | screen_capture | automation
+        | camera | microphone | health_read | photos | reminders |
+        full_disk_access. `status` is granted | denied | not_determined |
+        restricted | not_applicable | restart_required | signature_changed |
+        unsupported | not_responding | unknown. `unsupported` means the state
+        could not be read without prompting ("can't tell"), distinct from
+        `not_determined` ("never asked"): on macOS `health_read`, `automation`
+        with no target, `automation`/`photos`/`reminders` while the target app
+        is not running, and `calendar`/`contacts` when CAR's helper for them
+        cannot answer. On macOS the check answers within 2 s;
+        `not_responding` means it did not (usually an Automation target running
+        but not answering Apple Events, whose access may already be granted —
+        quit and reopen that app). `calendar` and `contacts` are real,
+        non-prompting queries; `calendar` can also return `write_only` and
+        `contacts` `limited`. `photos` and `reminders` report the Automation
+        grant for Photos.app / Reminders.app, which those integrations drive.
+        (car-releases#71, car-releases#95)"""
         ...
 
     def permission_request(
         self,
         domain: str,
         target_bundle_id: Optional[str] = None,
-    ) -> str: ...
+    ) -> str:
+        """JSON `{domain, status, target_bundle_id}` with the same `status`
+        values as `permission_status`. Where the OS supports a prompt this
+        asks; on macOS it does not prompt and reads the current state like
+        `permission_status`, so it can also report `not_responding` after
+        2 s."""
+        ...
 
     def permission_explain(
         self,
         domain: str,
         target_bundle_id: Optional[str] = None,
-    ) -> str: ...
+    ) -> str:
+        """JSON `{domain, status, message, fix, target_bundle_id}` with the
+        same `status` values as `permission_status`. On macOS a check that does
+        not answer within 2 s reports `not_responding`, with a `message` and
+        `fix` saying what to do."""
+        ...
 
     def permission_domains(self) -> str: ...
 
@@ -3306,12 +3883,23 @@ class CarRuntime:
         """JSON for events in [start, end]. Each event carries `status`
         (confirmed|tentative|canceled|none) and `attendees` as objects —
         {name?, email?, status?, role?, is_current_user} — from EventKit, so a
-        consumer can distinguish a firm commitment from a tentative RSVP (#68)."""
+        consumer can distinguish a firm commitment from a tentative RSVP (#68).
+
+        `external_id` (optional) is the calendar server's identity for the item
+        (`EKCalendarItem.calendarItemExternalIdentifier`; Graph's `iCalUId`), so
+        one meeting accepted on two accounts can be matched where the per-store
+        `id` differs. Key on `(external_id, start)`: occurrences of a recurring
+        EventKit event share it, and EventKit can omit it or change it until the
+        event has synced to its server."""
         ...
 
-    def calendar_create_event(self, input_json: str) -> str: ...
+    def calendar_create_event(self, input_json: str) -> str:
+        """Returns JSON EventMutationResult; its `event` has the `calendar_events` shape, including `external_id?`."""
+        ...
 
-    def calendar_update_event(self, input_json: str) -> str: ...
+    def calendar_update_event(self, input_json: str) -> str:
+        """Returns JSON EventMutationResult; its `event` has the `calendar_events` shape, including `external_id?`."""
+        ...
 
     def calendar_delete_event(self, event_id: str) -> str: ...
 
@@ -3349,7 +3937,8 @@ class CarRuntime:
         """Message rows, newest first.
 
         ``query_json`` is a ``MessageQuery``: ``{account_ids?, mailbox?,
-        limit?, since?, include_body?}``. ``limit`` may not exceed 500. Every
+        limit?, since?, include_body?, all_mailboxes?, timeout_ms?}``.
+        ``limit`` may not exceed 500. Every
         field defaults and ``mailbox: null`` means INBOX, so ``"{}"``
         reproduces the pre-existing INBOX-only read.
 
@@ -3364,9 +3953,26 @@ class CarRuntime:
         ``"Travel/2026"``), so rows match :meth:`mail_mailboxes` output.
         Mail.app rows also carry ``message_id``, the RFC 5322 Message-ID header
         exactly as Mail exposes it; it is ``null`` if Mail does not expose the
-        header and on Microsoft Graph rows. An unresolvable mailbox or an
-        unmatched ``account_ids`` returns
+        header and on Microsoft Graph rows. A Mail.app row whose body
+        ``include_body`` asked for but did not get carries
+        ``body_unavailable``, a sentence saying why (on an INBOX read from
+        Mail's Envelope Index, the one 10 s budget for the index body lookups
+        was spent; the message was not found or could not be read; Mail did
+        not answer; or its Message-ID did not match); it is absent otherwise. An unresolvable
+        mailbox or an unmatched ``account_ids`` returns
         ``available: false`` with a reason, never an empty list.
+
+        Each row's ``recipients`` is the To line only; ``cc`` is the CC line
+        (empty when there is none). ``all_mailboxes: true`` (with ``mailbox``
+        unset; both together is an invalid-params error) reads every mailbox
+        of the selected accounts, merged newest first in the backend and
+        deduped by ``message_id`` within each account (one row per account
+        that holds the message); mailboxes not read in time are listed in
+        ``unresolved: [{account_id, mailbox, reason, timed_out}]``, omitted
+        when none were skipped. ``timeout_ms`` (1000-120000, default 15000)
+        bounds each Mail.app read and, for ``all_mailboxes``, the budget after
+        which no further mailbox read starts. A Mail.app read that does not
+        finish in time raises with error code ``timeout``.
         """
         ...
 
@@ -3378,7 +3984,20 @@ class CarRuntime:
         """
         ...
 
-    def mail_send(self, send_request_json: str) -> str: ...
+    def mail_send(self, send_request_json: str) -> str:
+        """Send or draft mail.
+
+        ``send_request_json`` is ``{account_id, to, cc?, bcc?, subject, body,
+        draft_only?}``; ``draft_only: true`` saves a draft in ``account_id``'s
+        Drafts instead of sending. Returns JSON ``{available, backend, reason?,
+        sent, message_id}``: ``sent: false`` with a ``reason`` (e.g.
+        ``sender_override_failed: …`` or ``drafts_unavailable: …``, saying what
+        to change in Mail's account settings) when Mail will not use
+        ``account_id``'s address, or (for a draft) reports that account turned off
+        or lists Drafts mailboxes for other accounts but none for it — nothing
+        is sent or drafted from another account.
+        """
+        ...
 
     def messages_services(self) -> str: ...
 
@@ -3400,13 +4019,32 @@ class CarRuntime:
 
     def notes_find(self, query: str, limit: int = 50) -> str: ...
 
+    def notes_read(self, id: str) -> str:
+        """Read one Notes.app note by the id :meth:`notes_find` returns. Read-only.
+
+        Returns ``{available, backend, reason?, id, name?, folder?, modified?,
+        body?, truncated}``: ``body`` is the note's stored HTML (cut at 100,000
+        UTF-16 code units, with ``truncated: true``). A missing note is
+        ``available: false``.
+        """
+        ...
+
     def reminders_lists(self) -> str: ...
 
     def reminders_items(self, limit: int = 50) -> str: ...
 
     def photos_albums(self) -> str: ...
 
-    def bookmarks_list(self, limit: int = 100) -> str: ...
+    def bookmarks_list(self, limit: int = 100) -> str:
+        """JSON ``{available, backend, reason?, bookmarks, skipped}``.
+
+        Safari bookmarks on macOS, Chromium (Chrome/Edge/Brave) elsewhere.
+        ``skipped`` counts entries left out because they could not be read,
+        among the entries visited before ``limit`` was reached; a refused read
+        (no Full Disk Access) and an unparseable file give different
+        ``reason`` values.
+        """
+        ...
 
     def files_locations(self) -> str: ...
 
@@ -3444,7 +4082,14 @@ class CarRuntime:
         the existing browser regardless.
         """
 
-    def browser_close(self) -> None: ...
+    def browser_close(self) -> None:
+        """Close this runtime's browser session.
+
+        Shuts Chromium down and resets the session: the next
+        ``browser_run`` launches a fresh browser with the options it
+        passes (``headed``, ``extra_args``), and navigate/observe work
+        against it as in a new process.
+        """
 
     # `browser_run`/`browser_close` above are this runtime's OWN
     # per-connection scripted browser. Separate from that: the browser
@@ -3543,6 +4188,9 @@ class HostClient:
     def agent_permissions_set_default(self, params_json: str) -> str: ...
     # Generated host wrapper for `agent_permissions.set_default`.
 
+    def agent_permissions_set_observer(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agent_permissions.set_observer`.
+
     def agent_permissions_set_tool(self, params_json: str) -> str: ...
     # Generated host wrapper for `agent_permissions.set_tool`.
 
@@ -3554,9 +4202,6 @@ class HostClient:
 
     def agents_message_pending(self, params_json: str) -> str: ...
     # Generated host wrapper for `agents.message.pending`.
-
-    def agents_remove(self, params_json: str) -> str: ...
-    # Generated host wrapper for `agents.remove`.
 
     def agents_upsert(self, params_json: str) -> str: ...
     # Generated host wrapper for `agents.upsert`.
@@ -3615,14 +4260,35 @@ class HostClient:
     def concierge_maintain(self, params_json: str) -> str: ...
     # Generated host wrapper for `concierge.maintain`.
 
+    def credentials_issue(self, params_json: str) -> str: ...
+    # Generated host wrapper for `credentials.issue`.
+
+    def credentials_list(self, params_json: str) -> str: ...
+    # Generated host wrapper for `credentials.list`.
+
+    def credentials_refusals(self, params_json: str) -> str: ...
+    # Generated host wrapper for `credentials.refusals`.
+
+    def credentials_revoke(self, params_json: str) -> str: ...
+    # Generated host wrapper for `credentials.revoke`.
+
+    def declagents_pause(self, params_json: str) -> str: ...
+    # Generated host wrapper for `declagents.pause`.
+
     def declagents_remove(self, params_json: str) -> str: ...
     # Generated host wrapper for `declagents.remove`.
 
     def declagents_revert(self, params_json: str) -> str: ...
     # Generated host wrapper for `declagents.revert`.
 
+    def declagents_runs(self, params_json: str) -> str: ...
+    # Generated host wrapper for `declagents.runs`.
+
     def declagents_set_enabled(self, params_json: str) -> str: ...
     # Generated host wrapper for `declagents.set_enabled`.
+
+    def declagents_set_schedule(self, params_json: str) -> str: ...
+    # Generated host wrapper for `declagents.set_schedule`.
 
     def diagnostics_secret_store_activity(self, params_json: str) -> str: ...
     # Generated host wrapper for `diagnostics.secret_store_activity`.
@@ -3698,12 +4364,6 @@ class HostClient:
 
     def lattice_relay_probe(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.relay.probe`.
-
-    def lattice_requests(self, params_json: str) -> str: ...
-    # Generated host wrapper for `lattice.requests`.
-
-    def lattice_respond(self, params_json: str) -> str: ...
-    # Generated host wrapper for `lattice.respond`.
 
     def messaging_config_get(self, params_json: str) -> str: ...
     # Generated host wrapper for `messaging.config.get`.
@@ -3791,6 +4451,12 @@ class HostClient:
 
     def tasks_unschedule(self, params_json: str) -> str: ...
     # Generated host wrapper for `tasks.unschedule`.
+
+    def ui_sign_in(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ui.sign_in`.
+
+    def ui_sign_out(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ui.sign_out`.
 # END GENERATED daemon wrappers: HostClient
 
 # ---------------------------------------------------------------------------
@@ -3905,6 +4571,16 @@ def protocol_version() -> int:
 
     Exchanged via the ``server.handshake`` RPC; bumped only on a
     backward-incompatible JSON-RPC change, independent of the package semver.
+    """
+
+
+def protocol_version_min() -> int:
+    """Oldest wire protocol version this binding speaks.
+
+    The binding sends the range ``protocol_version_min()..=protocol_version()``
+    in ``server.handshake``, and the daemon settles on the highest version both
+    sides speak; only a daemon whose range shares no version with this one
+    refuses the connection.
     """
 
 
@@ -4817,7 +5493,7 @@ def list_os_schedules() -> str:
 def reconcile_os_schedules() -> str:
     """Reap orphaned OS-level schedules — uninstall every CAR-managed launchd/cron
     entry whose task is gone from ``~/.car/tasks/`` or whose trigger is no longer
-    schedulable. Returns the reconcile report ``{ removed, kept, errors }``."""
+    schedulable. Returns the reconcile report ``{ removed, kept, errors, reinstalled }`` (``reinstalled``: durable command schedules moved onto the run recorder)."""
 
 
 def suggest_schedule(phrase: str, timezone: Optional[str] = None) -> str:
@@ -4828,17 +5504,28 @@ def suggest_schedule(phrase: str, timezone: Optional[str] = None) -> str:
 def schedule_task(spec_json: str) -> str:
     """Schedule a deterministic command on a cadence, hiding the OS backend (#72).
     ``spec_json`` = ``{ name, program, args?, cadence: { interval_secs? | cron? },
-    durable?, working_dir?, env?, permission_tier? }``. Returns
-    ``{ id, durable, backend, task }``."""
+    durable?, working_dir?, env?, timeout_secs?, stdout_path?, stderr_path? }``.
+    A durable task's OS job fires through ``car schedule run-recorded --digest``,
+    which runs only the command the job was installed with, records every run (``last_run_at``, ``run_count``, ``executions``) and
+    appends the command's output to ``stdout_path``/``stderr_path`` (absolute;
+    default ``<CAR_HOME>/logs/tasks/<id>.log``). Returns
+    ``{ id, durable, backend, stdout_path, stderr_path, task }``."""
 
 
 def list_scheduled_tasks() -> str:
-    """List deterministic (command) scheduled tasks with their resolved backend."""
+    """List every scheduled task record and what runs it. Each row is
+    ``{ id, name, kind, program, args, trigger, schedule, durable, backend,
+    enabled, status, last_run_at, run_count, last_exit_code, stdout_path,
+    stderr_path }``; ``kind`` is ``command``|``agent``|``dream``|``prompt``|``unreadable``
+    and ``backend`` is ``os``|``daemon``|``orphaned``|``none`` (``orphaned``: a
+    durable task whose OS job is gone, so nothing runs it). An ``unreadable``
+    row is a task file that could not be parsed, with ``file`` and ``error``."""
 
 
 def unschedule_task(id_or_label: str) -> str:
     """Unschedule a deterministic task — remove any OS schedule and delete it from
-    the store. Returns ``{ id, os_removed, deleted }``."""
+    the store. Returns ``{ id, os_removed, deleted, orphaned }`` (``orphaned``:
+    the task was durable but its OS job was already gone)."""
 
 
 def run_task(
@@ -4996,9 +5683,16 @@ def register_chat_handler(handler: Callable[[str], None]) -> None:
     through a GIL-aware drain thread.
 
     ``handler(params_json)`` receives ``{"session_id","prompt","attachments"?,
-    "context"?}`` as a JSON string. Run one conversational turn — keep a
-    per-``session_id`` thread, run the agent loop, and stream the reply via
-    :meth:`CarRuntime.chat_event` — then return. Fire-and-forget (the ack
+    "context"?,"history"?,"history_omitted"?,"cwd"?}`` as a JSON string. Run
+    one conversational turn — keep a per-``session_id`` thread, run the agent
+    loop, and stream the reply via :meth:`CarRuntime.chat_event` — then
+    return. ``history`` is the chat's earlier turns (``{"role": "user" |
+    "assistant", "content"}``, oldest first), sent when the host's chat moved
+    to a new session: seed the thread of a session you have none for from it,
+    and ignore it for one you already have. ``history_omitted`` counts older
+    messages the host and daemon left out. ``cwd``, when present, is the
+    absolute folder the host's conversation works in; resolve the turn's
+    relative paths there. Fire-and-forget (the ack
     already went back). Re-calling overwrites; pair with
     :func:`unregister_chat_handler` to clear.
 
@@ -5285,10 +5979,10 @@ def start_a2a_server(rt: "CarRuntime", params_json: str) -> str:
 
     ``allow_non_loopback_bind`` (bool, default ``False``): required to bind
     anything but loopback. This listener serves **no authentication** —
-    there is no auth parameter, and its router is ``NoAuth`` — and with
-    ``share_session_runtime=False`` its runtime registers the
-    agent-basics filesystem tools, so a reachable bind publishes
-    ``write_file``/``edit_file`` to anyone who can reach the port. A
+    there is no auth parameter, and its router is ``NoAuth`` — so a
+    reachable bind publishes whatever it serves (with
+    ``share_session_runtime=True``, the session's tools) to anyone who
+    can reach the port. A
     wildcard bind (``0.0.0.0:...``) is refused as well. If you want to be
     reachable by other CAR daemons, you do not want this: ``car-server``
     already runs a peer-authenticated, messaging-only listener for that.
@@ -5302,9 +5996,9 @@ def start_a2a_server(rt: "CarRuntime", params_json: str) -> str:
     :func:`register_tool_handler`. This is the canonical path for
     host-language agents (e.g. a Python reasoning helper) to project
     themselves over A2A without bespoke wiring. Default ``False``
-    preserves the legacy fresh-Runtime behaviour: only
-    ``register_agent_basics`` tools are exposed and tool dispatch
-    runs entirely in the daemon's Rust path.
+    serves a fresh runtime that registers no tools at all: the
+    listener has no credential, so any local process can reach it, and
+    a file tool there would write as CAR's user (car#3643).
 
     Returns ``'{"bound":"host:port"}'`` on success. Raises
     ``RuntimeError`` if a server is already running, the bind fails,
@@ -5445,7 +6139,7 @@ def a2a_dispatch(method: str, params_json: str) -> str:
 # ---------------------------------------------------------------------------
 # Lifecycle-managed agents (car_registry::supervisor)
 #
-# Process-singleton supervisor backed by ``~/.car/agents.json``.
+# Process-singleton supervisor backed by ``~/.car/agents/<id>/manifest.toml`` (legacy ``~/.car/agents.json`` only where it already exists).
 # Wire shapes match the daemon's WS ``agents.*`` methods so a host
 # can swap transports without reshaping payloads. Daemon-shared
 # lifecycle (across processes) flows over WebSocket.
@@ -5455,7 +6149,9 @@ def a2a_dispatch(method: str, params_json: str) -> str:
 def agents_list() -> str:
     """List supervised agents with runtime status and daemon-compatible
     ``manifest_path``, ``log_path``, and ``stderr_log_path`` metadata.
-    Returns JSON ``[ManagedAgent]``."""
+    Returns JSON ``[ManagedAgent]``. Each row also carries the spend fields
+    typed as :class:`ManagedAgentSpendFields` (``spend_caps``, ``budget``,
+    ``at_budget``)."""
 
 
 def agents_health() -> str:
@@ -5482,13 +6178,20 @@ def agents_upsert(spec_json: str) -> str:
             #     once at upsert and stores the absolute path in `command`.
             "args": ["server.js"],
             "cwd": "/path/to/project",       # optional
-            "env": {"K": "V"},               # merged on top of parent
+            "env": {"K": "V"},               # applied on top of the reduced base env
             "restart": "on_failure",         # never|on_failure|always
             "max_restarts": 10,
             "backoff_secs": 5,
             "auto_start": True,
-            "method_allowlist": ["mail.accounts", "mail.messages"]
+            "method_allowlist": ["mail.accounts", "mail.messages"],
             # optional; absent means unrestricted
+            "secrets": ["ANTHROPIC_API_KEY"],
+            # optional; names fetched from CAR's secret store into the
+            # agent's environment at every start; absent means no keys
+            "delegate_for": ["human:matt"],
+            # optional; the people this agent may answer for on the
+            # Lattice (a human delegate, car-releases#109). The
+            # operator's grant: omit it to revoke
         }
 
     Returns JSON ``ManagedAgent``.
@@ -5515,6 +6218,13 @@ def agents_install(manifest_json: str) -> str:
     adopted (the supervisor only spawns command-shaped externals
     in this phase).
 
+    An agent already installed under the manifest's id is never
+    replaced unasked: the install raises, changing nothing, naming
+    the installed agent and version. The same version is always
+    refused as "this version is already installed". To replace it
+    with a different version, add ``"upgrade": true`` beside the
+    manifest's own top-level keys in ``manifest_json`` (car#3264).
+
     Returns JSON
     ``{"report": {"missingOptional": [{"namespace", "feature"}]},
     "agent": ManagedAgent | None}``.
@@ -5523,22 +6233,40 @@ def agents_install(manifest_json: str) -> str:
 
 def agents_remove(id: str) -> str:
     """Remove an agent's spec. Stops the running child first if
-    it's up. Idempotent. Returns JSON ``{"removed": bool}``."""
+    it's up. Idempotent. Returns JSON ``{"removed": bool}``, plus
+    ``"log_scrub_error": str`` when the secrets delivered to the agent could
+    not be removed from its log files. Raises, removing nothing, when that
+    stop is declined (see ``agents_stop``)."""
 
 
 def agents_start(id: str) -> str:
     """Spawn the agent's child if it isn't running. Resets
-    ``restart_count``. Returns JSON ``ManagedAgent``."""
+    ``restart_count``. Returns JSON ``ManagedAgent``.
+
+    On Linux, when this process supervises agents itself (no daemon holds
+    the registry), an agent that runs walled (every agent but CAR's own
+    assistant) is not started: a walled agent needs a helper process of the
+    CAR daemon's own binary, which a Python host cannot provide. Its status
+    becomes ``errored`` with a reason saying so. Run it under ``car-server``
+    instead."""
 
 
 def agents_stop(id: str, signal: Optional[str] = None) -> str:
     """Stop the agent. ``signal`` is ``"term"`` (SIGTERM with grace,
     default) or ``"kill"`` (SIGKILL immediately). Returns JSON
-    ``ManagedAgent``."""
+    ``ManagedAgent``. Raises ``RuntimeError`` ("stop of agent <id>
+    declined") when an adopted agent's pid could not be verified as its
+    process (an unreadable start token): it stays running and supervised
+    and keeps its pid file. The token read is transient: retry the stop. If
+    the SIGKILL was withheld, the error says the SIGTERM may already have
+    been sent, and the exit it causes leaves the agent stopped rather than
+    restarted. Windows records no token, so it never declines. When a SIGKILL's exit is not observed in time,
+    the returned agent is stopped but keeps its ``pid``."""
 
 
 def agents_restart(id: str) -> str:
-    """Stop then start. Returns JSON ``ManagedAgent``."""
+    """Stop then start. Returns JSON ``ManagedAgent``. Raises the
+    declined error, restarting nothing, when the stop is declined."""
 
 
 def agents_wait(
@@ -5548,10 +6276,19 @@ def agents_wait(
     poll_ms: Optional[float] = None,
 ) -> str:
     """Block until the agent reaches one of ``targets_json`` (a JSON string array
-    like ``["running"]`` or ``["stopped","errored"]``; default ``["running"]``)
-    or ``timeout_secs`` (default 30) elapses, polling every ``poll_ms`` (default
-    200). Returns the matching JSON ``ManagedAgent``; raises on timeout or
-    unknown id."""
+    like ``["running"]`` or ``["stopped","errored"]``, or ``["ended"]`` for
+    stopped or errored; default ``["running"]``) or ``timeout_secs`` (default
+    30) elapses, polling every ``poll_ms`` (default 200). Returns the matching
+    JSON ``ManagedAgent``; raises on timeout or unknown id. A worker's row also
+    carries how it ended: ``end_reason`` (``finished``, ``stopped_by``,
+    ``orchestrator_stopped``, ``timed_out``, ``kept_crashing``,
+    ``interrupted_by_restart``, ``restart_refused``, ``environment_failed``, or
+    ``None``), CAR's ``end_message``,
+    ``last_error`` (``{kind: "exit" | "signal" | "timed_out" | "kept_crashing" |
+    "spawn_failed" | "environment_failed", exit_code?, signal?}`` or ``None``)
+    and its last structured ``report`` (or ``None``), plus ``end_record_error``
+    when the end could not be written to disk and is held in memory. None of
+    them is text the worker wrote."""
 
 
 def agents_tail_log(
@@ -5583,7 +6320,22 @@ def agents_tail_log(
     "stderr_path": str, "more": bool}``. ``lines`` keeps the legacy
     stdout-then-stderr combined view for back-compat. ``stdout_total`` /
     ``stderr_total`` count lines in the scanned tail (exact within the
-    ceiling)."""
+    ceiling).
+
+    Each start of the agent (a run) writes files of its own, and a stream
+    reads as the kept runs one after another, oldest first; ``stdout_path``
+    / ``stderr_path`` name the newest finished run's redacted file, never a
+    running run's raw file. Secret values delivered to
+    the agent are replaced with ``[redacted]``: in memory for the run still
+    writing, and in the redacted file each finished run leaves. A stream's
+    first page (``offset`` 0) can end with extra lines starting ``[car: ``
+    naming what is not shown: a run's files withheld because no daemon could
+    vouch that it held the values to redact them, a run an earlier daemon
+    left that is not yet recovered, or an adopted run whose values this
+    daemon does not hold. These lines are on top of ``n``, are not counted
+    in ``stdout_total``/``stderr_total``, and in ``lines`` they end the
+    stdout part, so they can sit in the middle of the combined list. Not
+    redacted: a value in a form no text match finds (car#3637)."""
 
 
 # ---------------------------------------------------------------------------
@@ -5689,6 +6441,11 @@ def agents_invoke_external(
                                      # --mcp-config; daemon callers
                                      # auto-fill from car-server's
                                      # bound /mcp URL. "" opts out.
+        "mcp_bearer": str | None,    # your own bearer token for that
+                                     # endpoint, sent as Authorization:
+                                     # Bearer (never echoed back). The
+                                     # daemon's own endpoint gets a
+                                     # minted run credential instead.
         "attachments": [             # images attached to the prompt
           {"path": str,             # abs path on the daemon's fs
            "media_type": str | None}  # advisory; runner derives from content
