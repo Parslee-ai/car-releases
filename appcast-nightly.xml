@@ -5,7 +5,7 @@
     <language>en</language>
             <item>
                 <title>Version 0.61.1-nightly.20261110.2</title>
-                <pubDate>Tue, 10 Nov 2026 20:29:28 +0000</pubDate>
+                <pubDate>Tue, 10 Nov 2026 21:25:48 +0000</pubDate>
                 <sparkle:version>20261110.2</sparkle:version>
                 <sparkle:shortVersionString>0.61.1-nightly.20261110.2</sparkle:shortVersionString>
                 <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
@@ -13,7 +13,7 @@
                 <enclosure
                     url="https://github.com/Parslee-ai/car-releases/releases/download/v0.61.1-nightly.20261110.2/CAR-Host-darwin-arm64.zip"
                     type="application/octet-stream"
-                    sparkle:edSignature="3Dp55Uw7RY3fpNtou8+D/KXi92o16OouCeqWyFu0Ap5NJ9BR1ozF9aKjmQryJV0ecuYP8QmS1rDb3u13ngsrBg==" length="180987756" />
+                    sparkle:edSignature="0LrJoNuzO5J2a3pVxjEBKuZlpAZR7/qR3QkXNdUJWanljRLBMH0QyI0NbERPMlcIpbRrqVjG7jir/xxnygEoAg==" length="180988537" />
             </item>
             <item>
                 <title>Version 0.61.0-nightly.20261110</title>
