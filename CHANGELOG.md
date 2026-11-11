@@ -3,6 +3,20 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.61.2] — 2026-11-10
+
+### Changes
+
+- Owner, writer and CAR names on another CAR's work-board items are now quoted in the session briefing, the per-prompt note and overlap notices, like titles already were. They are that CAR's claims, so a connected account could otherwise place unquoted text in a session's instructions (#4252).
+- A relay connection whose board becomes readable again with an unchanged batch now ends its outage, so the next failure warns again instead of only logging at debug level (#4256).
+- The board reconciler records rotation progress per board, so watches on different boards no longer erase each other's progress and starve older items (#4260).
+
+- `car-winenv` gains `readmit_os_env`, which restores the variables Windows itself needs (`SystemRoot`, `windir`, `TEMP`, …) after `Command::env_clear()`. The `subscription_usage` integration test cleared its daemon's environment without them, so on Windows the daemon could not open a socket and the test failed every `windows-integrations` run. A new check, `scripts/check-env-clear-windows.py` (run in the `terminology` job and `ci-local.sh`), refuses a Windows-compiled test fixture that clears the environment without restoring them.
+
+- `car-server`'s `car-winenv` dev-dependency is path-only, so a release bump that rewrites workspace versions no longer leaves an unresolvable `^0.60.0` requirement on `main`.
+
+See the [release notes][v0.61.2].
+
 ## [v0.60.0] — 2026-10-31
 
 ### Changes
@@ -1828,6 +1842,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.61.2]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.61.2
 [v0.60.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.60.0
 [v0.58.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.58.0
 [v0.57.4]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.57.4
