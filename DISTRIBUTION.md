@@ -17,6 +17,24 @@ Intel Macs (`x86_64-apple-darwin`) are **not** supported — macOS is Apple Sili
 only. Windows aarch64 is pending. Linux aarch64 ships a CLI / server / `.node`
 tarball but no Python wheel.
 
+### Linux requirements
+
+- **glibc 2.39 or newer.** The Linux binaries are built on Ubuntu 24.04, so
+  they run on Ubuntu 24.04+, Debian 13+, Fedora 40+, or another distribution
+  with glibc 2.39 or newer. Check with `getconf GNU_LIBC_VERSION`. On an older
+  system (Ubuntu 22.04, Debian 12) they fail to start with a
+  `GLIBC_2.xx not found` error, and the install script stops before
+  installing them. musl distributions such as Alpine are not supported.
+- **Two runtime libraries**, ALSA and D-Bus, which minimal images and servers
+  often lack. Without them `car` and `car-server` fail to start:
+  - Debian 13 / Ubuntu 24.04+: `sudo apt install libasound2t64 libdbus-1-3`
+  - Fedora: `sudo dnf install alsa-lib dbus-libs`
+- **No desktop app.** There is no CAR Host app for Linux. The daemon serves the
+  browser dashboard at `http://127.0.0.1:9101/`. `car ui` prints a one-time
+  sign-in link for it; on Linux it prints the link without opening a browser.
+  On a server, forward the port with `ssh -L 9101:127.0.0.1:9101 <server>`
+  and open the link on your own machine.
+
 ## Packages
 
 ### macOS app + CLI — `.pkg` (no terminal)

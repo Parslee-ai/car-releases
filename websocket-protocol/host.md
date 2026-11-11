@@ -83,7 +83,10 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 
 #### `host.approvals`
 - **Params**: `{}`
-- **Returns**: `{ approvals: HostApproval[] }`
+- **Returns**: `(HostApproval & { subscribed: boolean, answerable: boolean })[]`
+- Every row has the same readiness fields as `host.request_approval`, computed
+  from current subscriptions whenever the list is read. Subscription changes
+  therefore update readiness without replacing the approval.
 - Resolved rows created more than 24 hours ago are dropped when the ledger is read. When an approval is created, every row older than 24 hours is dropped, pending ones included, unless a high-risk-method gate is still waiting on the row; no event is sent for a pending row dropped that way. Resolved rows stay until then, or until `host.dismiss_approval` removes them.
 - **Who sees which approvals (#3419).** An agent-bound session gets only the approvals raised for it (`agent_id` is its own) or by its own connection, so another agent's `details.params_preview` never reaches it. The approval the high-risk-method gate raises for an agent's own call is attributed to that agent, so it stays visible here. On macOS and Windows, an agent the host granted the watcher view (`agent_permissions.set_observer`) gets every approval, as host sessions, the daemon-token operator and the CLI do. On Linux a walled agent cannot call this method at all, so for a walled agent the grant changes nothing there (CAR's own assistant runs unwalled and is scoped like any agent).
 
@@ -107,15 +110,19 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   intended for another linked device.
 
 #### `host.request_approval`
-- **Params**: `CreateHostApprovalRequest` — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean, a2ui?: { components: object[], dataModel?: object } }`
+- **Params**: `CreateHostApprovalRequest` — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean, deadline?: number, a2ui?: { components: object[], dataModel?: object } }`
 - **Returns**: `HostApproval & { subscribed: boolean, answerable: boolean }`
 - `subscribed` is literal: whether the requesting session is subscribed to host
   events (the same meaning as `host.subscribe`'s `subscribed`). An unsubscribed
   session receives neither `approval.resolve_requested` nor
-  `approval.resolved`, whatever kind of row it raised.
-- `answerable` says whether a host's decision can take effect. It is `true` for
-  a `system_level` row, which a host resolves in the ledger directly, and for a
-  session-owned row whose session is subscribed. It is `false` for a
+  `approval.resolved`, whatever kind of row it raised. Daemon-raised rows have
+  no requesting WebSocket session and report `subscribed: false`.
+- `answerable` says whether a host's decision can take effect through its live,
+  authenticated owner channel. A system-level row is precisely one with no
+  owning `client_id` (`system_level: true` at creation); the owner resolves it
+  directly in the ledger, so it is answerable independently of the requesting
+  session's subscription. A host reading the row or resolving it already has
+  that live owner channel. It is also `true` for a session-owned row whose session is subscribed. It is `false` for a
   session-owned row from a session that never completed `server.handshake` +
   `host.subscribe`: a host's answer to that row is an
   `approval.resolve_requested` the session will never receive, so the row stays
@@ -181,9 +188,11 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   session '<owner>' which is not currently connected`.
 - `agent_id` is **stamped by the server** from the session's authenticated agent
   binding when the session has one, so an agent cannot attribute its request to
-  another agent or leave it unattributed; a client with no binding (the operator
-  surface) keeps what it sends. When the resulting id names an agent, that
-  agent's status auto-flips to `waiting_for_approval`.
+  another agent or leave it unattributed. The assistant gate applies only to
+  agent-originated `host.request_approval`; daemon-raised and owner-raised rows
+  pass. An unbound owner connection retains its advisory `agent_id`. When the
+  resulting id names an agent, that agent's status auto-flips to
+  `waiting_for_approval`.
 
 > Earlier revisions of this page documented the params as
 > `{ agent_id?, title, description?, context?, required_approvals? }`. No such
@@ -192,7 +201,8 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 
 #### `host.resolve_approval`
 - **Params**: `ResolveHostApprovalRequest` — `{ approval_id: string, resolution: string }`
-- **Returns**: the `HostApproval` row, resolved with the `resolution` sent.
+- **Returns**: the `HostApproval` row, resolved with the canonical option text
+  (see the single-option rule below).
   `status: "pending"` means the request was forwarded to the owning session,
   whose own resolve settles the row and broadcasts `approval.resolved`.
 - **Errors** (`-32003`, with a stable `error.data.reason`):
@@ -207,13 +217,39 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
     gate row or for a system-level row attributed to itself: the walled
     refusal below is checked first, so it gets the plain walled error and
     never the row.
-  - `owner_not_connected`: the row is owned by a session that is not
-    subscribed to host events, so nothing can deliver the request to it.
+  - `invalid_resolution`: the verb is not an offered option or a supported
+    single-option alias, or it is a reserved daemon closing reason.
+    `error.data` is `{ reason, approval_id, resolution }`. The row is unchanged.
+  - `owner_not_connected`: the row is not answerable: it is owned by a session
+    that is not subscribed to host events, so nothing can deliver the request to it.
     `error.data` is `{ reason, approval_id, owner_client_id }`. The message
     still reads "… is owned by session '…' which is not currently connected".
-- `resolution` is the **verb**, matched against the row's `options` (default
-  `["approve", "deny"]`); the gate treats anything other than its approve label
-  as a denial. Both fields are required.
+- `resolution` is the **verb**, matched case-sensitively against the row's
+  `options` (default `["approve", "deny"]`). When a row has exactly one option,
+  `approve` selects a non-negative option: an `options: ["acknowledge"]` warning resolves
+  as `acknowledge`, including in the stored row and emitted events. For a lone
+  negative option (`deny`, `reject`, `cancel`, `no`, or `decline`, recognized
+  without regard to ASCII case), `approve` is refused and names the option;
+  `deny` or the exact option text selects that negative option. `deny` on any
+  other single-option row is refused and names its option. Multi-option rows
+  require an exact option match. These
+  rules and the readiness check apply at the shared resolution boundary to
+  host apps and paired phone replies alike. The gate treats anything other than
+  its approve label as a denial. Both fields are required. An off-option answer
+  is refused before forwarding to a session or a parked chat gate. An `answerable: false` row is
+  refused even when its requesting session tries to answer it. Both refusals
+  emit `approval.resolve_refused` and are durably recorded on the floor journal;
+  neither changes the approval.
+- **Daemon closure is not an owner resolution.** When a gate ends without an
+  owner answer, the daemon closes its row through an internal lifecycle path.
+  The resolved row and `approval.resolved` event carry the closing reason in
+  `resolution`: `disconnected`, `interrupted`, `timeout`, `cancelled`,
+  `answered` (a Lattice answer recorded in its own ledger), or `agent_gone`.
+  These reserved reasons are refused from `host.resolve_approval` and paired
+  phone answers even if a row lists one as an option; `approve` cannot alias
+  one either. Closing a chat after host disconnect clears its pending phone
+  question immediately, so later questions can take the floor. A closing
+  reason records why the row ended; it grants no owner approval.
 - **A supervised agent cannot answer the person's approvals (#3453).** A
   session walled to an agent (`session.auth { agent_id, token }`, or an outside
   credential acting as one) gets a plain error (no `error.data.reason`), and the
@@ -294,12 +330,16 @@ now means it resolved its own session-owned row. It still fires for a session
 bound to the agent that is not walled. If you see it on a row meant for the
 person, something is approving its own work.
 
-`approval.resolve_refused` fires when a supervised agent's `host.resolve_approval`
-is refused. It is attributed to the refused agent. Payload:
+`approval.resolve_refused` fires when `host.resolve_approval` is refused by the
+agent wall, option validation, or readiness check. Wall refusals are attributed
+to the refused agent; option/readiness refusals to the approval's agent. Payload:
 `{ approval_id, agent_id, client_id, resolution, reason }`, where `agent_id` is
-the refused agent, `client_id` its connection, and `reason` is `"gate_row"` (a
+the refused agent for wall refusals (otherwise the approval's agent, or null),
+`client_id` is the resolving connection, and `reason` is `"gate_row"` (a
 high-risk gate row, anyone's) or `"own_system_row"` (a system-level row it
-raised). The row is not touched and no `approval.resolved` follows.
+raised), `"invalid_resolution"`, or `"owner_not_connected"`. Option/readiness
+refusals also carry `method: "host.resolve_approval"` and are durable on the floor
+journal. The row is not touched and no `approval.resolved` follows.
 
 For an `approval.requested` created from `agents.chat.event`, the ledger row
 uses the chat event's `approval_id` and its `details` include
@@ -400,5 +440,32 @@ method exists for this, and exactly one of the two paths applies to a given
 view, so a sign-in is never announced twice. The standing session never emits:
 no agent tool can run against it.
 
+
+#### `host.withdraw_approval`
+
+- **Params**: `{ id: string, reason: string }`.
+- **Returns**: `{ withdrawn: true, id: string }`.
+- Only the authenticated opener principal may withdraw its own pending question,
+  including a system-level row. Withdrawal is never an approval. It closes the
+  mirrored floor topic, removes the pending approval and durably records one
+  withdrawal on the existing floor journal, then emits `approval.withdrawn`.
+  A repeated withdrawal is refused. Opener identity is stamped independently
+  of the caller's advisory `agent_id`.
+
+`host.request_approval` accepts an optional `deadline` in absolute Unix
+milliseconds. Past deadlines are refused; the returned approval carries it.
+The floor uses it instead of its default 24-hour deadline. The opener may take
+its own reversible default at the deadline and withdraw the stale question.
+CAR does not itself execute a default or infer authorization from silence.
+The host installs the assistant with `agents.install {owner_assistant: true, …}`
+or binds an existing installation with `conversation.assistant.bind`.
+Before the first binding, any authenticated caller may raise an approval.
+The binding is durably recorded in the floor journal and activates the gate:
+the gate applies to agent-originated `host.request_approval` and accepts only
+that authenticated assistant. Other agents are refused, including a forged
+advisory `agent_id`, and the refusal is durably recorded on the floor.
+Daemon-raised rows (including spend warnings, heal, and Lattice approvals with
+no agent id) and owner-raised rows pass both this gate and the phone mirror.
+The opener may still withdraw its own question; withdrawal grants no authority.
 
 {% endraw %}

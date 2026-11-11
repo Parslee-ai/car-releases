@@ -361,4 +361,112 @@ Decommissioning the external Tank process is an operator decision, not an action
 CAR takes. The principal may stop it with `car stop car-tank` or keep it
 permanently `watchOnly`; CAR neither changes Tank's configuration nor stops it.
 
+## Notify an operator when a supervised agent gives up
+
+`<CAR_HOME>` defaults to `~/.car`. Add this optional setting to the existing
+`<CAR_HOME>/config.toml` and restart the daemon:
+
+```toml
+[selfheal]
+notification_command = { program = "/absolute/path/notify-agent", args = [] }
+```
+
+Leaving `notification_command` unset is always correct: notifications are optional,
+and with no setting, no notification process starts. Malformed notification settings
+are reported and refuse delivery while valid auto-fix settings and detection ticks
+continue. Invalid TOML syntax refuses auto-fix with its existing visible parse reason.
+The setting permits only a program and arguments; it has no credential or environment
+field. The sender owns its credentials independently of CAR.
+
+Notification warnings go to the daemon's stderr, subject to its `RUST_LOG` filter.
+For a foreground daemon, read that terminal; for a service, read its stderr capture.
+When macOS CarHost launches the daemon, it also saves stderr to
+`<CAR_HOME>/logs/car-server.stderr.log` (with one rotated `.1` file).
+
+When an agent gives up, the next tick sends one JSON object on stdin, then closes
+stdin (EOF). Its only `kind` is `agent_gave_up` and its only `severity` is `critical`:
+
+```json
+{
+  "agent_id": "nightly-agent",
+  "kind": "agent_gave_up",
+  "severity": "critical",
+  "first_observed_at": "2026-11-03T12:00:00Z",
+  "last_observed_at": "2026-11-03T12:00:00Z",
+  "car_version": "0.60.0",
+  "exit_code": 17,
+  "restart_count": 2
+}
+```
+
+Exit code may be null when unavailable. Evidence text has been removed: no stderr,
+stdout or other agent-written text is sent, regardless of secret length or shape.
+Only allowlisted structured facts are sent, including when reading a legacy pending
+incident. CAR does not need to read `<CAR_HOME>/env` or resolve a credential for this
+payload. The command starts with a cleared environment and minimal platform baseline.
+
+A 30-second limit bounds a command that has not exited. The direct child's exit code
+0 marks delivery successful, even if a descendant holds stdout/stderr open. After
+exit CAR allows a brief final drain, closes the pipes and cleans up remaining owned
+descendants. It drains concurrently while retaining at most 16 KiB per stream.
+All sends in one tick share a 60-second total budget. A sender still has its own
+30-second limit, shortened when less tick budget remains. CAR rotates the next
+starting agent after the last attempted sender, so deferred agents get a fair turn
+on the next tick. Skipped sends are recorded as `tick_budget_deferred` with
+`sent: false`; no sender was started for those rows. The tick then continues to
+heal filing and auto-fix.
+The sender should exit 0 only after its destination accepts the event.
+
+Notification state is in `<CAR_HOME>/selfheal/notifications.jsonl`, separate from
+`detections.jsonl` so older daemons can boot on rollback. Observation, recovery,
+retirement and attempt rows are private. Attempts include only the sender's own
+output tail (at most 4096 bytes), exit result and failure class. Each failure class
+adds at most one attempt row per incident, even if exit codes alternate or the sender prints a different tail each time. A new incident always
+records its first failure;
+every failed attempt still logs a warning. Failed deliveries retry on later ticks.
+An unsent give-up survives a restart only if `notifications.jsonl` can be written.
+With a writable journal, retries continue after restart even when the original
+agent is stopped and `auto_start` is false. If that path is unusable (a directory,
+a symlink, or a read-only file), the daemon warns
+and keeps ticking, but it cannot remember across a restart what it failed to send.
+A notification journal append failure logs a warning and does not fail the tick or
+skip other agents. CAR retains the row in memory, including a successful delivery,
+so a lost sent row does not cause a resend every tick in that daemon life.
+Success stops retries. A crash after delivery but before persisting the sent mark may
+cause a duplicate; senders can deduplicate downstream.
+
+Within one daemon life, after that daemon observed the give-up, a tick seeing Running,
+Backoff or Stopped rearms the next give-up. Immediately after daemon boot, Stopped
+alone is not recovery; CAR needs proof of execution, such as Running or a newly
+observed exit code. Recovery and give-up entirely between ticks remain one incident.
+A never-Errored agent merely climbing restarts does not notify. Removed agents retire
+pending incidents, so re-adding the id does not deliver an obsolete event.
+
+Torn, garbage and unknown-kind notification rows are skipped with a warning naming
+`notifications.jsonl` and their line number. Such rows never establish successful
+sending; valid retained incident rows remain eligible for retry. A torn final row is
+separated before the next append. The detection journal's loader is unchanged.
+
+### Webhook sender with sender-owned credentials
+
+Install this executable as `/absolute/path/notify-agent`:
+
+```sh
+#!/bin/sh
+exec /usr/bin/curl --fail --silent --show-error \
+  --config /absolute/private/webhook.curl \
+  --header 'Content-Type: application/json' --data-binary @-
+```
+
+The sender-owned `/absolute/private/webhook.curl` has mode 600 and curl's syntax:
+
+```text
+url = "https://example.invalid/agent-notifications"
+header = "Authorization: Bearer REPLACE_WITH_SENDER_OWNED_TOKEN"
+```
+
+Provision that file independently. CAR receives only its path in the sender script;
+CAR neither reads nor supplies that credential. The default cadence is 900 seconds;
+`CAR_SELFHEAL_INTERVAL_SECS` shortens cadence for isolated development proofs.
+
 {% endraw %}

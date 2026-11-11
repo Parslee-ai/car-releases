@@ -140,6 +140,8 @@ These need no credential: `initialize`, `ping`, `tools/list`, `prompts/list`, no
 
 **Lattice tools.** The same endpoint serves `lattice_join`, `lattice_leave`, `lattice_nodes`, `lattice_find`, `lattice_claim`, `lattice_release`, `lattice_claims`, and `lattice_wait`, which mirror the `lattice.*` methods documented under the method reference, keyed on the session's `mcp:<peer-id>`. `lattice.requests`, `lattice.respond` and `lattice.human.status` are deliberately **not** MCP tools: they answer for a person, which only the operator and an agent the operator made that person's delegate may do, and an MCP session is neither. `peer_message` accepts the same optional `kind` and `in_reply_to` as `agents.message`, can address a human node as `human:<name>`, and `peer_list` rows carry each peer's `node` profile (or `null`) and include human nodes. Nothing pushes to an MCP client, so every node tool result, `peer_list`, and `peer_message` include `inbox_pending` — the session learns it has mail the next time it calls any of them.
 
+**Board tools.** The same endpoint serves `board_list`, `board_upsert`, `board_transition`, `board_comment` and `board_history`, which mirror the `board.*` methods (see [board](websocket-protocol/board.md#board)) for the personal board, keyed on the session's `mcp:<peer-id>` as the writing node. An `org` argument is refused: the board is the session's, never one it names.
+
 CAR-spawned batch CLIs remain send-only. Their generated MCP URL carries `car-mcp-mode=batch`; initialize still gives the child a distinct sender principal, but CAR omits it from the peer directory and `peer_inbox` refuses it. This keeps `PeerKind::ExternalCli`'s closed-stdin lifecycle separate from `PeerKind::McpSession`.
 
 **The push channel is declined** (car#972 Track B). CAR's MCP server sends no server-initiated messages on either transport, by decision: stdio is a strict request/response loop with exclusively-owned stdout, and HTTP offers no response stream. The daemon now retains a small protocol-session identity and a polled peer inbox, but neither is a sink and neither can emit a notification. Concretely:
@@ -158,11 +160,11 @@ Adding push would still require per-connection sinks, a writer handle through th
 | loopback — `http`/`https` on `localhost`, `127.0.0.0/8`, or `::1`, any port | **allowed** |
 | anything else, including the literal `null` (sandboxed iframe, `file://`, redirected cross-origin) | **`403`** with `{"error":"origin not allowed"}` |
 
-`POST /mcp` and `DELETE /mcp` are guarded; a rejected request never reaches dispatch or session teardown. `GET /mcp` needs no guard — it is a constant `405` with no side effect (see the push-channel decline above). **`GET /mcp/health` is exempt** — it has no side effect and no secrets, and the documented uptime `curl` plus browser probes must keep working.
+Every method on `/mcp` is guarded; a rejected request never reaches dispatch or session teardown, and a `GET` (or `PUT`, `PATCH`, `OPTIONS`) with a disallowed `Origin` gets this `403`, not the `405`, because the transport requires `Origin` validation on every incoming connection. **`GET /mcp/health` is exempt** — it has no side effect and no secrets, and the documented uptime `curl` plus browser probes must keep working.
 
 The rule does not widen for a non-loopback `--mcp-bind`: a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin` value, and wider exposure makes the guard more important, not less. To serve browser traffic from another origin, front the daemon with a reverse proxy that owns its own CORS/`Origin` policy.
 
-**`Host` validation on `/mcp`** (car#3185). A rebound DNS name reaches the loopback listener carrying the attacker's hostname, so `POST /mcp` and `DELETE /mcp` also require `Host` to be `localhost` or an IP literal (any port); any other name is `403` with `{"error":"host not allowed"}`, before dispatch. Rebinding needs a name to rebind, so a literal cannot be one, and a wildcard bind's clients — including the CLIs the daemon itself spawns at `http://0.0.0.0:<port>/mcp` — arrive with one. An absent `Host` is allowed — every browser sends one. **Caveat for a wildcard bind** (`--mcp-bind 0.0.0.0:<port>`): reach it by IP address (`http://192.168.1.20:9102/mcp`, or `127.0.0.1` on the machine itself), not by a hostname such as `my-mac.local`, which is refused; the CLIs the daemon spawns are handed a loopback URL for it.
+**`Host` validation on `/mcp`** (car#3185). A rebound DNS name reaches the loopback listener carrying the attacker's hostname, so every method on `/mcp` also requires `Host` to be `localhost` or an IP literal (any port); any other name is `403` with `{"error":"host not allowed"}`, before dispatch. Rebinding needs a name to rebind, so a literal cannot be one, and a wildcard bind's clients — including the CLIs the daemon itself spawns at `http://0.0.0.0:<port>/mcp` — arrive with one. An absent `Host` is allowed — every browser sends one. **Caveat for a wildcard bind** (`--mcp-bind 0.0.0.0:<port>`): reach it by IP address (`http://192.168.1.20:9102/mcp`, or `127.0.0.1` on the machine itself), not by a hostname such as `my-mac.local`, which is refused; the CLIs the daemon spawns are handed a loopback URL for it.
 
 **`MCP-Protocol-Version` on `/mcp`.** Once a client has negotiated a revision on `initialize`, the HTTP transport asks it to name that revision on every later request. Same absent-permissive, present-strict shape as `Origin`:
 
@@ -172,7 +174,7 @@ The rule does not widen for a non-loopback `--mcp-bind`: a wildcard bind's host 
 | a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05`, `2025-06-18` or `2025-11-25` today) | **allowed** |
 | anything else, including an empty or non-UTF-8 value | **`400`** with `{"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18","2025-11-25"]}` |
 
-`POST /mcp` is guarded before the JSON-RPC parse, so a rejected request runs no tool; `DELETE /mcp` uses the same check before session teardown. `GET /mcp` needs no guard — it is a constant `405` whatever the header says. **`GET /mcp/health` is exempt** — a client whose version we just rejected reads `protocol_version` off that probe to learn what we speak.
+`POST /mcp` is guarded before the JSON-RPC parse, so a rejected request runs no tool; `DELETE /mcp` uses the same check before session teardown, and `GET /mcp` answers an unsupported value with this `400` before its `405`. **`GET /mcp/health` is exempt** — a client whose version we just rejected reads `protocol_version` off that probe to learn what we speak.
 
 A foreign value is a `400` rather than a silent downshift because the header states which dialect the client will read the reply in; answering in a revision it never agreed to is the inversion `initialize` negotiation exists to prevent. The `400` body names the supported list so a client that guessed wrong can correct itself. CAR's own MCP *client* (`car-connectors`) already sends this header with the version it negotiated, so it is unaffected.
 
@@ -186,7 +188,7 @@ An assistant run takes minutes, so `assistant_start` returns a handle immediatel
 
 | Tool | Arguments | Result |
 |---|---|---|
-| `assistant_start` | `task` (required), `cwd?`, `until?`, `max_turns?` (default 50, max 200), `local?` (default false), `model?`, `invoked_by?`, `org?`, `personal?` | `{ run_id, status: "running", poll_after_ms, sandbox, ancestry }` |
+| `assistant_start` | `task` (required), `cwd?`, `until?`, `max_turns?` (default 50, max 200), `local?` (default false), `model?`, `invoked_by?`, `org?`, `personal?`, `decision_class?` | `{ run_id, status: "running", poll_after_ms, sandbox, ancestry }` |
 | `assistant_poll` | `run_id` (required), `since_seq?` (default 0) | `{ run_id, status, events, next_seq, events_skipped, ancestry, created_at }` plus `poll_after_ms` while running or `result` once terminal |
 | `assistant_cancel` | `run_id` (required) | `{ run_id, status: "cancelled" \| "already_terminal" \| "unknown" }` |
 
@@ -594,8 +596,9 @@ also includes `a2ui.event` (after `a2ui/subscribe`),
 
 ### Parslee account sign-in (`auth.*`)
 
-GUI-driven Parslee OAuth2 PKCE sign-in for CAR Host.app, sharing one
-implementation with `car auth login` (the `car-auth` crate).
+GUI-driven Parslee OAuth2 PKCE sign-in for the CarHost apps (macOS and
+Windows), sharing one implementation with `car auth login` (the `car-auth`
+crate).
 The trusted in-process GUI carries the PKCE `verifier` + `state`
 between `auth.start` and `auth.complete`. The daemon serializes every
 process-global `auth.*` operation and persists only an attempt-bound,
@@ -1270,6 +1273,7 @@ behavior. This section is long — for a compact map of every method with deep l
 - [mail](websocket-protocol/mail.md#mail) <!-- ws-protocol:include -->
 - [messages](websocket-protocol/messages.md#messages) <!-- ws-protocol:include -->
 - [messaging](websocket-protocol/messaging.md#messaging) <!-- ws-protocol:include -->
+- [conversation](websocket-protocol/conversation.md#conversation) <!-- ws-protocol:include -->
 - [notes](websocket-protocol/notes.md#notes) <!-- ws-protocol:include -->
 - [reminders](websocket-protocol/reminders.md#reminders) <!-- ws-protocol:include -->
 - [photos](websocket-protocol/photos.md#photos) <!-- ws-protocol:include -->
@@ -1303,6 +1307,7 @@ behavior. This section is long — for a compact map of every method with deep l
 - [outcomes](websocket-protocol/outcomes.md#outcomes) <!-- ws-protocol:include -->
 - [memory (additional)](websocket-protocol/memory.md#memory-additional) <!-- ws-protocol:include -->
 - [cascade](websocket-protocol/cascade.md#cascade) <!-- ws-protocol:include -->
+- [ledger](websocket-protocol/ledger.md#ledger) <!-- ws-protocol:include -->
 - [sync](websocket-protocol/sync.md#sync) <!-- ws-protocol:include -->
 - [lease](websocket-protocol/lease.md#lease) <!-- ws-protocol:include -->
 - [skills (additional)](websocket-protocol/skills.md#skills-additional) <!-- ws-protocol:include -->
@@ -1324,7 +1329,10 @@ behavior. This section is long — for a compact map of every method with deep l
 - [inference](websocket-protocol/inference.md#inference) <!-- ws-protocol:include -->
 - [workflow](websocket-protocol/workflow.md#workflow) <!-- ws-protocol:include -->
 - [Top-level (no namespace)](websocket-protocol/top-level.md#top-level-no-namespace) <!-- ws-protocol:include -->
+- [beads](websocket-protocol/beads.md#beads) <!-- ws-protocol:include -->
+- [brief](websocket-protocol/brief.md#brief) <!-- ws-protocol:include -->
 - [lattice](websocket-protocol/lattice.md#lattice) <!-- ws-protocol:include -->
+- [board](websocket-protocol/board.md#board) <!-- ws-protocol:include -->
 ## Notification methods (server → client)
 
 These arrive as JSON-RPC notifications (no `id`). The client doesn't respond to them.

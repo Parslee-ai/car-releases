@@ -73,7 +73,7 @@ A current-protocol session without `feedback.v1` gets the standard `protocol cap
 - **Returns**: `{ entries: [SpoolEntryRow], has_more: boolean, staleness }` — the newest `limit` merged local/server rows, kept in oldest-first order. `limit` defaults to 100 and is clamped to the hard maximum of 200; `has_more` says whether older rows were omitted.
 
 A `SpoolEntryRow` is
-`{ id, client_submission_id, state, lane, title, created_at, age_days, source: "local" | "server", note? }`:
+`{ id, client_submission_id, state, lane, title, created_at, age_days, source: "local" | "server", note?, hold_reason? }`:
 `state` is the tagged spool lifecycle object — `{ state: "queued" }`,
 `{ state: "sending" }`, `{ state: "acknowledged", server_id }`,
 `{ state: "terminal_actionable", reason: "auth_required" | "reconsent_required" | "forbidden" }`
@@ -86,17 +86,41 @@ authenticated lane, `feedback.list` merges the signed-in user's rows from
 CAR's own Parslee feedback intake (`GET /api/v1/orgs/{orgId}/car-feedback/mine`,
 fetched via the Parslee session; any fetch failure degrades to
 local-only, never an error) by acknowledged server id — a local row whose
-server counterpart advanced shows the server state. Queued entries drain
-to `POST /api/v1/orgs/{orgId}/car-feedback` only while the anonymous capability probe
-(`GET /api/v1/car-feedback/capability`) advertises the entry's lane:
-`authenticatedIntake` gates signed-in entries, and anonymous entries hold
-while `anonymousIntake` is `false` (the v1 server reality). Authenticated
-entries also hold while the Parslee session cannot be checked (a rate limit,
-an outage, or a failed renewal); they are retried, not marked `auth_required`. `note?` carries per-row daemon annotations on TERMINAL settles (the
+server counterpart advanced shows the server state. Authenticated queued
+entries drain to `POST /api/v1/orgs/{orgId}/car-feedback`, through the login
+that saved them, only while the anonymous capability probe
+(`GET /api/v1/car-feedback/capability`) advertises `authenticatedIntake`.
+They also hold while the Parslee session cannot be checked (a rate limit, an
+outage, or a failed renewal); they are retried, not marked `auth_required`.
+Anonymous entries never drain: this version sends signed-in reports only,
+whatever the probe says, and the lane is never rewritten.
+
+`hold_reason` is present on a `queued` or `sending` local row that cannot send
+as things stand; `state` stays `queued`, nothing about the entry changes, and
+the field is absent on every other row:
+
+- `"anonymous"` — saved on the anonymous lane (signed out, or the sign-in's
+  organization could not be confirmed). Signing in later does not send it;
+  export is how it reaches anyone.
+- `"login_removed"` — saved under a login that is no longer signed in on this
+  machine. The drain tries it again if that same account signs in again.
+- `"sign_in_required"` — saved under a login that is still on this machine
+  but cannot renew without a new sign-in: the stored record has no refresh
+  token and nothing unexpired for it. The drain tries it again once that
+  account signs in again. A refresh token the issuer has revoked is not
+  visible locally, so that case is not marked.
+- `"login_unrecorded"` — saved signed in by an older version that did not
+  record which login saved it. The drain never guesses a login, so it stays.
+
+The daemon reads the machine's signed-in logins (a local credential-store
+read, no network) only when some pending row was saved under one. When they
+cannot be read, or an environment bearer stands in for them, no row is
+marked `login_removed` or `sign_in_required`. `note?` carries per-row daemon annotations on TERMINAL settles (the
 drain persists upload-time omission notes when an entry settles
 terminal); for successful uploads, omissions surface at submit time in
 the manifest/UI warning, not as a persisted row note.
-`staleness` is non-null when any pending entry has waited more than 2 days.
+`staleness` is non-null when any pending entry that can still send (no
+`hold_reason`) has waited 2 days or more; held entries are never counted.
 
 
 {% endraw %}

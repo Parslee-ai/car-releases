@@ -46,6 +46,51 @@ esac
 
 asset="car-${target}.tar.gz"
 
+# --- Linux: C library ---------------------------------------------------------
+#
+# The Linux binaries are built on Ubuntu 24.04 (the `runs-on` of build-linux in
+# the car repo's build.yml) and link against its glibc, so they do not start on
+# an older glibc or on musl. Stop here rather than install binaries that fail
+# with "GLIBC_2.xx not found". Raise MIN_GLIBC when that runner moves.
+
+MIN_GLIBC="2.39"
+REQUIREMENTS_URL="https://github.com/${REPO}/blob/main/DISTRIBUTION.md#linux-requirements"
+
+# Prints the running glibc version (for example 2.39), or nothing when it
+# cannot be read.
+glibc_version() {
+    v=$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}') || v=""
+    if [ -z "$v" ]; then
+        v=$(ldd --version 2>&1 | awk 'NR==1 {print $NF}') || v=""
+    fi
+    case "$v" in
+        [0-9]*.[0-9]*) printf '%s\n' "$v" ;;
+    esac
+}
+
+# True when version $1 is at least version $2 (both major.minor).
+version_at_least() {
+    have_major=${1%%.*}; have_rest=${1#*.}; have_minor=${have_rest%%.*}
+    need_major=${2%%.*}; need_minor=${2#*.}
+    case "$have_major$have_minor" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$have_major" -gt "$need_major" ] ||
+        { [ "$have_major" -eq "$need_major" ] && [ "$have_minor" -ge "$need_minor" ]; }
+}
+
+if [ "$os" = "linux" ]; then
+    if ldd --version 2>&1 | grep -qi musl; then
+        die "this system uses musl libc. CAR's Linux binaries need glibc ${MIN_GLIBC} or newer. See ${REQUIREMENTS_URL}"
+    fi
+    glibc=$(glibc_version)
+    if [ -z "$glibc" ]; then
+        warn "couldn't read the glibc version; CAR's Linux binaries need glibc ${MIN_GLIBC} or newer"
+    elif ! version_at_least "$glibc" "$MIN_GLIBC"; then
+        die "this system has glibc ${glibc}. CAR's Linux binaries need glibc ${MIN_GLIBC} or newer (Ubuntu 24.04+, Debian 13+, Fedora 40+). See ${REQUIREMENTS_URL}"
+    fi
+fi
+
 # --- Resolve version --------------------------------------------------------
 
 if [ "$CAR_VERSION" = "latest" ]; then
@@ -95,6 +140,24 @@ done
 
 log "installed binaries:"
 ls -1 "$CAR_INSTALL/bin"
+
+# `car` and `car-server` load the ALSA and D-Bus client libraries at start.
+# Minimal images and servers often have neither. Only checked when the
+# loader cache can be read.
+if [ "$os" = "linux" ]; then
+    ldconfig_bin=$(command -v ldconfig 2>/dev/null || echo /sbin/ldconfig)
+    if libs=$("$ldconfig_bin" -p 2>/dev/null) && [ -n "$libs" ]; then
+        missing=""
+        for lib in libasound.so.2 libdbus-1.so.3; do
+            printf '%s\n' "$libs" | grep -q "$lib" || missing="$missing $lib"
+        done
+        if [ -n "$missing" ]; then
+            warn "missing runtime libraries:${missing}. car won't start until they are installed:"
+            warn "  Debian 13 / Ubuntu 24.04+: sudo apt install libasound2t64 libdbus-1-3"
+            warn "  Fedora: sudo dnf install alsa-lib dbus-libs"
+        fi
+    fi
+fi
 
 if [ "${CAR_NO_PATH:-0}" = "1" ]; then
     exit 0

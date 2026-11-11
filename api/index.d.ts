@@ -38,6 +38,8 @@ export interface AgentToolSchema {
   description: string;
   parameters: Record<string, unknown>;
   timeoutMs?: number;
+  /** Successful new signatures count as state changes for the task guard. */
+  mutating?: boolean;
 }
 
 export interface AgentToolContext {
@@ -50,8 +52,9 @@ export type AgentTool = (
   context: AgentToolContext,
 ) => unknown | Promise<unknown>;
 
+/** stalled: repeated actions without progress; no_terminal: second text-only turn when a terminal is required. Both are unsuccessful endings. */
 export type AgentOutcomeStatus =
-  | 'success' | 'partial_success' | 'done' | 'give_up' | 'timeout' | 'failure';
+  | 'success' | 'partial_success' | 'done' | 'give_up' | 'timeout' | 'failure' | 'stalled' | 'no_terminal';
 
 export interface AgentOutcome {
   /** Durable trace key, or null when runs.start was unavailable/unacknowledged. */
@@ -67,6 +70,15 @@ export interface AgentOutcome {
   };
   tools_called: string[];
   timestamp: string;
+  transcript: AgentMessage[];
+  terminal_tool?: { name: string; arguments: Record<string, unknown> };
+}
+
+export type AgentMessage = Record<string, unknown> & { role: string };
+export interface AgentTerminalTool extends AgentToolSchema {
+  /** A refused terminal call returns to the model as a tool result so it can repair the call.
+   * Runtime validates the schema first. Exactly true accepts; all other results refuse. Empty strings use a default reason; throws use the error message (default if empty). */
+  validate(args: Record<string, unknown>): boolean | string | Promise<boolean | string>;
 }
 
 /** Declarative input consumed by `car-runtime/agent-loop`. */
@@ -74,12 +86,23 @@ export interface AgentLoopConfig {
   agentId?: string;
   agentName: string;
   identity: string;
-  toolSchemas?: AgentToolSchema[];
+  toolSchemas?: AgentToolSchema[] | null;
   tools?: Record<string, AgentTool>;
   policies?: Array<[string, string, string?, string?, string?, string?]>;
   defaultModel?: string | null;
+  /** Output budget; defaults to 4096 for task and chat turns. */
   maxTokens?: number;
-  maxTurns?: number;
+  /** Task default 8; null uses the default, 0 or Infinity removes the task cap. Chat retains its existing cap semantics. */
+  maxTurns?: number | null;
+  /** Task-only validated endings; replace finish and imply requireTerminal when nonempty. */
+  terminalTools?: AgentTerminalTool[] | null;
+  /** Task-only; defaults false. One text-only turn gets a reminder; the second ends as no_terminal. */
+  requireTerminal?: boolean;
+  /** Task-only; defaults true. Repeat 3 nudges, repeat 6 stalls; 8 turns without mutation only nudges. False disables it. */
+  noProgressGuard?: boolean;
+  /** Old system messages are replaced; unanswered calls are closed without rerunning them; the guard starts fresh.
+   * Prior tool calls must include arguments as a JSON object; absent or non-object arguments are refused before runs.start, after JSON serialization. */
+  priorMessages?: AgentMessage[];
   targetOutcome?: string;
   standingGoal?: string | null;
   intervalSecs?: number;
@@ -88,7 +111,7 @@ export interface AgentLoopConfig {
 }
 
 export interface AgentLoopOptions {
-  maxTurns?: number;
+  maxTurns?: number | null;
 }
 
 export interface AgentChatTurnOptions {
@@ -566,6 +589,12 @@ export class CarRuntime {
     handler: (paramsJson: string) => void,
   ): void;
 
+  /** Conversation floor; asker access; JSON params/result. */
+  conversationOpen(paramsJson: string): Promise<string>;
+  /** Conversation floor; asker access; JSON params/result. */
+  conversationEmergency(paramsJson: string): Promise<string>;
+  /** Conversation floor; asker access; JSON params/result. */
+  conversationGet(paramsJson: string): Promise<string>;
   // BEGIN GENERATED daemon wrappers: CarRuntime
   /** Generated daemon wrapper for `CancelTask` (operator). */
   cancelTask(paramsJson: string): Promise<string>;
@@ -654,6 +683,12 @@ export class CarRuntime {
   /** Generated daemon wrapper for `a2ui/unsubscribe` (operator). */
   a2uiUnsubscribe(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `accounts.bench` (operator_only). */
+  accountsBench(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `accounts.usage` (operator_only). */
+  accountsUsage(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `admission.status` (operator). */
   admissionStatus(paramsJson: string): Promise<string>;
 
@@ -728,6 +763,48 @@ export class CarRuntime {
 
   /** Generated daemon wrapper for `automation.shortcuts.run` (operator). */
   automationShortcutsRun(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.accept` (owner). */
+  beadsAccept(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.create_child` (owner). */
+  beadsCreateChild(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.create_root` (owner). */
+  beadsCreateRoot(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.events` (owner). */
+  beadsEvents(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.get` (owner). */
+  beadsGet(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.handoff` (owner). */
+  beadsHandoff(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.list` (owner). */
+  beadsList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.stale` (owner). */
+  beadsStale(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `beads.touch` (owner). */
+  beadsTouch(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.comment` (operator). */
+  boardComment(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.history` (operator). */
+  boardHistory(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.list` (operator). */
+  boardList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.transition` (operator). */
+  boardTransition(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.upsert` (operator). */
+  boardUpsert(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `browser.producer.register` (operator). */
   browserProducerRegister(paramsJson: string): Promise<string>;
@@ -953,6 +1030,9 @@ export class CarRuntime {
 
   /** Generated daemon wrapper for `host.subscribe` (operator). */
   hostSubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `host.withdraw_approval` (agent). */
+  hostWithdrawApproval(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `image.generate` (operator). */
   imageGenerate(paramsJson: string): Promise<string>;
@@ -1248,10 +1328,10 @@ export class CarRuntime {
   /** Generated daemon wrapper for `runs.cancel` (owner). */
   runsCancel(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `runs.get_trace` (owner). */
+  /** Generated daemon wrapper for `runs.get_trace` (agent). */
   runsGetTrace(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `runs.list` (owner). */
+  /** Generated daemon wrapper for `runs.list` (agent). */
   runsList(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `runs.record_turns` (agent). */
@@ -1260,7 +1340,7 @@ export class CarRuntime {
   /** Generated daemon wrapper for `runs.resume` (agent). */
   runsResume(paramsJson: string): Promise<string>;
 
-  /** Generated daemon wrapper for `runs.subscribe` (owner). */
+  /** Generated daemon wrapper for `runs.subscribe` (agent). */
   runsSubscribe(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `runs.unsubscribe` (operator). */
@@ -1562,6 +1642,18 @@ export class CarRuntime {
    * from the turn's `agent.chat` params, and the daemon matches the frame to
    * that turn rather than to whichever turn holds `sessionId` when it
    * arrives, so a turn the host replaced cannot end its successor (car#2668).
+   *
+   * Stops come the same way: the daemon's `agent.chat.cancel` carries
+   * `{ session_id, turn_id? }`. The binding drops a queued turn the Stop
+   * names and earlier queued turns while its ordering entry is retained;
+   * a newer handler is then not notified (#2838). The process-wide bridge
+   * remembers up to 1,024 named identities across clients and sessions. An
+   * absent, unseen or evicted ID instead drops this runtime owner's queued
+   * session turns and permits its own cancellation handler to receive the
+   * Stop, which can affect newer work. Because a JS handler may still run an
+   * older turn when a newer one starts, this binding does not declare
+   * `stops_by_turn_id`: the daemon does not send it a Stop for a replaced
+   * turn while a newer turn holds the session.
    */
   chatTurnEvent(
     sessionId: string,
@@ -2092,12 +2184,14 @@ export class CarRuntime {
    * `sync.pump` — one push/pull/ack reconciliation round against the relay (B6).
    * Returns `{ pushed, push_deduped, folded, acked, state_hash }`; with org-scope
    * sync on, `{ user, orgs: { <org>: { result } | { error } } }` plus
-   * `org`/`org_error` when exactly one org is configured.
+   * `org`/`org_error` when exactly one org is configured. Both relay backends
+   * require the existing sync key. Unreadable ciphertext stays journaled without
+   * folding or acknowledgment.
    */
   syncPump(requestJson: string): Promise<string>;
-  /** `sync.checkpoint` — publish a device-side checkpoint at the stable frontier (B6). */
+  /** `sync.checkpoint` — returns published:false until encrypted per-audience checkpoints are supported (B6). */
   syncCheckpoint(requestJson: string): Promise<string>;
-  /** `sync.rebase` — cold bootstrap / straggler re-entry onto the latest checkpoint (B6). */
+  /** `sync.rebase` — requires a sync key; returns rebased:false without a checkpoint, refuses legacy plaintext snapshots (B6). */
   syncRebase(requestJson: string): Promise<string>;
   /** `sync.transcript` — the ordered role-threaded `Turn[]` projection (B6). */
   syncTranscript(requestJson: string): Promise<string>;
@@ -2379,6 +2473,8 @@ export class CarRuntime {
 
   /**
    * Generate text. Returns JSON: `{"text":"..."}`.
+   * Direct TypeSafe: prompt is JSON with state/questions/optional assets,
+   * omitting model; text contains the System One response JSON (non-streaming).
    *
    * `intentJson` is an optional serialized {@link IntentHint} —
    * caller-facing routing hints (task, prefer_local, require). Omit to
@@ -2554,9 +2650,11 @@ export class CarRuntime {
 
   /**
    * Classify text against labels. Returns a JSON array of `{label, score}`,
-   * best first. With `model: "parslee/jev"` (TypeSafe's Jev through Parslee;
-   * also the default when `model` is omitted, none is configured, and you are
-   * signed in to Parslee) `score` is the model's probability for the label. On a generative model
+   * best first. A registered TypeSafe direct row takes precedence over the
+   * managed default and reads its named key from CAR's store, never Parslee.
+   * With `model: "parslee/jev"` (TypeSafe's Jev through Parslee;
+   * also the default when `model` is omitted, no classifier preference or direct
+   * row is configured, and you are signed in to Parslee) `score` is the model's probability for the label. On a generative model
    * `score` is a normalized match strength
    * between the model's reply and the label, not a probability; labels match
    * case-insensitively with `_`/`-`/punctuation read as spaces. Rejects when
@@ -3144,6 +3242,7 @@ export class CarRuntime {
     model: string | null | undefined,
     organizationId: string | null | undefined,
     personal?: boolean | null,
+    decisionClass?: string | null,
   ): Promise<string>;
 
   /**
@@ -3575,7 +3674,10 @@ export class CarRuntime {
    * `--autoplay-policy=no-user-gesture-required`, and the
    * container-friendly `--no-sandbox` /
    * `--disable-dev-shm-usage` / `--disable-setuid-sandbox`. Like
-   * `headed`, honoured only on the launch call.
+   * `headed`, honoured only on the launch call. On macOS inside a
+   * Seatbelt sandbox that confines nothing CAR checks (writes to the
+   * home folder, CAR's credential files), the launch is refused even
+   * with `--no-sandbox`.
    */
   browserRun(
     scriptJson: string,
@@ -4250,6 +4352,9 @@ export class HostClient {
   /** Generated host wrapper for `agents.message.pending`. */
   agentsMessagePending(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `agents.session_brief`. */
+  agentsSessionBrief(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `agents.upsert`. */
   agentsUpsert(paramsJson: string): Promise<string>;
 
@@ -4304,8 +4409,38 @@ export class HostClient {
   /** Generated host wrapper for `auth.switch_org`. */
   authSwitchOrg(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `beads.bind_factory`. */
+  beadsBindFactory(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `beads.index`. */
+  beadsIndex(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `beads.rebuild`. */
+  beadsRebuild(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `brief.compile`. */
+  briefCompile(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `brief.curate_fact`. */
+  briefCurateFact(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `brief.read`. */
+  briefRead(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `concierge.maintain`. */
   conciergeMaintain(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `conversation.answer`. */
+  conversationAnswer(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `conversation.assistant.bind`. */
+  conversationAssistantBind(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `conversation.change_subject`. */
+  conversationChangeSubject(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `conversation.list`. */
+  conversationList(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `credentials.issue`. */
   credentialsIssue(paramsJson: string): Promise<string>;
@@ -4412,6 +4547,36 @@ export class HostClient {
   /** Generated host wrapper for `lattice.relay.probe`. */
   latticeRelayProbe(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `ledger.class.override`. */
+  ledgerClassOverride(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.class.put`. */
+  ledgerClassPut(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.classes.list`. */
+  ledgerClassesList(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.dispatch`. */
+  ledgerDispatch(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.get`. */
+  ledgerGet(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.grade`. */
+  ledgerGrade(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.grade_note`. */
+  ledgerGradeNote(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.list`. */
+  ledgerList(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.put`. */
+  ledgerPut(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `ledger.rung_changes.list`. */
+  ledgerRungChangesList(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `messaging.config.get`. */
   messagingConfigGet(paramsJson: string): Promise<string>;
 
@@ -4493,6 +4658,15 @@ export class HostClient {
   /** Generated host wrapper for `session.clear_halt`. */
   sessionClearHalt(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `spend.assign_class`. */
+  spendAssignClass(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `spend.limits`. */
+  spendLimits(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `spend.set_limit`. */
+  spendSetLimit(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `tasks.schedule`. */
   tasksSchedule(paramsJson: string): Promise<string>;
 
@@ -4555,6 +4729,9 @@ export class HostClient {
  * `ActionResult` includes `rolled_back: true` when it succeeded before an
  * abort restored proposal state; false is omitted. Use this field, not the
  * human-readable warning in `error`, to detect rollback.
+ * Owner `messaging.send` output always includes `topic_id`, `queued`, and
+ * `delivered` on acceptance. A soft non-send returns `delivered:false` with
+ * `reason`; poll `conversation.get` while the floor retries until deadline.
  */
 export function executeProposal(
   rt: CarRuntime,
@@ -7026,3 +7203,6 @@ export function a2UiAction(actionJson: string): Promise<string>;
  * message otherwise.
  */
 export function a2UiValidatePayload(valueJson: string): string;
+
+/** Read the daemon-compiled session brief; absent or stale output is refused. */
+export function agentsSessionBrief(id: string): Promise<string>;

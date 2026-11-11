@@ -535,6 +535,9 @@ class CarRuntime:
     def runs_record_model_turn(self, params_json: str) -> str:
         """Record a model inference using the native daemon-backed implementation."""
 
+    def conversation_open(self, params_json: str) -> str: ...
+    def conversation_emergency(self, params_json: str) -> str: ...
+    def conversation_get(self, params_json: str) -> str: ...
     # BEGIN GENERATED daemon wrappers: CarRuntime
     def cancel_task(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `CancelTask` (operator).
@@ -623,6 +626,12 @@ class CarRuntime:
     def a2ui_unsubscribe(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `a2ui/unsubscribe` (operator).
 
+    def accounts_bench(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `accounts.bench` (operator_only).
+
+    def accounts_usage(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `accounts.usage` (operator_only).
+
     def admission_status(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `admission.status` (operator).
 
@@ -697,6 +706,48 @@ class CarRuntime:
 
     def automation_shortcuts_run(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `automation.shortcuts.run` (operator).
+
+    def beads_accept(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.accept` (owner).
+
+    def beads_create_child(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.create_child` (owner).
+
+    def beads_create_root(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.create_root` (owner).
+
+    def beads_events(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.events` (owner).
+
+    def beads_get(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.get` (owner).
+
+    def beads_handoff(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.handoff` (owner).
+
+    def beads_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.list` (owner).
+
+    def beads_stale(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.stale` (owner).
+
+    def beads_touch(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `beads.touch` (owner).
+
+    def board_comment(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.comment` (operator).
+
+    def board_history(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.history` (operator).
+
+    def board_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.list` (operator).
+
+    def board_transition(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.transition` (operator).
+
+    def board_upsert(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.upsert` (operator).
 
     def browser_producer_register(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `browser.producer.register` (operator).
@@ -922,6 +973,9 @@ class CarRuntime:
 
     def host_subscribe(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `host.subscribe` (operator).
+
+    def host_withdraw_approval(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `host.withdraw_approval` (agent).
 
     def image_generate(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `image.generate` (operator).
@@ -1215,10 +1269,10 @@ class CarRuntime:
     # Generated daemon wrapper for `runs.cancel` (owner).
 
     def runs_get_trace(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `runs.get_trace` (owner).
+    # Generated daemon wrapper for `runs.get_trace` (agent).
 
     def runs_list(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `runs.list` (owner).
+    # Generated daemon wrapper for `runs.list` (agent).
 
     def runs_record_turns(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `runs.record_turns` (agent).
@@ -1227,7 +1281,7 @@ class CarRuntime:
     # Generated daemon wrapper for `runs.resume` (agent).
 
     def runs_subscribe(self, params_json: str) -> str: ...
-    # Generated daemon wrapper for `runs.subscribe` (owner).
+    # Generated daemon wrapper for `runs.subscribe` (agent).
 
     def runs_unsubscribe(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `runs.unsubscribe` (operator).
@@ -1857,15 +1911,17 @@ class CarRuntime:
         """``sync.pump`` (B6) — one push/pull/ack reconciliation round against the
         relay. Returns ``{ pushed, push_deduped, folded, acked, state_hash }``; with
         org-scope sync on, ``{ user, orgs: { <org>: {result} | {error} } }`` plus
-        ``org``/``org_error`` when exactly one org is configured."""
+        ``org``/``org_error`` when exactly one org is configured. Both relays
+        require the existing sync key; unreadable ciphertext stays journaled
+        without folding or acknowledgment."""
 
     def sync_checkpoint(self, request_json: str) -> str:
-        """``sync.checkpoint`` (B6) — publish a device-side checkpoint at the
-        relay's stable frontier."""
+        """``sync.checkpoint`` (B6) — returns published:false until encrypted
+        per-audience checkpoints are supported."""
 
     def sync_rebase(self, request_json: str) -> str:
-        """``sync.rebase`` (B6) — cold bootstrap / straggler re-entry onto the
-        relay's latest checkpoint."""
+        """``sync.rebase`` (B6) — requires a sync key; returns rebased:false
+        without a checkpoint and refuses legacy plaintext snapshots."""
 
     def sync_transcript(self, request_json: str) -> str:
         """``sync.transcript`` (B6) — the ordered role-threaded ``Turn[]``
@@ -2146,6 +2202,16 @@ class CarRuntime:
         daemon matches the frame to that turn rather than to whichever turn
         holds ``session_id`` when it arrives, so a turn the host replaced
         cannot end its successor (car#2668).
+
+        Stops come the same way: the daemon's ``agent.chat.cancel`` carries
+        ``{session_id, turn_id?}``. The binding drops a queued turn the Stop
+        names and earlier queued turns while its ordering entry is retained;
+        a newer handler is then not notified (#2838). Each client queue retains
+        up to 1,024 named identities across sessions. An absent, unseen or
+        evicted ID drops all this client's queued session turns and permits its
+        own cancellation handler to receive the Stop, which can affect newer
+        work. The one-at-a-time bridge declares ``stops_by_turn_id: true``
+        within this bounded-history contract.
         """
 
     # --- Foreman ------------------------------------------------------
@@ -2530,6 +2596,10 @@ class CarRuntime:
         to an ``ActionResult`` that succeeded before an abort restored proposal
         state; false is omitted. Detect rollback from this field, never from
         the human-readable warning in ``error``.
+        Accepted owner ``messaging.send`` output includes ``topic_id``,
+        ``queued``, and ``delivered``. A soft non-send returns
+        ``delivered:false`` with ``reason``; poll ``conversation.get`` while
+        the floor retries until the deadline.
 
         ``tool_fn`` is called as ``tool_fn(call_json)`` for each host-tool
         action — ``call_json`` is
@@ -2607,6 +2677,9 @@ class CarRuntime:
         intent_json: Optional[str] = None,
     ) -> str:
         """Generate text. Returns the model's plain-text completion.
+
+        Direct TypeSafe takes a JSON prompt with state/questions/optional
+        assets, omitting model, and returns decision JSON (non-streaming).
 
         ``intent_json`` is an optional serialized ``IntentHint``
         (``{"task": ..., "prefer_local": ..., "prefer_fast": ...,
@@ -2818,10 +2891,12 @@ class CarRuntime:
     ) -> str:
         """Classify ``text`` against candidate ``labels``.
 
+        A registered TypeSafe direct row precedes the managed default and
+        uses its named key from CAR's store, independently of Parslee.
         Returns a JSON array of ``{label, score}``, best first. With
         ``model="parslee/jev"`` (TypeSafe's Jev through Parslee; also the
-        default when ``model`` is omitted, none is configured, and you are
-        signed in to Parslee) ``score`` is the model's probability for the
+        default when ``model`` is omitted, no classifier preference or direct
+        row is configured, and you are signed in to Parslee) ``score`` is the model's probability for the
         label. On a generative model
         ``score`` is a normalized match strength between the model's reply
         and the label, not a probability; labels match case-insensitively
@@ -3424,6 +3499,7 @@ class CarRuntime:
         model: Optional[str] = None,
         organization_id: Optional[str] = None,
         personal: Optional[bool] = None,
+        decision_class: Optional[str] = None,
     ) -> str:
         """Open a repo-grounded, strictly **read-only** discussion — a thinking
         surface for working out what a change should be, before a run exists.
@@ -4079,7 +4155,10 @@ class CarRuntime:
         ``--disable-dev-shm-usage`` /
         ``--disable-setuid-sandbox``. Honoured only on the call
         that first launches the session; subsequent calls reuse
-        the existing browser regardless.
+        the existing browser regardless. On macOS inside a Seatbelt
+        sandbox that confines nothing CAR checks (writes to the home
+        folder, CAR's credential files), the launch is refused even
+        with ``--no-sandbox``.
         """
 
     def browser_close(self) -> None:
@@ -4203,6 +4282,9 @@ class HostClient:
     def agents_message_pending(self, params_json: str) -> str: ...
     # Generated host wrapper for `agents.message.pending`.
 
+    def agents_session_brief(self, params_json: str) -> str: ...
+    # Generated host wrapper for `agents.session_brief`.
+
     def agents_upsert(self, params_json: str) -> str: ...
     # Generated host wrapper for `agents.upsert`.
 
@@ -4257,8 +4339,38 @@ class HostClient:
     def auth_switch_org(self, params_json: str) -> str: ...
     # Generated host wrapper for `auth.switch_org`.
 
+    def beads_bind_factory(self, params_json: str) -> str: ...
+    # Generated host wrapper for `beads.bind_factory`.
+
+    def beads_index(self, params_json: str) -> str: ...
+    # Generated host wrapper for `beads.index`.
+
+    def beads_rebuild(self, params_json: str) -> str: ...
+    # Generated host wrapper for `beads.rebuild`.
+
+    def brief_compile(self, params_json: str) -> str: ...
+    # Generated host wrapper for `brief.compile`.
+
+    def brief_curate_fact(self, params_json: str) -> str: ...
+    # Generated host wrapper for `brief.curate_fact`.
+
+    def brief_read(self, params_json: str) -> str: ...
+    # Generated host wrapper for `brief.read`.
+
     def concierge_maintain(self, params_json: str) -> str: ...
     # Generated host wrapper for `concierge.maintain`.
+
+    def conversation_answer(self, params_json: str) -> str: ...
+    # Generated host wrapper for `conversation.answer`.
+
+    def conversation_assistant_bind(self, params_json: str) -> str: ...
+    # Generated host wrapper for `conversation.assistant.bind`.
+
+    def conversation_change_subject(self, params_json: str) -> str: ...
+    # Generated host wrapper for `conversation.change_subject`.
+
+    def conversation_list(self, params_json: str) -> str: ...
+    # Generated host wrapper for `conversation.list`.
 
     def credentials_issue(self, params_json: str) -> str: ...
     # Generated host wrapper for `credentials.issue`.
@@ -4365,6 +4477,36 @@ class HostClient:
     def lattice_relay_probe(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.relay.probe`.
 
+    def ledger_class_override(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.class.override`.
+
+    def ledger_class_put(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.class.put`.
+
+    def ledger_classes_list(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.classes.list`.
+
+    def ledger_dispatch(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.dispatch`.
+
+    def ledger_get(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.get`.
+
+    def ledger_grade(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.grade`.
+
+    def ledger_grade_note(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.grade_note`.
+
+    def ledger_list(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.list`.
+
+    def ledger_put(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.put`.
+
+    def ledger_rung_changes_list(self, params_json: str) -> str: ...
+    # Generated host wrapper for `ledger.rung_changes.list`.
+
     def messaging_config_get(self, params_json: str) -> str: ...
     # Generated host wrapper for `messaging.config.get`.
 
@@ -4445,6 +4587,15 @@ class HostClient:
 
     def session_clear_halt(self, params_json: str) -> str: ...
     # Generated host wrapper for `session.clear_halt`.
+
+    def spend_assign_class(self, params_json: str) -> str: ...
+    # Generated host wrapper for `spend.assign_class`.
+
+    def spend_limits(self, params_json: str) -> str: ...
+    # Generated host wrapper for `spend.limits`.
+
+    def spend_set_limit(self, params_json: str) -> str: ...
+    # Generated host wrapper for `spend.set_limit`.
 
     def tasks_schedule(self, params_json: str) -> str: ...
     # Generated host wrapper for `tasks.schedule`.
@@ -5679,14 +5830,15 @@ def register_chat_handler(handler: Callable[[str], None]) -> None:
     A supervised agent (in ``--serve`` mode, attached via ``session.auth`` with
     its ``agent_id``) calls this once. The daemon reverse-calls ``agent.chat``
     for every host ``agents.chat``; the bridge in :class:`CarRuntime`'s
-    constructor acks ``{accepted: true}`` and routes the params to this callable
-    through a GIL-aware drain thread.
+    constructor acks ``{accepted: true, stops_by_turn_id: true}`` and routes the
+    params to this callable through a GIL-aware drain thread. Named Stop
+    ordering has the bounded-history contract documented on ``chat_turn_event``.
 
     ``handler(params_json)`` receives ``{"session_id","prompt","attachments"?,
     "context"?,"history"?,"history_omitted"?,"cwd"?}`` as a JSON string. Run
     one conversational turn — keep a per-``session_id`` thread, run the agent
     loop, and stream the reply via :meth:`CarRuntime.chat_event` — then
-    return. ``history`` is the chat's earlier turns (``{"role": "user" |
+    return. Returning from the handler ends the turn. ``history`` is the chat's earlier turns (``{"role": "user" |
     "assistant", "content"}``, oldest first), sent when the host's chat moved
     to a new session: seed the thread of a session you have none for from it,
     and ignore it for one you already have. ``history_omitted`` counts older
@@ -5709,9 +5861,12 @@ def register_chat_handler(handler: Callable[[str], None]) -> None:
     raised ``PanicException: Cannot start a runtime from within a runtime`` —
     a ``BaseException`` that ``except Exception`` does not catch, and one that
     ``chat_event`` could not report because reporting hit the same wall. The
-    turn was stranded with the host, already acked, receiving nothing. If you
-    wrote a thread-offload workaround for that, it is now unnecessary (and
-    still harmless).
+    turn was stranded with the host, already acked, receiving nothing. A
+    thread-offload workaround written for that must go: the turn must run
+    inline, because a turn handed to another thread can no longer be stopped
+    once a newer turn of its session starts. The bridge acknowledges with
+    ``stops_by_turn_id`` on the promise that a newer turn starting means the
+    older one has finished (#2838).
 
     One turn is served at a time on that thread. If a handler raises, the
     bridge emits a terminal ``kind: "error"`` ``agent.chat.event`` on the
@@ -6563,3 +6718,7 @@ def a2ui_validate_payload(value_json: str) -> str:
     """Validate a JSON payload against the store's size limits.
     Returns JSON ``null`` on success; raises ``RuntimeError`` with
     a limit-exceeded message otherwise."""
+
+def agents_session_brief(id: str) -> str:
+    """Return only the daemon-compiled session brief; absent or stale output is refused."""
+    ...

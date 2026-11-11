@@ -21,7 +21,7 @@ seen by the meter, is not counted here, and is not stopped by a cap.
 agent's spend on model calls made through CAR: before each such call leaves
 CAR it is admitted against the agent's caps, and at a cap it is refused with
 the error below. No cap declared means no cap: an agent without a `[spend]`
-table is counted and never refused. Periods are calendar hours, days and
+table has no bundle cap; owner and class limits still apply. Periods are calendar hours, days and
 months in the server's zone (`zone` below). A call already in flight finishes
 and counts in full, in the period it was admitted in, so one call may overshoot
 a cap. Local models count $0 and never reach a cap. Caps change only by
@@ -42,7 +42,7 @@ adds the orchestrator's key to every worker call.
 | `data.reason` | `message` | When | `data` |
 |---|---|---|---|
 | `budget_reached` | `budget reached until 3:00 PM EDT`; when the reset falls on a later local date, `budget reached until 12:00 AM EST on Dec 1` | a cap that applies to the caller is reached. With several reached at once, the one that resets latest is named, so a retry time read from it is right | `{ reason, cap: { usd, per }, holding: "agent", spent_usd, resets_at, zone }` — `resets_at` is RFC3339 in the server's zone. Below the root of a worker tree a shared cap gives only `{ reason, cap: "shared", resets_at, zone }`, naming no amount (the shared case is wired by the workers design; the shape is fixed now) |
-| `price_unknown` | `price unknown for <model>; this agent has a spend cap`; for a model the price list does price but whose price yields no estimate for this call (a voice stream, whose length is not known when it opens), `the cost of this call to <model> cannot be estimated before it is sent; this agent has a spend cap` | a capped caller pins a remote model that has no list price and whose provider reports no cost, or whose call cannot be estimated. A router-chosen candidate refused this way is skipped for the next candidate instead, on `infer` and `infer_stream` alike, and leaves no refusal record; only the refusal the caller receives (a pinned model, or a request no other candidate could serve) is recorded | `{ reason, model }` |
+| `price_unknown` | `price unknown for <model>; this agent has a spend cap`; for a model the price list does price but whose price yields no estimate for this call (a voice stream, whose length is not known when it opens), `the cost of this call to <model> cannot be estimated before it is sent; this agent has a spend cap` | a caller with a bundle cap or an owner-set owner/class cap pins a remote model that has no list price and whose provider reports no cost, or whose call cannot be estimated. A router-chosen candidate refused this way is skipped for the next candidate instead, on `infer` and `infer_stream` alike, and leaves no refusal record; only the refusal the caller receives (a pinned model, or a request no other candidate could serve) is recorded | `{ reason, model }` |
 | `unpriced_call_in_flight` | `<model> is priced only when a call finishes, and this agent already has one such call running; this agent has a spend cap, so it may make one at a time` | a capped caller asks for a second call to a remote model with no list price whose provider reports the cost (OpenRouter), while its first is still running. Skipped and recorded exactly as `price_unknown` is | `{ reason, model }` |
 | `spend_unrecordable` | `spend could not be recorded` | the meter could not write the ledger row for a capped caller; an uncapped caller's call goes through and `heal.status`'s `spend_meter` names the cause | `{ reason }` |
 
@@ -98,15 +98,19 @@ and the agent may keep making such calls, one at a time. `unpriced_calls` in
 owner sees spending a cap did not count.
 
 A remote model with no list price whose provider reports nothing is refused
-`price_unknown`; the one-at-a-time slot lives in the daemon's memory, and a
-restart ends every call it had in flight. ElevenLabs Scribe (speech to text)
-is priced in the built-in catalog at $0.22 per hour of audio. ElevenLabs text to speech
+`price_unknown` when a bundle cap or an owner-set owner/class cap applies.
+The automatic $300 owner ceiling alone preserves admission for such models:
+missing cost counts $0 and one `unpriced_calls` on the caller, owner and class
+keys, and later calls continue. Provider-priced models still use the
+one-at-a-time slot under that default ceiling. The slot lives in the daemon's
+memory, and a restart ends every call it had in flight. ElevenLabs Scribe
+(speech to text) is priced in the built-in catalog at $0.22 per hour of audio. ElevenLabs text to speech
 (`eleven-flash-v2.5`) is unpriced (it is credit-based per plan, with no single
 list price), and so are the `parslee/*` models (`parslee/fast`,
-`parslee/reasoning`, `parslee/advisor`): a capped agent's call to any of them
-is refused `price_unknown` until the price list has them, and an uncapped
-agent's goes through with its cost unknown, counted as a call that was not
-priced. A call that ends after it was sent but before its answer was read
+`parslee/reasoning`, `parslee/advisor`): with a bundle cap or an owner-set
+owner/class cap, a call to any of them is refused `price_unknown` until the
+price list has them. Under only the automatic ceiling, it goes through with
+its cost unknown, counted as a call that was not priced. A call that ends after it was sent but before its answer was read
 (a stream the caller dropped or that broke off, a call the caller abandoned
 or whose deadline elapsed, a request that timed out or was reset after it
 was sent, a 200 whose body could not be read) is charged,
@@ -136,14 +140,38 @@ input tokens only, as before (PR 3).
 - **Role**: `operator`. A session bound to a supervised agent gets the refusal every operator-only method gives it (`-32603`, "`spend.costs` is not available to a supervised agent …"); an outside credential's session is refused `-32003` with `data.reason: "car_wide_not_allowed"`, and that refusal is recorded in the credential's own refusal rows: a principal reads its own spend with `spend.status`, never everyone's.
 - **Returns**: `{ zone, rows: [ { agent, kind, today_usd, last_7_days_usd, this_month_usd, calls, tokens_in, tokens_out, cost_not_reported_calls, capped, at_budget } ], total: { today_usd, last_7_days_usd, this_month_usd }, at_budget: [ { agent, cap, holding, resets_at, zone } ], meter: { healthy, last_error, clock, zone_source, prices: { refreshed_at, last_refresh_error, stale } } }`
   - `zone`: the IANA zone the periods are computed in, the server's (`America/New_York`).
-  - `rows`: one per key that holds spend, sorted by key id. `agent` is the key's full id, so rows of every kind are unambiguous: `agent:<id>`, `worker:wk_<ULID>`, `label:<orchestrator>/label-<key>`, `operator`, `car:<purpose>`, `declarative:<id>`, `credential:<id>`. `kind` is `agent | worker | label | operator | car | declarative | credential`.
+  - `rows`: one per key that holds spend, sorted by key id. `agent` is the key's full id, so rows of every kind are unambiguous: `agent:<id>`, `worker:wk_<ULID>`, `label:<orchestrator>/label-<key>`, `operator`, `car:<purpose>`, `declarative:<id>`, `credential:<id>`, `owner:<id>`, `class:<owner>/<class>`. `kind` is `agent | worker | label | operator | car | declarative | credential | owner | class`.
   - `today_usd` is today's spend in `zone`; `last_7_days_usd` the last seven calendar days in `zone`, today included; `this_month_usd` the open month period, which is the same figure the key's own `spend.status` shows, so the two agree to the cent. All three are dollars rounded **up** to the cent from the meter's micro-dollars: a key that spent $0.00001 shows `0.01`, never `0`.
   - `calls`, `tokens_in`, `tokens_out` and `cost_not_reported_calls` count this month's calls. `cost_not_reported_calls` are calls nobody could price (no provider figure, no catalog price) plus calls to a local model; they count in `calls` and add nothing to the dollar figures, so a key whose every call this month was local shows calls with no spend rather than a false $0 of priced work.
   - `capped` is `true` for an agent whose installed bundle declares caps, else `false`. `at_budget` on a row is `null`, or `{ cap: { usd, per }, holding, resets_at, zone }` while one of that agent's caps is reached, derived as `spend.status` derives it.
-  - `total`: the three periods summed over every row except `label` rows. A label's spend is its workers' calls, which the worker rows already count, so leaving labels out counts every call once. The sum is taken in micro-dollars and rounded up once, so it can sit a cent or so under the sum of the rounded rows.
+  - `total`: the three periods summed over payer rows, excluding `label`, `owner`, and `class` aggregates. Those aggregates repeat their payers' calls, so leaving them out counts every call once. The sum is taken in micro-dollars and rounded up once, so it can sit a cent or so under the sum of the rounded rows.
   - `at_budget`: every principal currently at a cap, `[ { agent: "agent:<id>", cap, holding, resets_at, zone } ]`; `[]` when none is.
   - `meter.healthy` is `true` while `last_error` is `null`; a meter that could not record a charge reports `false` with the error. `clock` is `synchronized | held_until_synchronized | adopted_unsynchronized` (the meter's own clock after a reboot). `zone_source` is `TZ | system | utc_fallback`: whether `zone` came from `$TZ`, from the system, or from neither, in which case periods use UTC. `prices` is `{ refreshed_at: null, last_refresh_error: null, stale: [] }` until the price refresh arrives.
 - CLI: `car spend --all [--json]` prints this as a table (`KEY  KIND  TODAY  7 DAYS  MONTH  CALLS  NOT REPORTED`, a total line with labels left out, and the zone and meter health) or, with `--json`, the result as is. `car ls` shows "at budget until <resets_at>" in the status note of an agent whose `agents.list` row has `budget: "at_budget"`.
+
+#### `spend.limits`
+- **Params**: `{}`
+- **Role**: `host`.
+- **Returns**: `{ default_owner: "local", default_monthly_usd: 300, class_default, limits: { caps, assignments, warned_months, delivered_warnings, events }, periods }`. `caps` maps owner/class meter keys to monthly dollar amounts; `assignments` maps payer keys to `{owner,class}`. `periods` maps aggregate keys to the existing hour/day/month status objects. Audit events carry cap changes (`by: "owner"`), refused changes, class assignments, and monthly warnings.
+- CLI: `car spend --limits [--url ws://127.0.0.1:<port>/]` uses the host credential and prints this JSON view. Node/Python: `HostClient.spendLimits(paramsJson)` / `HostClient.spend_limits(params_json)`.
+
+#### `spend.set_limit`
+- **Params**: `{ owner?: string, class?: string, usd?: number, shadow_average_usd?: number }`. `owner` defaults to `local`. Supply `usd`, or supply a class with `shadow_average_usd`; the latter stores twice the supplied average as the cap. Amounts must be positive and within the existing spend amount range.
+- **Role**: `host`, with no agent binding. Agent, credential, and ordinary daemon-token sessions are refused and recorded. This applies to every change, including a raise by Grace.
+- **Returns**: the `spend.limits` view after the change. A missing class sets the owner's monthly ceiling; a class sets that class's monthly cap under that owner. An unset class cap means ceiling only; no shadow-run history or average is invented.
+- Node/Python: `HostClient.spendSetLimit(paramsJson)` / `HostClient.spend_set_limit(params_json)`.
+
+#### `spend.assign_class`
+- **Params**: `{ principal: string, owner?: string, class: string }`. `principal` is the full payer key, such as `agent:invoice-bot`. Owner/class IDs are nonempty filename components, without separators, NUL, `.` or `..`, at most 255 bytes.
+- **Role**: `host`, with no agent binding; unauthorized assignments are refused and recorded.
+- **Returns**: the `spend.limits` view. The assignment applies to subsequent calls; already admitted calls keep their recorded keys. Unassigned principals charge owner `local`, class `unclassified`. Each call may supply `decision_class` to select its decision-ledger class instead of this fallback. The owner remains host-controlled.
+- Node/Python: `HostClient.spendAssignClass(paramsJson)` / `HostClient.spend_assign_class(params_json)`.
+
+**Call classification.** Supply `decision_class?: string` at the top level of a model-calling RPC, such as `infer` or `infer_stream`. MCP assistant starts and coder discussions retain their declared decision class across their spawned model work. It names the same class as the decision ledger, never a class inferred from the tool. The host-assigned owner cannot be overridden by a call.
+
+**Owner/class paid limits.** Each paid admission adds `owner:<id>` and `class:<owner>/<class>` to the existing meter row. Aggregate keys use the same replay, clock, and period arithmetic as agent keys; they are excluded from `spend.costs.total` to prevent double counting. The default owner ceiling is $300 per calendar month. The check includes the new call's estimate, along with settled spend and existing reservations, before provider dispatch. A request that cannot fit is refused without sending it, with the existing `-32018 budget_reached` shape and `holding: "owner:<id>"` or `"class:<id>"`. The refusal ledger's keys retain both owner and class. Only bundle caps and explicitly stored owner/class caps require a known price; explicitly setting the owner ceiling to $300 also enables that rule. Provider-priced models without a list price are admitted one call at a time under either default or owner-set caps; missing reported cost counts $0 and one `unpriced_calls`, an accepted gap described above. The default ceiling alone also admits true Unknown models, preserving existing workers; their missing cost is counted the same way. Provider corrections can raise a settled charge above its estimate; that spend is kept and subsequent paid calls are refused. Local and exact `subscription` catalog rows bypass paid caps and never charge owner/class keys. Seat-pool CLI calls do not enter the paid meter.
+
+At 80% of settled monthly spend, CAR durably reserves one warning for that owner/month in the meter's `spend/limits.json`, then opens an owner-facing `HostApprovalRequest` with one option, `acknowledge`, and month, spend, and ceiling in its text. The existing approval fanout handles paired iMessage/Slack delivery. A stable approval ID and persisted month prevent repeat requests; pending delivery is retried by the spend minute tick. `spend_gate::warn_owner` uses the existing `host.request_approval` need path. The warning is journaled as a `state_changed` event with `data.alert` in `spend/alerts.jsonl`; host `metrics.alerts` adds `monthly_spend_warning` rows from the durable warning events, including after reconnection. Acknowledging does not raise a limit. Cap changes have a pre-application entry in the existing decision ledger and a completed dispatch after application; an interrupted operation remains visibly pending or dispatched. Refused changes are also decision-ledger entries. Query them with host `ledger.list`.
 
 #### `spend.changed` (server → client notification)
 - A `host.event` with `kind: "spend.changed"` on the `host.subscribe` stream (see [host](host.md#host)): `{ kind: "spend.changed", agent_id, payload: { agent: "agent:<id>", at_budget, periods } }`. `agent_id` is the bare id for an agent; `payload.agent` is the meter key; `at_budget` is `null` or `{ cap, holding, resets_at, zone }`; `periods` is `spend.status`'s `periods` object (`hour`, `day`, `month`, each `{ start, resets_at, spent_usd, calls, unpriced_calls, refused_calls, cap_usd, left_usd, at_budget }`).

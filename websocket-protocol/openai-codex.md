@@ -13,6 +13,10 @@ loopback callback, the code exchange and the keychain write, and stores the
 same credential the CLI stores. Once it is stored, the `openai-codex/*` models
 in `models.list_unified` report `available: true`.
 
+These include `openai-codex/gpt-6.1-sol:high` and
+`openai-codex/gpt-6.1-sol:medium`, both on the ChatGPT subscription sign-in,
+with a 500,000-token context window and high or medium reasoning effort.
+
 **All four methods require the host-management role** (`session.auth {
 host_token }`), the same trust root as `openrouter.*`: signing the user out,
 starting a sign-in that replaces theirs, or reading which account is signed in

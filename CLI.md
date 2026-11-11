@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.58.0 (2026-10-28). Every subcommand the installed binary reports is
+> 0.60.0 (2026-11-08). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 83 top-level commands, 167 nested subcommands
+> 86 top-level commands, 185 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 83 subcommands spanning several different jobs:
+`car` is one binary with 86 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -177,7 +177,9 @@ commands on a cadence via launchd / cron / schtasks).
 
 | Command | Description |
 |---|---|
+| [`car beads`](#car-beads) | Git-backed work beads across enrolled repositories |
 | [`car info`](#car-info) | Show runtime and live machine state |
+| [`car conversation`](#car-conversation) | Inspect the owner's current question, waiting asks, and answer attributions |
 | [`car capabilities`](#car-capabilities) | Print the deterministic CAR capability manifest |
 | [`car ui`](#car-ui) | Sign a browser in to the daemon's dashboard with a one-time link |
 | [`car evaluate-contract`](#car-evaluate-contract) | Evaluate a pinned outcome contract without a model, coding loop, or delivery |
@@ -194,6 +196,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car coder-overlays`](#car-coder-overlays) | Show the approved harness overlays — system-prompt and tool-description text applied through `evolution.run` — that every native coder session starts with, or clear them. Nothing removes an applied overlay on its own; `--clear` is how one is taken out of force. Reads the local coder state directory; no daemon needed |
 | [`car keys`](#car-keys) | Store cloud-provider API keys in CAR's secret store, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then the secret store |
 | [`car heal`](#car-heal) | Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges |
+| [`car ledger`](#car-ledger) | Review and grade the owner's decision ledger |
 | [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
 | [`car concierge`](#car-concierge) | Your local models' concierge: what each model is doing, what it would change and what it did on its own. Without a subcommand, prints the facts (no model involved) |
@@ -210,7 +213,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car identity`](#car-identity) | Show or change the name your assistant answers to — in conversation, in the host apps, and as its voice wake word |
 | [`car init`](#car-init) | Initialize a .car/ project directory for team-shared configuration |
 | [`car doctor`](#car-doctor) | Diagnose (and optionally repair) a CAR install: corrupt model weights, unparseable `~/.car` state files, version skew, and leftover files from a previous install. Runs entirely against the local filesystem — no daemon required, so it works even when `car-server` won't start |
-| [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first |
+| [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; CAR tries to send a report saved while signed in to Parslee in the background, and `car feedback --list` shows whether it went. One saved signed out stays on this computer for `--export`. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first |
 | [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it |
 | [`car purge`](#car-purge) | Remove this CAR install's own state under `~/.car` (config, logs, managed models, binaries) and reap any OS-level schedules CAR installed — for a clean slate before a reinstall. On macOS this also clears CarHost.app's user-level state and resets its privacy (TCC) permissions, so a reinstall really does re-run permission onboarding. NEVER touches the shared HuggingFace model cache (other tools use it); managed models are symlinks into it, so only the links are removed, not the multi-GB blobs. (To uninstall a single contributed agent instead, use `car uninstall <id>`.) |
 | [`car code`](#car-code) | Open a coding conversation in your repository. Ask questions, plan a change, or describe work to implement; review the checks and edits, then keep iterating in the same conversation |
@@ -267,6 +270,197 @@ commands on a cadence via launchd / cron / schtasks).
 
 Full `--help` output for every command, generated directly from the binary.
 
+### car beads
+
+```text
+Git-backed work beads across enrolled repositories
+
+Usage: car beads <COMMAND>
+
+Commands:
+  index         Enroll repositories and designate Grace's root-agent identity
+  rebuild       Replace the derived index by reading every enrolled repository
+  list          List indexed work, with optional filters
+  get           Show a bead and its source file
+  create-root   Create a root citing a project ISA claim
+  create-child  Create a child in a factory's owned subtree
+  accept        Take ownership, declaring the required touch cadence in milliseconds
+  touch         Record a touch by the current owner
+  handoff       Transfer the same root, keeping its requester and id
+  bind-factory  Bind a factory to project-scoped ISA claims (host authority)
+  stale         List owned work whose declared touch cadence was missed
+  events        Read refusal events for ledger consumers
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car beads index
+
+```text
+Enroll repositories and designate Grace's root-agent identity
+
+Usage: car beads index --repos <REPOS> --root-agent <ROOT_AGENT>
+
+Options:
+      --repos <REPOS>            JSON array of {project,path} repository roots
+      --root-agent <ROOT_AGENT>
+  -h, --help                     Print help
+```
+
+#### car beads rebuild
+
+```text
+Replace the derived index by reading every enrolled repository
+
+Usage: car beads rebuild
+
+Options:
+  -h, --help  Print help
+```
+
+#### car beads list
+
+```text
+List indexed work, with optional filters
+
+Usage: car beads list [OPTIONS]
+
+Options:
+      --project <PROJECT>
+      --owner <OWNER>
+      --roots-only
+  -h, --help               Print help
+```
+
+#### car beads get
+
+```text
+Show a bead and its source file
+
+Usage: car beads get <ID>
+
+Arguments:
+  <ID>
+
+Options:
+  -h, --help  Print help
+```
+
+#### car beads create-root
+
+```text
+Create a root citing a project ISA claim
+
+Usage: car beads create-root [OPTIONS] --project <PROJECT> --id <ID> --title <TITLE> --claim <CLAIM>
+
+Options:
+      --project <PROJECT>
+      --id <ID>
+      --title <TITLE>
+      --claim <CLAIM>
+      --operations
+  -h, --help               Print help
+```
+
+#### car beads create-child
+
+```text
+Create a child in a factory's owned subtree
+
+Usage: car beads create-child --project <PROJECT> --id <ID> --title <TITLE> --claim <CLAIM> --parent
+<PARENT>
+
+Options:
+      --project <PROJECT>
+      --id <ID>
+      --title <TITLE>
+      --claim <CLAIM>
+      --parent <PARENT>
+  -h, --help               Print help
+```
+
+#### car beads accept
+
+```text
+Take ownership, declaring the required touch cadence in milliseconds
+
+Usage: car beads accept --touch-cadence-ms <TOUCH_CADENCE_MS> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --touch-cadence-ms <TOUCH_CADENCE_MS>
+  -h, --help                                 Print help
+```
+
+#### car beads touch
+
+```text
+Record a touch by the current owner
+
+Usage: car beads touch <ID>
+
+Arguments:
+  <ID>
+
+Options:
+  -h, --help  Print help
+```
+
+#### car beads handoff
+
+```text
+Transfer the same root, keeping its requester and id
+
+Usage: car beads handoff --owner <OWNER> --touch-cadence-ms <TOUCH_CADENCE_MS> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --owner <OWNER>
+      --touch-cadence-ms <TOUCH_CADENCE_MS>
+  -h, --help                                 Print help
+```
+
+#### car beads bind-factory
+
+```text
+Bind a factory to project-scoped ISA claims (host authority)
+
+Usage: car beads bind-factory --factory <FACTORY> --claims <CLAIMS>
+
+Options:
+      --factory <FACTORY>
+      --claims <CLAIMS>    JSON array of {project,claim}
+  -h, --help               Print help
+```
+
+#### car beads stale
+
+```text
+List owned work whose declared touch cadence was missed
+
+Usage: car beads stale
+
+Options:
+  -h, --help  Print help
+```
+
+#### car beads events
+
+```text
+Read refusal events for ledger consumers
+
+Usage: car beads events
+
+Options:
+  -h, --help  Print help
+```
+
 ### car info
 
 ```text
@@ -276,6 +470,18 @@ Usage: car info [OPTIONS]
 
 Options:
       --json  Emit machine-readable JSON
+  -h, --help  Print help
+```
+
+### car conversation
+
+```text
+Inspect the owner's current question, waiting asks, and answer attributions
+
+Usage: car conversation [OPTIONS]
+
+Options:
+      --json  Emit the full floor as JSON
   -h, --help  Print help
 ```
 
@@ -564,6 +770,11 @@ Options:
 
       --json
           Emit the JSONL event stream on stdout, one compact object per line
+
+      --local-only
+          Run on local models only: every remote dispatch is refused, routing and the auditor choose
+          among on-device models, and nothing is spent. For a caller nobody is watching, such as the
+          daemon's self-heal auto-fix
 
   -h, --help
           Print help (see a summary with '-h')
@@ -1005,11 +1216,67 @@ Run one sweep now instead of waiting for the cadence.
 At most one item per configured target. This can run a real coder session and open a real pull
 request. It never merges.
 
-Usage: car heal run
+Usage: car heal run [OPTIONS]
 
 Options:
+      --item <ITEM>
+          Run one item (`owner/repo#number`) with the attended configuration (frontier models),
+          setting aside its backoff and its `needs-human` label: you are asking for it
+
   -h, --help
           Print help (see a summary with '-h')
+```
+
+### car ledger
+
+```text
+Review and grade the owner's decision ledger
+
+Usage: car ledger <COMMAND>
+
+Commands:
+  list   List decisions, optionally filtered by class, time, and grade state
+  grade  Grade the exact entry version shown by list. Reuse operation-id on retry
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car ledger list
+
+```text
+List decisions, optionally filtered by class, time, and grade state
+
+Usage: car ledger list [OPTIONS]
+
+Options:
+      --class <CLASS>
+      --since <SINCE>              Unix milliseconds, inclusive
+      --until <UNTIL>              Unix milliseconds, inclusive
+      --grade-state <GRADE_STATE>  [possible values: ungraded, good_tap, good_silence, wrong,
+      undone]
+      --json
+  -h, --help                       Print help
+```
+
+#### car ledger grade
+
+```text
+Grade the exact entry version shown by list. Reuse operation-id on retry
+
+Usage: car ledger grade [OPTIONS] --version <VERSION> --operation-id <OPERATION_ID> <ID> <KIND>
+
+Arguments:
+  <ID>
+  <KIND>  [possible values: good, wrong, undo]
+
+Options:
+      --version <VERSION>
+      --operation-id <OPERATION_ID>
+      --note <NOTE>
+      --json
+  -h, --help                         Print help
 ```
 
 ### car selfheal
@@ -1949,16 +2216,17 @@ Options:
 ```text
 Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car
 doctor` report, bounded log tails, and a version stamp) into the local outbox at
-`~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can
-reach Parslee. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own
-leak-path audit first
+`~/.car/feedback-outbox` — nothing is uploaded by this command; CAR tries to send a report saved
+while signed in to Parslee in the background, and `car feedback --list` shows whether it went. One
+saved signed out stays on this computer for `--export`. Works with the daemon down, like `car
+doctor`. macOS and Windows; Linux needs its own leak-path audit first
 
 Usage: car feedback [OPTIONS]
 
 Options:
       --description <DESCRIPTION>  What went wrong (10–5000 characters). Prompts when omitted
       --list                       List your saved reports and their status in plain language
-      --show <ID>                  Print exactly what a saved report will send (its redacted bundle)
+      --show <ID>                  Print exactly what a saved report holds (its redacted bundle)
       --export <ID|latest> <PATH>  Save a report's redacted bundle to a file: `--export <ID|latest>
       <PATH>`
   -h, --help                       Print help
@@ -3401,8 +3669,9 @@ onboarding step)
 Usage: car approvals <COMMAND>
 
 Commands:
-  default        Set the default approval preset for all agents (`cautious` asks before any
-  edit/full-access, `balanced` allows sandboxed edits, `trusting` allows everything without asking)
+  default        Set the default approval preset for all agents: `cautious` asks for every tier,
+  `balanced` allows reads, and `trusting` allows reads and sandboxed edits. All three presets ask
+  for full-access by default
   get            Show the current default approval posture
   set-tool       Set an approval mode for one exact agent and exact tool. `always_allow` requires
   that agent to be attached with an eligible live callback
@@ -3423,8 +3692,9 @@ Options:
 #### car approvals default
 
 ```text
-Set the default approval preset for all agents (`cautious` asks before any edit/full-access,
-`balanced` allows sandboxed edits, `trusting` allows everything without asking)
+Set the default approval preset for all agents: `cautious` asks for every tier, `balanced` allows
+reads, and `trusting` allows reads and sandboxed edits. All three presets ask for full-access by
+default
 
 Usage: car approvals default [OPTIONS] <PRESET>
 
@@ -3927,9 +4197,68 @@ OS-native account discovery — Internet Accounts / WAM / GOA
 Usage: car accounts <COMMAND>
 
 Commands:
-  list  List accounts visible to the OS
-  open  Open the native account-management UI
-  help  Print this message or the help of the given subcommand(s)
+  login    Log in a subscription account on CAR's own OAuth grant
+  usage    Show subscription usage, headroom, resets and bench state from the daemon
+  bench    Bench an account for the future seat pool (keeps sensing usage)
+  unbench  Return an account to the future seat pool
+  list     List accounts visible to the OS
+  open     Open the native account-management UI
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car accounts login
+
+```text
+Log in a subscription account on CAR's own OAuth grant
+
+Usage: car accounts login [OPTIONS] --vendor <VENDOR> <LABEL>
+
+Arguments:
+  <LABEL>
+
+Options:
+      --vendor <VENDOR>
+      --usage-url <USAGE_URL>  Override the source-derived, UNPROVEN usage URL
+  -h, --help                   Print help
+```
+
+#### car accounts usage
+
+```text
+Show subscription usage, headroom, resets and bench state from the daemon
+
+Usage: car accounts usage
+
+Options:
+  -h, --help  Print help
+```
+
+#### car accounts bench
+
+```text
+Bench an account for the future seat pool (keeps sensing usage)
+
+Usage: car accounts bench <LABEL>
+
+Arguments:
+  <LABEL>
+
+Options:
+  -h, --help  Print help
+```
+
+#### car accounts unbench
+
+```text
+Return an account to the future seat pool
+
+Usage: car accounts unbench <LABEL>
+
+Arguments:
+  <LABEL>
 
 Options:
   -h, --help  Print help

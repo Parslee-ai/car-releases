@@ -7,7 +7,9 @@
       "notification.host.event.params",
       "rpc.a2a.peers.add.params",
       "rpc.a2a.peers.remove.params",
+      "rpc.accounts.bench.params",
       "rpc.assistants.invoke.params",
+      "rpc.brief.curate_fact.params",
       "rpc.browser.run.params",
       "rpc.builder.build.params",
       "rpc.capabilities.list.result",
@@ -42,6 +44,7 @@
       "rpc.inference.runner.complete.params",
       "rpc.inference.runner.event.params",
       "rpc.inference.runner.fail.params",
+      "rpc.ledger.grade_note.params",
       "rpc.mail.accounts.result",
       "rpc.mail.inbox.params",
       "rpc.mail.inbox.result",
@@ -209,7 +212,9 @@
       "covered": [
         "a2a.peers.add",
         "a2a.peers.remove",
+        "accounts.bench",
         "assistants.invoke",
+        "brief.curate_fact",
         "browser.run",
         "builder.build",
         "credentials.issue",
@@ -241,6 +246,7 @@
         "inference.runner.complete",
         "inference.runner.event",
         "inference.runner.fail",
+        "ledger.grade_note",
         "mail.inbox",
         "mail.mailboxes",
         "mail.message_body",
@@ -308,6 +314,7 @@
         "a2ui.reap",
         "a2ui.surfaces",
         "accounts.list",
+        "accounts.usage",
         "admission.status",
         "agents.health",
         "agents.list",
@@ -382,6 +389,7 @@
         "session.policy.open",
         "speech.prepare",
         "spend.costs",
+        "spend.limits",
         "supervision.pending",
         "supervision.unsubscribe",
         "sync.checkpoint",
@@ -402,7 +410,7 @@
         "voice.tts_stream.list",
         "workflow.list_paused"
       ],
-      "total": 559,
+      "total": 603,
       "uncovered": {
         "typed_without_schema": {
           "a2a.send": "A2aSendParams",
@@ -420,6 +428,8 @@
           "multiplayer.submit_stage": "SubmitParams",
           "runs.complete": "RunCompleteRequest",
           "selfheal.detections": "DetectionQuery",
+          "spend.assign_class": "AssignSpendClassParams",
+          "spend.set_limit": "SetSpendLimitParams",
           "verify": "VerifyRequest",
           "verify.monte_carlo": "MonteCarloParams",
           "video.generate": "GenerateVideoRequest"
@@ -470,6 +480,7 @@
           "agents.peers",
           "agents.remove",
           "agents.restart",
+          "agents.session_brief",
           "agents.start",
           "agents.stop",
           "agents.tail_log",
@@ -490,7 +501,26 @@
           "automation.run_powershell",
           "automation.shortcuts.list",
           "automation.shortcuts.run",
+          "beads.accept",
+          "beads.bind_factory",
+          "beads.create_child",
+          "beads.create_root",
+          "beads.events",
+          "beads.get",
+          "beads.handoff",
+          "beads.index",
+          "beads.list",
+          "beads.rebuild",
+          "beads.stale",
+          "beads.touch",
+          "board.comment",
+          "board.history",
+          "board.list",
+          "board.transition",
+          "board.upsert",
           "bookmarks.list",
+          "brief.compile",
+          "brief.read",
           "browser.producer.register",
           "browser.view.back",
           "browser.view.click",
@@ -556,6 +586,13 @@
           "connectors.remove",
           "connectors.tools",
           "contacts.find",
+          "conversation.answer",
+          "conversation.assistant.bind",
+          "conversation.change_subject",
+          "conversation.emergency",
+          "conversation.get",
+          "conversation.list",
+          "conversation.open",
           "declagents.get",
           "declagents.runs",
           "detokenize",
@@ -580,6 +617,7 @@
           "host.events",
           "host.notify",
           "host.unregister_agent",
+          "host.withdraw_approval",
           "infer",
           "infer_stream",
           "lattice.claim",
@@ -622,6 +660,15 @@
           "lease.release",
           "lease.renew",
           "lease.status",
+          "ledger.class.override",
+          "ledger.class.put",
+          "ledger.classes.list",
+          "ledger.dispatch",
+          "ledger.get",
+          "ledger.grade",
+          "ledger.list",
+          "ledger.put",
+          "ledger.rung_changes.list",
           "meeting.start",
           "memory.add_fact",
           "memory.admission_table",
@@ -803,7 +850,7 @@
         "tools.stream.subscribe",
         "tools.unregister"
       ],
-      "total": 559,
+      "total": 603,
       "uncovered": [
         "CancelTask",
         "CreateTaskPushNotificationConfig",
@@ -834,8 +881,10 @@
         "a2ui/replay",
         "a2ui/subscribe",
         "a2ui/unsubscribe",
+        "accounts.bench",
         "accounts.list",
         "accounts.open",
+        "accounts.usage",
         "admission.status",
         "agent/getAuthenticatedExtendedCard",
         "agent_permissions.evaluate",
@@ -866,6 +915,7 @@
         "agents.register_basics",
         "agents.remove",
         "agents.restart",
+        "agents.session_brief",
         "agents.start",
         "agents.stop",
         "agents.tail_log",
@@ -894,7 +944,27 @@
         "automation.run_powershell",
         "automation.shortcuts.list",
         "automation.shortcuts.run",
+        "beads.accept",
+        "beads.bind_factory",
+        "beads.create_child",
+        "beads.create_root",
+        "beads.events",
+        "beads.get",
+        "beads.handoff",
+        "beads.index",
+        "beads.list",
+        "beads.rebuild",
+        "beads.stale",
+        "beads.touch",
+        "board.comment",
+        "board.history",
+        "board.list",
+        "board.transition",
+        "board.upsert",
         "bookmarks.list",
+        "brief.compile",
+        "brief.curate_fact",
+        "brief.read",
         "browser.close",
         "browser.producer.register",
         "browser.run",
@@ -970,6 +1040,13 @@
         "connectors.tools",
         "contacts.containers",
         "contacts.find",
+        "conversation.answer",
+        "conversation.assistant.bind",
+        "conversation.change_subject",
+        "conversation.emergency",
+        "conversation.get",
+        "conversation.list",
+        "conversation.open",
         "credentials.issue",
         "credentials.list",
         "credentials.refusals",
@@ -1038,6 +1115,7 @@
         "host.set_status",
         "host.unregister_agent",
         "host.update_device",
+        "host.withdraw_approval",
         "image.generate",
         "infer.cancel",
         "infer.deadline",
@@ -1087,6 +1165,16 @@
         "lease.release",
         "lease.renew",
         "lease.status",
+        "ledger.class.override",
+        "ledger.class.put",
+        "ledger.classes.list",
+        "ledger.dispatch",
+        "ledger.get",
+        "ledger.grade",
+        "ledger.grade_note",
+        "ledger.list",
+        "ledger.put",
+        "ledger.rung_changes.list",
         "meeting.get",
         "meeting.list",
         "meeting.start",
@@ -1274,7 +1362,10 @@
         "skills.ingest_provisional",
         "skills.list",
         "speech.prepare",
+        "spend.assign_class",
         "spend.costs",
+        "spend.limits",
+        "spend.set_limit",
         "spend.status",
         "supervision.decide",
         "supervision.pending",
@@ -2260,6 +2351,23 @@
       "title": "A2aPeerRemoveParams",
       "type": "object"
     },
+    "rpc.accounts.bench.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "benched": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "benched",
+        "label"
+      ],
+      "title": "AccountsBenchParams",
+      "type": "object"
+    },
     "rpc.assistants.invoke.params": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -2281,6 +2389,28 @@
         "payload_json"
       ],
       "title": "AssistantInvokeParams",
+      "type": "object"
+    },
+    "rpc.brief.curate_fact.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "fact_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "body",
+        "fact_id"
+      ],
+      "title": "CurateFactParams",
       "type": "object"
     },
     "rpc.browser.run.params": {
@@ -2944,6 +3074,15 @@
             "null"
           ]
         },
+        "deadline": {
+          "description": "Absolute Unix-millisecond owner-question deadline.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "details": {},
         "options": {
           "items": {
@@ -3188,6 +3327,14 @@
             "created_at": {
               "format": "date-time",
               "type": "string"
+            },
+            "deadline": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "details": true,
             "id": {
@@ -4079,6 +4226,32 @@
         "error"
       ],
       "title": "InferenceRunnerFailParams",
+      "type": "object"
+    },
+    "rpc.ledger.grade_note.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "An idempotent note on an accepted tap grade; it never becomes a new grade.",
+      "properties": {
+        "entry_id": {
+          "type": "string"
+        },
+        "grade_operation_id": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "entry_id",
+        "grade_operation_id",
+        "note",
+        "operation_id"
+      ],
+      "title": "GradeNote",
       "type": "object"
     },
     "rpc.mail.accounts.result": {
@@ -5890,7 +6063,7 @@
               "type": "string"
             },
             {
-              "description": "TypeSafe System One (Parslee's `/inference/typesafe/v1/systemone`): typed decisions with a probability per option, no text generation. Such a row serves `classify` only.",
+              "description": "TypeSafe System One typed decisions, reached directly by a `typesafe` provider row or through Parslee's gateway. Direct rows also accept a raw System One JSON prompt through non-streaming `infer`; other rows serve `classify` only. This wire never generates chat text.",
               "enum": [
                 "system_one"
               ],
@@ -8160,6 +8333,14 @@
         "created_at": {
           "format": "date-time",
           "type": "string"
+        },
+        "deadline": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "details": true,
         "id": {

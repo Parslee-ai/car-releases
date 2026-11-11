@@ -14,10 +14,25 @@ Domain wiring is an honest boundary: **Conversation** is wired end-to-end
 (`sync.record_turn` → oplog → `sync.resume`), the **leased-intent** ledger is
 wired (`sync.record_intent` + `sync.fence_check`), and `sync.append` is a generic
 tee for any other surface. Auto-teeing the daemon's *internal* conversation /
-knowledge write paths into the oplog is a documented follow-up. E2E payload
-encryption ships as a tested `car_sync::crypto` library boundary (ChaCha20-Poly1305)
-but is not yet applied to the live oplog stream (decrypt-before-fold + key
-distribution are follow-ups).
+knowledge write paths into the oplog is a documented follow-up. Both relay
+backends require E2E payload encryption using `car_sync::crypto`
+(ChaCha20-Poly1305). Payloads encrypt before their hash-chain identity is minted;
+the session push boundary refuses plaintext and noncanonical envelopes, and
+incoming ciphertext is verified, journaled, then decrypted before folding.
+Undecryptable records remain on disk but contribute nothing to state and do
+not earn an acknowledgment.
+
+The filesystem backend reuses `PARSLEE_SYNC_PASSPHRASE` from the existing
+secret resolver, deriving keys with subject `car-fs-relay` on every device.
+Without it, local appends and reads still work, but `sync.pump` and
+`sync.rebase` fail before relay access. Enabling encryption over an existing
+plaintext journal or checkpoint is refused; the error explains how to preserve
+the old journal and explicitly start a fresh device chain. It does not remove
+plaintext already uploaded by older versions. The Parslee backend retains its
+existing account-bound and org-key providers. Certificate enrollment does not
+automatically distribute this sync passphrase.
+
+No JSON-RPC parameters, reply fields, or wrapper signatures change.
 
 **Agent sessions bound to a work context** also reach `secret.get` (the agent's policy still applies, and reserved OAuth slots are still refused) and `browser.producer.register` (the agent's own browser stream). Daemon-global calls such as `models.list`, `host.devices` and `host.notify` stay refused.
 
@@ -93,12 +108,12 @@ to the same bound-identity rule as `lease.*` below.
 #### `sync.checkpoint`
 - **Params**: `{}`
 - **Returns**: `{ published: boolean, checkpoint_hash?: string }`
-- Compute + upload a device-side checkpoint at the relay's stable frontier (the E2E-ready snapshot; the relay never folds). FFI: `syncCheckpoint` / `sync_checkpoint`.
+- Returns `{ published: false }` without uploading a snapshot. Checkpoint publishing and relay checkpoint GC remain disabled until per-audience encrypted snapshots are supported; encrypted cold devices replay the retained oplog. FFI: `syncCheckpoint` / `sync_checkpoint`.
 
 #### `sync.rebase`
 - **Params**: `{}`
 - **Returns**: `{ rebased: boolean, base_checkpoint?: string }`
-- Cold bootstrap / straggler re-entry: re-anchor on the relay's latest checkpoint, carrying uncovered local ops across. FFI: `syncRebase` / `sync_rebase`.
+- With no relay checkpoint, returns `{ rebased: false, base_checkpoint: null }`; encrypted sessions refuse a legacy plaintext checkpoint. A keyless local store refuses before relay access. FFI: `syncRebase` / `sync_rebase`.
 
 #### `sync.transcript`
 - **Params**: `{ conversation_id?: string }`

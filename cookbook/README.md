@@ -24,6 +24,7 @@ If you're just starting:
 | 12 | [macOS Apple-frameworks providers](./12-macos-apple-frameworks.md) | Speech / AVFoundation / FoundationModels — defaults, permissions, overrides |
 | 13 | [Voice orchestration](./13-voice-orchestration.md) | voice-context prompt overlay (Phase A); two-track sidecar lands in subsequent phases |
 | 14 | [Cross-host deployment](./14-cross-host-deployment.md) | daemon on Linux + client on Windows (or any split) via `$CAR_DAEMON_URL` + `$CAR_AUTH_TOKEN` |
+| 15 | [Shared work board for coding sessions](./15-shared-work-board.md) | Claude Code and Codex sessions see what each other has in flight; overlap is reported, never refused |
 
 Recipes use TypeScript and Python interchangeably — pick whichever is clearer for the surface. The runtime behavior is identical across bindings.
 

@@ -398,7 +398,7 @@ Each stderr line is `{"type", "phase", "message", "data"}`.
 | `type` | Meaning |
 |---|---|
 | `started` | Run began. `data` carries the goal, model, sandbox posture, and `work_context` (the bound org, or `null`). |
-| `inference_started` | A model call is about to begin, emitted before CAR awaits the generator. `data.model` is the requested model (or `(router)`), `data.attempt` is `1`, and `data.turn` is the assistant turn. |
+| `inference_started` | A model call is about to begin, emitted before CAR awaits the generator. `data.model` is the requested model (or `(router)`), `data.attempt` is `1`, and `data.turn` is the assistant turn. It repeats every 60 s while the call is still awaited, with `data.waiting_ms` (how long it has waited, present only on a repeat) and `data.attempt` naming the attempt in flight. |
 | `inference_retry` | A transient remote failure will be retried. `data.model` is the canonical model, `data.attempt` is the attempt about to start, `data.reason` is a generic failure class (`http_status` or `transport`), and `data.backoff_ms` is the delay before it starts. Provider response bodies are never copied into this event. |
 | `model_served` | One model call completed. `data.model_id` is the canonical model that served the turn; `data.local_last_resort` is true only when CAR appended and then used an on-device model behind a remote-only chain, and on a substituted turn (last resort, or every turn after a startup substitution) `data.substituted_from` and `data.substitution_reason` name the model it stood in for and why. |
 | `text` | The model's prose for a turn — plus the loop's own bracketed notices (below). |
@@ -414,7 +414,8 @@ Each stderr line is `{"type", "phase", "message", "data"}`.
 carries `started` and neither terminator means the process was killed — say
 that, rather than guessing at a result from the partial stream. A host can use
 `inference_started` to distinguish an awaited model call from silence between
-loop stages, and `inference_retry` resets that liveness window before each
+loop stages: its repeats keep a slow call from looking silent for longer than
+a minute, and `inference_retry` resets that liveness window before each
 remote backoff. Neither event is a success receipt; only `model_served` says a
 call completed.
 
@@ -442,6 +443,7 @@ consumer can tell them from the model's prose:
 | `[delegate: <goal> — N turns, ok]` / `…, error]` | A `delegate` call returned; `N` is the child's turn count, never added to `turns`. |
 | `[format repair: …]` | Under `--response-format` / `--json-schema`, the final answer was not the requested JSON (for a schema: did not conform) and the model was re-asked once with no tools. A second line says if the repaired answer still misses; it is returned as-is. |
 | `[format repair failed: …]` | The repair call itself errored (e.g. the model's protocol rejects the format); the DRAFT answer is returned. |
+| `[claim check] …` | Under `--response-format` / `--json-schema`, the check of the run's read-back against the request found a contradiction the answer does not acknowledge or did not complete, or a deterministic goal passed but an operational summary claim had no matching same-run tool receipt. Without a format the same note ends `summary`; with one it arrives here instead, so `summary` stays the requested JSON. |
 | `[context window: …]` | `--context-window` asked for more than the model's known window and was clamped to it. |
 | `[N interrupted tool call(s) were not replayed: <tools>]` | On resume, tool calls the stopped run asked for but never recorded a result for were answered as failed with an unknown outcome, and were not run again. |
 

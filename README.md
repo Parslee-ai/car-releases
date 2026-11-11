@@ -122,11 +122,13 @@ package is in **[DISTRIBUTION.md](./DISTRIBUTION.md)**.
 # macOS + Linux convenience installer (Windows: use CAR-setup-x64.exe or Scoop above;
 # inspect-then-run guidance in SECURITY.md):
 curl -fsSL https://raw.githubusercontent.com/Parslee-ai/car-releases/main/install.sh | sh
-# pin a version with CAR_VERSION=v0.60.0
+# pin a version with CAR_VERSION=v0.61.2
 ```
 
 macOS is Apple Silicon only (15+). Linux x86_64/aarch64 and Windows x86_64 are
-supported; see the matrix for wheel availability.
+supported; see the matrix for wheel availability. Linux needs glibc 2.39 or newer
+(Ubuntu 24.04+, Debian 13+, Fedora 40+) and two runtime libraries; see
+[Linux requirements](./DISTRIBUTION.md#linux-requirements).
 
 ## Quickstart
 

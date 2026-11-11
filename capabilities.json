@@ -50,6 +50,11 @@
       "what_you_get_for_free": "Static plan checks, policy enforcement, permission preflight, and sandboxed execution boundaries.",
       "crates": [
         {
+          "name": "car-ledger",
+          "description": "Decision ledger contract and deterministic grading policy for CAR",
+          "readme": true
+        },
+        {
           "name": "car-permissions",
           "description": "Cross-platform permission preflight for Common Agent Runtime",
           "readme": true
@@ -70,7 +75,15 @@
           "readme": true
         }
       ],
-      "programs": []
+      "programs": [
+        {
+          "id": "program:decision-ledger",
+          "name": "car ledger",
+          "kind": "program",
+          "entry_point": "car-cli/src/ledger.rs + car-server-core/src/ledger.rs",
+          "description": "Owner-graded decisions, class autonomy, and durable write-before-dispatch for bound assistant executors."
+        }
+      ]
     },
     {
       "id": "memory-learning",
@@ -139,6 +152,11 @@
         {
           "name": "car-agents",
           "description": "Built-in commodity agents for Common Agent Runtime",
+          "readme": true
+        },
+        {
+          "name": "car-beads",
+          "description": "Git-backed work beads and rebuildable registry index for CAR",
           "readme": true
         },
         {
@@ -518,7 +536,7 @@
     {
       "id": "identity-auth-secrets",
       "name": "Identity, auth, secrets, and messaging",
-      "what_you_get_for_free": "OAuth identity, native secret storage, assistant naming, and governed human approval transports.",
+      "what_you_get_for_free": "OAuth identity, native secret storage, assistant naming, governed human approval transports, and the owner conversation floor (car conversation).",
       "crates": [
         {
           "name": "car-auth",
@@ -686,12 +704,28 @@
       "description": "OS-native account discovery — Internet Accounts / WAM / GOA"
     },
     {
+      "path": "accounts bench",
+      "description": "Bench an account for the future seat pool (keeps sensing usage)"
+    },
+    {
       "path": "accounts list",
       "description": "List accounts visible to the OS"
     },
     {
+      "path": "accounts login",
+      "description": "Log in a subscription account on CAR's own OAuth grant"
+    },
+    {
       "path": "accounts open",
       "description": "Open the native account-management UI"
+    },
+    {
+      "path": "accounts unbench",
+      "description": "Return an account to the future seat pool"
+    },
+    {
+      "path": "accounts usage",
+      "description": "Show subscription usage, headroom, resets and bench state from the daemon"
     },
     {
       "path": "agent",
@@ -723,7 +757,7 @@
     },
     {
       "path": "approvals default",
-      "description": "Set the default approval preset for all agents (`cautious` asks before any edit/full-access, `balanced` allows sandboxed edits, `trusting` allows everything without asking)"
+      "description": "Set the default approval preset for all agents: `cautious` asks for every tier, `balanced` allows reads, and `trusting` allows reads and sandboxed edits. All three presets ask for full-access by default"
     },
     {
       "path": "approvals evaluate-tool",
@@ -786,8 +820,92 @@
       "description": "Switch the account's active organization by id (e.g. `org_parslee`)"
     },
     {
+      "path": "beads",
+      "description": "Git-backed work beads across enrolled repositories"
+    },
+    {
+      "path": "beads accept",
+      "description": "Take ownership, declaring the required touch cadence in milliseconds"
+    },
+    {
+      "path": "beads bind-factory",
+      "description": "Bind a factory to project-scoped ISA claims (host authority)"
+    },
+    {
+      "path": "beads create-child",
+      "description": "Create a child in a factory's owned subtree"
+    },
+    {
+      "path": "beads create-root",
+      "description": "Create a root citing a project ISA claim"
+    },
+    {
+      "path": "beads events",
+      "description": "Read refusal events for ledger consumers"
+    },
+    {
+      "path": "beads get",
+      "description": "Show a bead and its source file"
+    },
+    {
+      "path": "beads handoff",
+      "description": "Transfer the same root, keeping its requester and id"
+    },
+    {
+      "path": "beads index",
+      "description": "Enroll repositories and designate Grace's root-agent identity"
+    },
+    {
+      "path": "beads list",
+      "description": "List indexed work, with optional filters"
+    },
+    {
+      "path": "beads rebuild",
+      "description": "Replace the derived index by reading every enrolled repository"
+    },
+    {
+      "path": "beads stale",
+      "description": "List owned work whose declared touch cadence was missed"
+    },
+    {
+      "path": "beads touch",
+      "description": "Record a touch by the current owner"
+    },
+    {
       "path": "board",
       "description": "Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board launched by an agent cannot. Closing the board never stops a run"
+    },
+    {
+      "path": "board brief",
+      "description": "The briefing a session starts with, for the current directory's branch"
+    },
+    {
+      "path": "board history",
+      "description": "One item's history: each change, the session that made it, comments"
+    },
+    {
+      "path": "board items",
+      "description": "List the shared work board: what is in flight, who is driving it, and what it waits on (the coder-session monitor is plain `car board`)"
+    },
+    {
+      "path": "board reconcile",
+      "description": "Make a project's board follow its code host (opt-in). The daemon then marks items done or abandoned when their PR merges or is abandoned, moves them to review when a PR opens, and opens and closes a \"main is red\" incident per failing pipeline, every few minutes"
+    },
+    {
+      "path": "board reconcile add",
+      "description": "Watch a project: its board items follow the repository's PRs and main pipelines"
+    },
+    {
+      "path": "board reconcile list",
+      "description": "List watched projects"
+    },
+    {
+      "path": "board reconcile remove",
+      "description": "Stop watching a project"
+    },
+    {
+      "path": "board-hook",
+      "description": "Brief a coding-assistant session from the shared work board. Wired by the CAR plugin as a Claude Code hook: at session start it adds the briefing (at most 30 lines), and on each prompt a line when items on the current branch changed. Prints nothing without a daemon, and always exits 0"
     },
     {
       "path": "bookmarks",
@@ -910,6 +1028,10 @@
       "description": "Show the approved harness overlays — system-prompt and tool-description text applied through `evolution.run` — that every native coder session starts with, or clear them. Nothing removes an applied overlay on its own; `--clear` is how one is taken out of force. Reads the local coder state directory; no daemon needed"
     },
     {
+      "path": "codex",
+      "description": "Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent, installs session-only collaboration and policy hooks, injects the daemon brief, and removes the agent on exit. Needs a running daemon. Arguments after `--` go to `codex`"
+    },
+    {
       "path": "concierge",
       "description": "Your local models' concierge: what each model is doing, what it would change and what it did on its own. Without a subcommand, prints the facts (no model involved)"
     },
@@ -936,6 +1058,10 @@
     {
       "path": "contacts find",
       "description": "Free-text contact search"
+    },
+    {
+      "path": "conversation",
+      "description": "Inspect the owner's current question, waiting asks, and answer attributions"
     },
     {
       "path": "daemon",
@@ -967,7 +1093,7 @@
     },
     {
       "path": "feedback",
-      "description": "Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; queued reports send when CAR can reach Parslee. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first"
+      "description": "Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; CAR tries to send a report saved while signed in to Parslee in the background, and `car feedback --list` shows whether it went. One saved signed out stays on this computer for `--export`. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first"
     },
     {
       "path": "files",
@@ -1264,6 +1390,18 @@
     {
       "path": "lattice respond",
       "description": "Answer a request. The answer reaches the asker as a reply, and agents waiting on it resume"
+    },
+    {
+      "path": "ledger",
+      "description": "Review and grade the owner's decision ledger"
+    },
+    {
+      "path": "ledger grade",
+      "description": "Grade the exact entry version shown by list. Reuse operation-id on retry"
+    },
+    {
+      "path": "ledger list",
+      "description": "List decisions, optionally filtered by class, time, and grade state"
     },
     {
       "path": "ls",
@@ -2311,6 +2449,11 @@
       "namespace": "accounts",
       "methods": [
         {
+          "method": "accounts.bench",
+          "documented": true,
+          "role": "operator_only"
+        },
+        {
           "method": "accounts.list",
           "documented": true,
           "role": "operator"
@@ -2319,6 +2462,11 @@
           "method": "accounts.open",
           "documented": true,
           "role": "operator"
+        },
+        {
+          "method": "accounts.usage",
+          "documented": true,
+          "role": "operator_only"
         }
       ]
     },
@@ -2491,6 +2639,11 @@
           "role": "agent"
         },
         {
+          "method": "agents.session_brief",
+          "documented": true,
+          "role": "host"
+        },
+        {
           "method": "agents.start",
           "documented": true,
           "role": "agent"
@@ -2653,12 +2806,127 @@
       ]
     },
     {
+      "namespace": "beads",
+      "methods": [
+        {
+          "method": "beads.accept",
+          "documented": true,
+          "role": "owner"
+        },
+        {
+          "method": "beads.bind_factory",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "beads.create_child",
+          "documented": true,
+          "role": "owner"
+        },
+        {
+          "method": "beads.create_root",
+          "documented": true,
+          "role": "owner"
+        },
+        {
+          "method": "beads.events",
+          "documented": true,
+          "role": "owner"
+        },
+        {
+          "method": "beads.get",
+          "documented": true,
+          "role": "owner"
+        },
+        {
+          "method": "beads.handoff",
+          "documented": true,
+          "role": "owner"
+        },
+        {
+          "method": "beads.index",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "beads.list",
+          "documented": true,
+          "role": "owner"
+        },
+        {
+          "method": "beads.rebuild",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "beads.stale",
+          "documented": true,
+          "role": "owner"
+        },
+        {
+          "method": "beads.touch",
+          "documented": true,
+          "role": "owner"
+        }
+      ]
+    },
+    {
+      "namespace": "board",
+      "methods": [
+        {
+          "method": "board.comment",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.history",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.list",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.transition",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.upsert",
+          "documented": true,
+          "role": "operator"
+        }
+      ]
+    },
+    {
       "namespace": "bookmarks",
       "methods": [
         {
           "method": "bookmarks.list",
           "documented": true,
           "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "brief",
+      "methods": [
+        {
+          "method": "brief.compile",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "brief.curate_fact",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "brief.read",
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -3083,6 +3351,46 @@
       ]
     },
     {
+      "namespace": "conversation",
+      "methods": [
+        {
+          "method": "conversation.answer",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "conversation.assistant.bind",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "conversation.change_subject",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "conversation.emergency",
+          "documented": true,
+          "role": "agent"
+        },
+        {
+          "method": "conversation.get",
+          "documented": true,
+          "role": "agent"
+        },
+        {
+          "method": "conversation.list",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "conversation.open",
+          "documented": true,
+          "role": "agent"
+        }
+      ]
+    },
+    {
       "namespace": "credentials",
       "methods": [
         {
@@ -3484,6 +3792,11 @@
           "method": "host.update_device",
           "documented": true,
           "role": "operator"
+        },
+        {
+          "method": "host.withdraw_approval",
+          "documented": true,
+          "role": "agent"
         }
       ]
     },
@@ -3754,6 +4067,61 @@
           "method": "lease.status",
           "documented": true,
           "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "ledger",
+      "methods": [
+        {
+          "method": "ledger.class.override",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.class.put",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.classes.list",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.dispatch",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.get",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.grade",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.grade_note",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.list",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.put",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "ledger.rung_changes.list",
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -4693,12 +5061,12 @@
         {
           "method": "runs.get_trace",
           "documented": true,
-          "role": "owner"
+          "role": "agent"
         },
         {
           "method": "runs.list",
           "documented": true,
-          "role": "owner"
+          "role": "agent"
         },
         {
           "method": "runs.record_model_turn",
@@ -4723,7 +5091,7 @@
         {
           "method": "runs.subscribe",
           "documented": true,
-          "role": "owner"
+          "role": "agent"
         },
         {
           "method": "runs.unsubscribe",
@@ -5031,9 +5399,24 @@
       "namespace": "spend",
       "methods": [
         {
+          "method": "spend.assign_class",
+          "documented": true,
+          "role": "host"
+        },
+        {
           "method": "spend.costs",
           "documented": true,
           "role": "operator_only"
+        },
+        {
+          "method": "spend.limits",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "spend.set_limit",
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "spend.status",

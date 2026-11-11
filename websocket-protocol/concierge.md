@@ -113,7 +113,8 @@ See `docs/proposals/concierge-agent.md`.
 - **Params**: `{ limit?: number = 50 }`
 - **Returns**: `{ actions: ConciergeActionEntry[] }` — the auditable log of
   concierge actions (install / set_default / clear_default / rollback /
-  retire / retire_started / discard_partials / resource_policy / auto_upgrade), each with `prior_model_id`
+  retire / retire_started / discard_partials / resource_policy / auto_upgrade /
+  inference), each with `prior_model_id`
   (Phase D2). `retire_started` is written before a retirement's first
   deletion, so one a crash cut short still leaves a record; an orphaned repo's
   entries carry `model_id: "repo:<owner/name>"`.
@@ -223,5 +224,10 @@ See `docs/proposals/concierge-agent.md`.
   the daemon auto-reverts a `concierge.apply` switch that proves worse than the
   prior model (canary over observed post-switch outcomes).
 
+Direct TypeSafe calls do not appear in `concierge.actions`, which holds only
+model-management actions. Each direct call is audited in the outcome ledger
+(`models/outcome_ledger.jsonl`) and in tracing with `provider`, `provider_row`,
+`key_id` (the stored key name) and `route`. No key value, prompt or response is
+stored.
 
 {% endraw %}

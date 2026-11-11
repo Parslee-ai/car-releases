@@ -17,7 +17,7 @@ the JSON-RPC response. The NAPI `inferStream` export and Python
   "params": {
     "prompt": "Explain CAR in one sentence.",
     "model": "openrouter/openai/gpt-5.4",
-    "max_tokens": 1024
+    "params": { "max_tokens": 1024 }
   }
 }
 ```
@@ -101,7 +101,7 @@ ws.on('message', (bytes) => {
       params: {
         prompt: 'Explain CAR in one sentence.',
         model: 'openrouter/openai/gpt-5.4',
-        max_tokens: 1024,
+        params: { max_tokens: 1024 },
       },
     }));
     return;
@@ -165,7 +165,7 @@ async def main() -> None:
             "params": {
                 "prompt": "Explain CAR in one sentence.",
                 "model": "openrouter/openai/gpt-5.4",
-                "max_tokens": 1024,
+                "params": {"max_tokens": 1024},
             },
         }))
         async for raw in ws:
@@ -205,9 +205,11 @@ returns a JSON-RPC error, never a partial success.
 ## Memory context and tools
 
 `infer_stream.params` accepts the same `GenerateRequest` fields as `infer`,
-including `context`, `context_query`, `tools`, `tool_choice`,
-`parallel_tool_calls`, and `intent`. Put those fields in the request object;
-there is no positional streaming signature.
+including the required `prompt`, `messages`, `context`, `context_query`,
+`tools`, and `intent`. Sampling and tool-choice settings go inside `params`
+(`params.max_tokens`, `params.tool_choice`, `params.parallel_tool_calls`).
+Put those fields in the request object; there is no positional streaming
+signature.
 
 ## Cancellation
 

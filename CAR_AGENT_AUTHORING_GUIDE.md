@@ -223,7 +223,7 @@ for level in &levels {
 
 **Replan (the autonomous half).** If a `ReplanCallback` is registered and `ReplanConfig.max_replans > 0`, `execute` catches an abort, rolls back, builds a `ReplanContext` (failed actions, completed ids, state snapshot, attempt, remaining), optionally sleeps `delay_ms`, calls `callback.replan(&ctx)` for a *new* `ActionProposal`, optionally verifies it (`verify_before_execute`), and re-executes. **Default `ReplanConfig` = `{ max_replans: 0 (disabled), delay_ms: 0, verify_before_execute: true }`.** Replanning only triggers on abort.
 
-**Terminal outcomes (`AgentOutcome`, `car-ir/outcome.rs`).** A model-driven loop drives verify/execute repeatedly until an `AgentOutcome` is terminal: `{ status: OutcomeStatus, summary, evidence: Vec<Evidence>, metrics: OutcomeMetrics, timestamp }`. `OutcomeStatus` (snake_case): `success`, `partial_success`, `give_up`, `timeout`, `failure`, `done`. **All statuses are `is_terminal()`;** `is_completed()` is true for success/partial_success/done. `EvidenceKind`: `self_assessment`, `tool_result`, `state_change`, `external_verification`, `stop_reason`, `evaluator`. Constructors: `success()`, `failure()`, `timeout(summary, turns, max_turns)`, `give_up(reason)`.
+**Terminal outcomes (`AgentOutcome`, `car-ir/outcome.rs`).** A model-driven loop drives verify/execute repeatedly until an `AgentOutcome` is terminal: `{ status: OutcomeStatus, summary, evidence: Vec<Evidence>, metrics: OutcomeMetrics, timestamp }`. `OutcomeStatus` (snake_case): `success`, `partial_success`, `give_up`, `timeout`, `failure`, `done`, `stalled`, `no_terminal`. **All statuses are `is_terminal()`;** `is_completed()` is true for success/partial_success/done. `EvidenceKind`: `self_assessment`, `tool_result`, `state_change`, `external_verification`, `stop_reason`, `evaluator`. Constructors: `success()`, `failure()`, `timeout(summary, turns, max_turns)`, `give_up(reason)`.
 
 **Run-trace lifecycle (the harness brackets every run).** The canonical packaged Node harness (`car-runtime/agent-loop`, imported by agents from the create-car-agent skill) wraps each `runAgent` invocation in a **run** so CarHost can trace it end-to-end — the intent it was given, every turn's prompt/CLI-outcome/verifier-verdict, and the final `AgentOutcome`. Capture is daemon-side and generic (no per-agent code); the harness only marks the run's boundaries:
 
@@ -414,6 +414,16 @@ current version** leaves the registry untouched; **Revert to previous version**
 uses `declagents.revert` to restore `previous` atomically without another model
 build. Programmatic clients use `declagents.run_scenarios` and
 `declagents.revert` for the same operations.
+
+An agent with a `working_folder` runs each scenario in a fresh copy of that
+folder. A scenario may carry `files`, an object of folder-relative path to
+text, for a file its job expects to find:
+`{"input": "add the time", "expect": "added", "files": {"heartbeat.txt": "9:05\n"}}`.
+Each one is written into that case's copy only where the folder holds nothing
+at that path, so a job that edits a file can be tested before the file exists,
+and the person's own file is used whenever there is one. The real folder never
+gets them. A path outside the folder, more than 16 files, or more than 256 KB
+in one scenario makes the spec invalid.
 
 
 | Agent kind | Durable definition | Runtime output | Locate it |
@@ -863,7 +873,7 @@ car auth logout                      # remove stored tokens from the keychain
 | `--callback-port` | `53682` |
 | `--provider` | `microsoft` \| `google` |
 
-`car auth login` binds a local TCP listener on the callback port, opens the authorize URL, waits for the redirect to `http://127.0.0.1:{port}/auth/callback`, **verifies the returned OAuth `state` matches** (a mismatch aborts the exchange as a CSRF guard), and exchanges the code at `{api_base}/connect/token`. Before publishing anything, `fetch_status_with_access` validates the uncommitted access token and resolves its account identity; `commit_login` then atomically publishes that identity and token set in the authoritative `PARSLEE_AUTH_STATE_V2` record under keychain service `"car"`.
+`car auth login` binds a local TCP listener on the callback port, opens the authorize URL (when no browser can be opened, as on a server without `xdg-open`, it prints the URL and keeps waiting; the browser that opens it must reach `127.0.0.1:{port}` on that machine, for example through `ssh -L 53682:127.0.0.1:53682 <host>`), waits for the redirect to `http://127.0.0.1:{port}/auth/callback`, **verifies the returned OAuth `state` matches** (a mismatch aborts the exchange as a CSRF guard), and exchanges the code at `{api_base}/connect/token`. Before publishing anything, `fetch_status_with_access` validates the uncommitted access token and resolves its account identity; `commit_login` then atomically publishes that identity and token set in the authoritative `PARSLEE_AUTH_STATE_V2` record under keychain service `"car"`.
 
 > **Daemon-first consequence:** request-time readers such as `auth.status`, `parslee.auth`, and Parslee inference pick up the new V2 credentials on their next call; `access_token_refreshing` applies the shared `REFRESH_SKEW_SECS` refresh window. `auth.switch_org`, `auth.status` and `parslee.auth` refresh `ServerState.parslee_session` for the same login. Restart `car-server` only when the account or authority changes (a session for a different login is refused and the first stays) or Parslee sync initialization must change.
 
@@ -1928,7 +1938,7 @@ impl ReplanCallback for MyCb {
 }
 ```
 
-On abort, the runtime rolls back, builds a `ReplanContext { failed_actions, completed_action_ids, state_snapshot, attempt, replans_remaining, ... }`, optionally sleeps `delay_ms`, calls `callback.replan(&ctx)` for a fresh `ActionProposal`, optionally verifies it via `car_verify::verify_with_schemas` when `verify_before_execute` (rejecting broken replans **without executing them**), and re-executes. This is the bridge a single-agent author most needs: a model-driven loop drives the `verify/execute` primitive repeatedly, re-proposing from observed failures, until the run reaches a terminal `AgentOutcome` (the IR's typed completion — `success`, `partial_success`, `give_up`, `timeout`, `failure`, `done`, all `is_terminal()`).
+On abort, the runtime rolls back, builds a `ReplanContext { failed_actions, completed_action_ids, state_snapshot, attempt, replans_remaining, ... }`, optionally sleeps `delay_ms`, calls `callback.replan(&ctx)` for a fresh `ActionProposal`, optionally verifies it via `car_verify::verify_with_schemas` when `verify_before_execute` (rejecting broken replans **without executing them**), and re-executes. This is the bridge a single-agent author most needs: a model-driven loop drives the `verify/execute` primitive repeatedly, re-proposing from observed failures, until the run reaches a terminal `AgentOutcome` (the IR's typed completion — `success`, `partial_success`, `give_up`, `timeout`, `failure`, `done`, `stalled`, `no_terminal`, all `is_terminal()`).
 
 Two defaults to remember: **replanning is OFF by default** (`ReplanConfig.max_replans == 0`, zero overhead), and it fires **only on abort** — never on `Skip` or `Retry` failures.
 
@@ -2009,7 +2019,7 @@ pub struct AgentOutcome {
 ```
 
 `OutcomeStatus` (`car-rs/crates/car-ir/src/outcome.rs`, snake_case on the wire)
-has exactly **six** variants — these are the real ones, do not invent others:
+has exactly **eight** variants — these are the real ones, do not invent others:
 
 | Variant | Wire value | Meaning | `is_completed()` |
 |---|---|---|---|
@@ -2019,6 +2029,8 @@ has exactly **six** variants — these are the real ones, do not invent others:
 | `Timeout` | `"timeout"` | Exceeded a step/time limit. | `false` |
 | `Failure` | `"failure"` | Errored out. | `false` |
 | `Done` | `"done"` | Agent signaled done (neutral). | `true` |
+| `Stalled` | `"stalled"` | Stopped after repeated actions without progress. | `false` |
+| `NoTerminal` | `"no_terminal"` | No required terminal call after the reminder. | `false` |
 
 Two helpers live on `OutcomeStatus`:
 
@@ -2941,7 +2953,7 @@ The verify→execute pipeline is only half the story. The other half is **propos
 AgentOutcome { status: OutcomeStatus, summary, evidence: Vec<Evidence>, metrics: OutcomeMetrics, timestamp }
 ```
 
-**`OutcomeStatus`** (snake_case): `success`, `partial_success`, `give_up`, `timeout`, `failure`, `done`.
+**`OutcomeStatus`** (snake_case): `success`, `partial_success`, `give_up`, `timeout`, `failure`, `done`, `stalled`, `no_terminal`.
 - `is_completed()` → true for `success` / `partial_success` / `done`.
 - `is_terminal()` → **true for all statuses** (every status ends the loop).
 
@@ -3805,6 +3817,11 @@ trust_tier (Curated | Community), deprecated
 
 Registry helpers: `list()`, `get(id)`, `find_by_name(name)`, `ensure_local(id)` (auto-pull on first use), `ensure_local_with_progress`, `resolve_mlx_equivalent`, `available_upgrades`, `models_dir`.
 
+The `openai-codex/gpt-6.1-sol:high` and `openai-codex/gpt-6.1-sol:medium`
+rows use CAR's ChatGPT subscription sign-in (`car auth login --provider openai-codex`),
+with no OpenAI API key or Codex CLI installation. Both have a 500,000-token
+context window; the suffix selects high or medium reasoning effort.
+
 **`ModelSource`**: `Local` (GGUF via Candle), `RemoteApi`, `CodexCli`, `Ollama`, `Mlx`, external/operator-owned `VllmMlx`, CAR-owned `ManagedVllmMlx`, and `AppleFoundationModels` (plus the speech/proprietary/delegated variants). Schema helpers: `is_codex_cli`, `is_mlx`, `is_vllm_mlx`, `is_car_managed_vllm_mlx`, `is_foundation_models`, `requires_apple_silicon`, `size_mb`, `ram_mb`. A loopback endpoint does not turn `VllmMlx` into the managed variant.
 
 The curated `openai/gpt-5.6-sol:high` row is a `CodexCli { model: "gpt-5.6-sol:high" }` source. It is an identity-pinnable generation route through `codex exec`; `:high` maps to `model_reasoning_effort="high"`. Codex owns its ChatGPT-subscription token and CAR removes `OPENAI_API_KEY` from the child, so this source needs no API key. Inline image attachments are decoded into the turn's scratch directory, passed with `--image`, and removed after the turn. They are passed in conversation order, earlier turns first and the current message's last, and each message in the encoded conversation lists the 1-based positions of the images it carried; an image over 32 MiB is refused before it is written. Video, audio, and remote image URL attachments produce a model-named refusal while the text is still answered. Conversation history and CAR tool proposals are supported; response schemas and streaming are rejected. Unlike `external:codex`, this route runs in an empty read-only scratch directory with Codex's shell, multi-agent, app, plugin, code-mode, and web-search features disabled. Codex exposes no exact per-call output-token cap, so `max_tokens` is sent as an approximate response-limit instruction and the CLI's reported usage is authoritative.
@@ -4002,7 +4019,7 @@ JSON-RPC error, never partial success.
   "params": {
     "prompt": "Explain CAR in one sentence.",
     "model": "openrouter/openai/gpt-5.4",
-    "max_tokens": 1024
+    "params": { "max_tokens": 1024 }
   }
 }
 ```
@@ -4824,7 +4841,7 @@ The dispatcher exposes 73+ documented methods. The author-relevant core:
 
 **Skills** — `skill.ingest {name, code, platform?, persona?, url_pattern?, description?, task_keywords?, supersedes?}` → node id; `skill.find {persona?, url?, task?, max_results?=1}`; `skill.report {skill_name, outcome}` (auto-degrades when `fail > success + 2`); `skill.repair {skill_name}`; `skills.distill {events}`, `skills.evolve {events, domain}`, `skills.ingest_distilled`, `skills.list {domain?}`, `skills.domains_needing_evolution {threshold?=0.6}`.
 
-**Inference & models** — `infer GenerateRequest{model, messages, system?, max_tokens?, temperature?, tools?, context_query?, response_format?, intent?}` → `{text, tool_calls, usage:{input_tokens,output_tokens}, model_used, trace_id, latency_ms, time_to_first_token_ms, local_last_resort?}`. The fallback marker is present and true only when an on-device model appended behind a remote-only chain actually served. Set `context_query` to auto-inject memory context. `infer_stream` (same request) pushes `inference.stream.event {request_id, event:{type:text|tool_start|tool_delta|usage|stop_reason|provider_output_item|error}}`; `error` is terminal. It returns the accumulated result in the **final JSON-RPC response**; there is no `done` notification. Also `embed`, `classify`, `rerank`, `tokenize`/`detokenize` (**local Qwen3 GGUF/MLX only** — remote returns `UnsupportedMode`), `transcribe`, `synthesize`, `image.generate`, `video.generate`, `speech.prepare`. Model management: `models.list`, `models.list_unified`, `models.search`, `models.recommend`, `models.setup_plan`, `models.resource_policy.get`/`set`, `models.preflight`, `models.storage_roots`, `models.adopt`, `models.remove`, `models.upgrades`/`detect_upgrades`/`check_upgrade_nudge`/`dismiss_upgrade`, `models.update_prefs_get`/`set`, `models.register`/`unregister`, `models.pull`/`install`, `models.route`, `models.stats`, `admission.status`.
+**Inference & models** — `infer GenerateRequest{prompt, messages?, model?, params?:{max_tokens?, temperature?, …}, context?, tools?, context_query?, response_format?, intent?}` → `{text, tool_calls, usage:{input_tokens,output_tokens}, model_used, trace_id, latency_ms, time_to_first_token_ms, local_last_resort?}`. `prompt` is required even with `messages` (send `""` when `messages` carries the conversation); without it the call fails with `invalid params`. The fallback marker is present and true only when an on-device model appended behind a remote-only chain actually served. Set `context_query` to auto-inject memory context. `infer_stream` (same request) pushes `inference.stream.event {request_id, event:{type:text|tool_start|tool_delta|usage|stop_reason|provider_output_item|error}}`; `error` is terminal. It returns the accumulated result in the **final JSON-RPC response**; there is no `done` notification. Also `embed`, `classify`, `rerank`, `tokenize`/`detokenize` (**local Qwen3 GGUF/MLX only** — remote returns `UnsupportedMode`), `transcribe`, `synthesize`, `image.generate`, `video.generate`, `speech.prepare`. Model management: `models.list`, `models.list_unified`, `models.search`, `models.recommend`, `models.setup_plan`, `models.resource_policy.get`/`set`, `models.preflight`, `models.storage_roots`, `models.adopt`, `models.remove`, `models.upgrades`/`detect_upgrades`/`check_upgrade_nudge`/`dismiss_upgrade`, `models.update_prefs_get`/`set`, `models.register`/`unregister`, `models.pull`/`install`, `models.route`, `models.stats`, `admission.status`.
 
 > **Gotchas:** `infer_stream` honors `response_format` on remote providers; an unsupported combination — including either response-format variant on Anthropic — returns an explicit `UnsupportedMode` error instead of being silently weakened. For structured output on Claude, use tools + `tool_choice=required`. `models.register`/`unregister` are phase-1: the daemon's live `UnifiedRegistry` is **not** updated in-process — changes are visible to `models.list*`/`infer` only on the **next daemon boot**, so register models before issuing `infer` or restart.
 
@@ -5164,9 +5181,9 @@ tail -f ~/Library/Logs/Claude/mcp-server-car.log
 | `GET /mcp` | **`405 Method Not Allowed`** (with `Allow: POST, DELETE`) — the streamable-HTTP spec's branch for a server that offers no SSE stream. The old SSE sink registry and `push_to_session` primitive remain removed; the identity/inbox record is polling-only. |
 | `GET /mcp/health` | Liveness: `{"status":"ok","protocol_version":"2025-11-25", server_name}` (interpolates `car_mcp::PROTOCOL_VERSION`). Not `Origin`-guarded and not `MCP-Protocol-Version`-guarded — no side effect, no secrets, the uptime `curl` below has to keep working, and it is how a client whose version was rejected finds out what the server speaks. |
 
-**`Origin` validation** guards `POST /mcp` and `DELETE /mcp` (DNS-rebinding protection; `GET /mcp` is a constant `405` with no side effect, so it needs no guard). Absent `Origin` → allowed, which is what every real MCP client sends; an `Origin` naming loopback (`localhost`, `127.0.0.0/8`, `::1`, any port, `http` or `https`) → allowed; anything else, including the literal `null`, → `403 {"error":"origin not allowed"}`. The rule does **not** widen for a non-loopback `--mcp-bind` — a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin`, and wider exposure makes the guard matter more. Put a reverse proxy with its own CORS policy in front if you need browser traffic from another origin.
+**`Origin` validation** guards every method on `/mcp` (DNS-rebinding protection; the transport requires it on every incoming connection, so a `GET`, or a `PUT`/`PATCH`/`OPTIONS`, with a disallowed `Origin` gets `403`, not `405`). Absent `Origin` → allowed, which is what every real MCP client sends; an `Origin` naming loopback (`localhost`, `127.0.0.0/8`, `::1`, any port, `http` or `https`) → allowed; anything else, including the literal `null`, → `403 {"error":"origin not allowed"}`. The rule does **not** widen for a non-loopback `--mcp-bind` — a wildcard bind's host is `0.0.0.0`, which never appears as an `Origin`, and wider exposure makes the guard matter more. Put a reverse proxy with its own CORS policy in front if you need browser traffic from another origin.
 
-**`Host` validation** guards `POST /mcp` and `DELETE /mcp` too (car#3185): `Host` must be `localhost` or an IP literal (any port), else `403 {"error":"host not allowed"}` before dispatch. That is what stops a rebound DNS name — rebinding needs a name — while a wildcard bind's clients, which arrive with an IP literal, keep working. An absent `Host` is allowed. With a wildcard `--mcp-bind 0.0.0.0:<port>`, connect by IP address rather than a hostname (`my-mac.local` is refused); spawned CLIs are handed a loopback URL.
+**`Host` validation** guards every method on `/mcp` too (car#3185, #1984): `Host` must be `localhost` or an IP literal (any port), else `403 {"error":"host not allowed"}` before dispatch. That is what stops a rebound DNS name — rebinding needs a name — while a wildcard bind's clients, which arrive with an IP literal, keep working. An absent `Host` is allowed. With a wildcard `--mcp-bind 0.0.0.0:<port>`, connect by IP address rather than a hostname (`my-mac.local` is refused); spawned CLIs are handed a loopback URL.
 
 **Credentials** (car#3185). With auth on (the default), the `memory_*` and `skill_*` tools, `policy_check`, `resources/*`, `prompts/get`, `completion/complete`, and `assistant_start`/`assistant_poll`/`assistant_cancel` need one of three credentials, or they get `401` (with a body naming the remedy and this platform's auth-token path) and no tool runs:
 
@@ -5178,7 +5195,7 @@ An agent credential whose graph is not the shared one gets `403` from the assist
 
 `initialize`, `ping`, `tools/list`, `prompts/list`, notifications, `verify`/`simulate`/`equivalent`/`optimize`, the peer and Lattice tools, and the daemon read tools need no credential, and an uncredentialed caller is shown only those (`tools/list` omits the rest; `initialize` declares only `tools`). `--no-auth` keeps token-free access, and so does Windows, where the token file is DPAPI ciphertext.
 
-**`MCP-Protocol-Version` validation** guards `POST /mcp` and `DELETE /mcp` too, with the same absent-permissive, present-strict shape. Absent → allowed — the 2025-06-18 delta on this surface is additive result keys an older client ignores, so a silent client is answered correctly whichever revision it negotiated; a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05`, `2025-06-18` or `2025-11-25` today) → allowed; anything else, including an empty or non-UTF-8 value, → `400 {"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18","2025-11-25"]}`. The `400` carries the supported list because a client that guessed wrong has no other way to learn what to send. A foreign value is rejected rather than silently downshifted: the header states which dialect the client will read the reply in, so answering in a revision it never agreed to would mean something different than intended. Rejection happens before the JSON-RPC parse, so no tool runs.
+**`MCP-Protocol-Version` validation** guards every method on `/mcp` too (an unsupported value on `GET` gets `400` before its `405`), with the same absent-permissive, present-strict shape. Absent → allowed — the 2025-06-18 delta on this surface is additive result keys an older client ignores, so a silent client is answered correctly whichever revision it negotiated; a value in `car_mcp::SUPPORTED_VERSIONS` (`2024-11-05`, `2025-06-18` or `2025-11-25` today) → allowed; anything else, including an empty or non-UTF-8 value, → `400 {"error":"unsupported MCP-Protocol-Version","requested":"…","supported":["2024-11-05","2025-06-18","2025-11-25"]}`. The `400` carries the supported list because a client that guessed wrong has no other way to learn what to send. A foreign value is rejected rather than silently downshifted: the header states which dialect the client will read the reply in, so answering in a revision it never agreed to would mean something different than intended. Rejection happens before the JSON-RPC parse, so no tool runs.
 
 It binds **`127.0.0.1:9102` by default** (CLI flag `--mcp-bind host:port`, env `CAR_MCP_BIND`; literal `disabled` opts out):
 
@@ -5397,6 +5414,7 @@ The manifest is one TOML file with these blocks:
 | `[publisher]` | `PublisherInfo` | `key_id` (base64 ed25519 pubkey), `signature` (base64 ed25519 over canonicalized manifest) |
 | `[runtime]` | `RuntimeRequirements` | `car_min_version` (bare semver = `>=`), `bundle_format_version` (default `1`) |
 | `[lifecycle]` | `LifecyclePolicy` | `stateful`, `persistence`, `default_inference_complexity` |
+| `[brief]` | `BriefRecipe` | class, ordered CAR source parts and byte budgets; see [Manifest brief recipes](#manifest-brief-recipes) |
 | `[transport]` | `TransportSpec` | how to run it — `kind = "external_process"` or `"pure_data"` |
 | `[capabilities]` | `CapabilityDeclarations` | `required` / `optional` / `denied` namespaced lists |
 
@@ -7064,7 +7082,8 @@ let authorize = car_auth::authorize_url(
     provider,
     prompt,
 )?;
-open_url(&authorize)?;
+// Never fails: with no browser it prints the URL and the SSH-tunnel line.
+println!("{}", offer_parslee_sign_in(&authorize, callback_port, open_url));
 let (code, returned_state) = wait_for_oauth_callback(listener).await?;
 if returned_state.as_deref() != Some(state.as_str()) { return Err("OAuth state mismatch; refusing token exchange".into()); }
 let token = car_auth::exchange_code(api_base, client_id, &redirect_uri, &code, &verifier).await?;
@@ -7969,7 +7988,7 @@ unsupported mandatory capability returns `-32008`.
 | `--a2a-bind <host:port>` (`CAR_A2A_BIND`) | — | A2A HTTP+SSE bind |
 | `--no-approvals` (`CAR_NO_APPROVALS`) | off | Disable the high-risk-method approval gate |
 
-A separate client-side env var, `CAR_DAEMON_TIMEOUT`, is consumed by the NAPI/PyO3 FFI clients as a per-call read timeout (the macOS host sets it from `UserDefaults.daemonReadTimeoutSecs`), default 30s. It is a *floor override*: the GPU-bound and blocking methods derive their own generous deadlines and only adopt `CAR_DAEMON_TIMEOUT` when it is *larger* — `proposal.submit` from the proposal's action budgets, `image.generate`/`video.generate` from fixed media floors, and `infer` from a cold-model-load floor (180s) plus a term that scales with the request's text size (~1s per KB).
+A separate client-side env var, `CAR_DAEMON_TIMEOUT`, is consumed by the NAPI/PyO3 FFI clients as a per-call read timeout (the macOS host sets it from `UserDefaults.daemonReadTimeoutSecs`), default 30s. It is a *floor override*: the GPU-bound and blocking methods derive their own generous deadlines and only adopt `CAR_DAEMON_TIMEOUT` when it is *larger* — `proposal.submit` from the proposal's action budgets, `image.generate`/`video.generate` from fixed media floors, and `infer` from a cold-model-load floor (180s) plus a term that scales with the request's text size (~1s per KB). `multiplayer.submit_stage` and `multiplayer.merge_check` (`car mp submit` / `car mp check`), which run a work item's whole outcome contract, have no client deadline at all, like the silence-supervised coder methods: the daemon stops a contract check that goes silent and ends a stalled remote fetch or push.
 
 For `infer` specifically, the deadline is also **idle rather than absolute** (car#476): while an inference is in flight the daemon emits an `infer.progress` heartbeat every ~10s, and the client resets its read window on each one, so a call is only reaped after the timeout elapses with *no daemon activity at all* (a genuine hang). This covers both a cold local-MLX weight load and a slow remote — model-agnostically, since the client can't know which the router picked — so a caller no longer has to set `CAR_DAEMON_TIMEOUT` by hand for large-context or cold-start inference. See `docs/solutions/infer-reaped-by-30s-ffi-read-timeout.md`.
 
@@ -8509,7 +8528,7 @@ These are gaps the multi-agent survey flagged between CAR's *shipped* capability
 ### Specific gaps (capability exists in source; docs thin)
 
 #### The closed agentic loop (the single most important missing piece)
-- **Why it matters:** CAR's thesis is 'models propose; the runtime validates and executes,' but every cookbook and README example hardcodes ONE proposal and runs it once. A real single agent is a LOOP: infer a proposal -> verify -> execute -> read ActionResults/AgentOutcome -> feed results back -> infer the next proposal, until OutcomeStatus is success/give_up/timeout. car-ir ships AgentOutcome, OutcomeStatus (success/partial_success/give_up/timeout/failure/done), Evidence, OutcomeMetrics specifically for this loop, yet no doc shows the loop. An author following the docs literally builds a one-shot executor, not an agent. This is the #1 gap.
+- **Why it matters:** CAR's thesis is 'models propose; the runtime validates and executes,' but every cookbook and README example hardcodes ONE proposal and runs it once. A real single agent is a LOOP: infer a proposal -> verify -> execute -> read ActionResults/AgentOutcome -> feed results back -> infer the next proposal, until OutcomeStatus is success/give_up/timeout. car-ir ships AgentOutcome, OutcomeStatus (success/partial_success/give_up/timeout/failure/done/stalled/no_terminal), Evidence, OutcomeMetrics specifically for this loop, yet no doc shows the loop. An author following the docs literally builds a one-shot executor, not an agent. This is the #1 gap.
 - **Where to look:** `car-ir/src/outcome.rs (AgentOutcome, OutcomeStatus, is_terminal/is_completed); car-engine execute() -> ProposalResult and how results feed the next turn; infer_tracked tool_calls + the Message enum (User/Assistant-with-tool_calls/ToolResult) in car-inference; needs a new cookbook 'Build an autonomous agent loop' tying infer_tracked -> proposal -> execute -> outcome -> repeat.`
 
 #### Generating proposals from a model (the front half of 'models propose')
@@ -8555,5 +8574,209 @@ These are gaps the multi-agent survey flagged between CAR's *shipped* capability
 #### Streaming/multi-turn inference parameters for chat agents
 - **Why it matters:** For a conversational single agent, the full infer_tracked surface (tools_json, tool_choice, parallel_tool_calls, messages_json, context_query, images_json for vision, response_format, intent_json) and the StreamEvent types (text/tool_start/tool_delta/usage/done) are essential, but cookbook 09 covers only basic per-token streaming. The multi-turn Message enum (User/Assistant-with-tool_calls/ToolResult) that enables proper tool_use conversation flow is mentioned in CLAUDE.md but not in user docs.
 - **Where to look:** `car-inference` `Message`, `GenerateRequest`, and `GenerateParams`; FFI `infer_tracked` signatures; and the WebSocket protocol's `infer` / `infer_stream` contract. The FFI streaming declarations document only always-error compatibility stubs.
+
+## Long-running packaged task loops
+
+`openai-codex/gpt-6.1-sol:high` and `openai-codex/gpt-6.1-sol:medium`
+run on CAR's ChatGPT subscription sign-in (`car auth login --provider openai-codex`),
+without an OpenAI API key. Both catalog rows have a 500,000-token context window;
+the suffix selects high or medium reasoning effort.
+
+`runAgent` (Node) / `run_agent` (Python) supports these task-only settings:
+
+| Node | Python | Meaning |
+| --- | --- | --- |
+| `terminalTools` | `terminal_tools` | Array of tool schemas (`name`, `description`, `parameters`) plus a host `validate(arguments)` function. Exactly `true`/`True` accepts; all other results refuse. Nonempty strings give the reason; empty strings/other values use a default. Async validators are awaited; exceptions use their message, or the default if empty. |
+| `requireTerminal` | `require_terminal` | Require a terminal call even with the default `finish` tool. Defaults off; declared terminal tools imply it. One text-only turn receives a reminder; a second ends as `no_terminal`. |
+| `noProgressGuard` | `no_progress_guard` | Defaults on. Set false for intentional polling. Cumulative repeated signatures earn one nudge at repeat 3 and stop at repeat 6 as `stalled`; eight turns without mutation earn the same single nudge. A new successful mutating signature resets the guard. |
+| `priorMessages` | `prior_messages` | Resume a JSON transcript. Prior system messages are removed in favor of the current identity. Unanswered calls are closed with an explanatory tool result without executing them. The new goal follows the prior messages. The guard starts fresh. |
+| `maxTurns` | `max_turns` | Task default 8. Node: **0** or `Infinity` removes the cap. Python: **0** or `float('inf')` removes the cap. A positive finite cap ends as `timeout` when reached. |
+| `maxTokens` | `max_tokens` | Defaults to **4096**, also for chat turns. |
+
+Declared terminal tools replace `finish` in both the offered schemas and the
+system instruction. A refusal becomes a tool result for the model to repair.
+Two terminal calls in one turn are both refused. Ordinary tools execute first;
+a terminal call alongside them is accepted only when all succeeded. In runs with terminal tools, independent ordinary tools continue after a sibling fails so terminal eligibility can be evaluated. Without terminal tools, the runtime's normal abort behavior stops the rest of the turn. A successful ending returns
+`status: "success"` and `terminal_tool: {name, arguments}`.
+
+Every returned task outcome includes `transcript`, an ordered JSON message array
+with assistant tool calls and their results. Store it and pass it as prior
+messages on the next invocation, including across Node and Python. Transcript
+and `run_id` are return metadata added after `runs.complete`; the daemon run
+record does not contain the transcript. Terminal identity is also in outcome
+evidence. `stalled` and `no_terminal` are real daemon outcome statuses and both
+cause the task CLI's `main` to exit with code **1**, like `failure`. Other endings remain
+`done`, `timeout`, `success`, `partial_success`, and `give_up`.
+
+A successful tool whose schema declares `mutating: true`, or whose name is
+`write_file` or `edit_file`, resets the guard only for a new signature. Failed
+mutations and identical writes do not reset it. Distinct read calls never hit
+the repeat stop. With no custom terminal tools, the legacy `finish` and `done`
+paths remain. Chat retains its existing finish behavior and has no guard.
+
+### Typed ending example (released package API)
+
+```javascript
+import { runAgent } from 'car-runtime/agent-loop';
+const outcome = await runAgent({
+  agentName: 'Incident investigator', identity: 'Investigate and choose an ending.',
+  defaultModel: 'openai-codex/gpt-6.1-sol:high', maxTurns: 0,
+  terminalTools: [{
+    name: 'hand_off', description: 'Hand the incident to its owner.',
+    parameters: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] },
+    validate: ({ reason }) => reason.trim() ? true : 'Supply a reason.',
+  }],
+}, 'Explain the incident and hand it off.');
+// Persist outcome.transcript; resume with priorMessages on the next run.
+```
+
+```python
+from car_runtime.agent_loop import run_agent
+outcome = run_agent({
+    "agent_name": "Incident investigator", "identity": "Choose an ending.",
+    "default_model": "openai-codex/gpt-6.1-sol:high", "max_turns": 0,
+    "terminal_tools": [{
+        "name": "hand_off", "description": "Hand the incident to its owner.",
+        "parameters": {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]},
+        "validate": lambda args: True if args["reason"].strip() else "Supply a reason.",
+    }],
+}, "Explain the incident and hand it off.")
+```
+
+### Terminal tools: complete runnable configurations
+
+Use the released package entry shown here (Node: save as an `.mjs` file; Python: save as `.py`). A daemon must be available.
+
+```javascript
+import { runAgent } from 'car-runtime/agent-loop';
+const validate = args => args.reason.trim() ? true : 'Give a concrete reason.';
+const terminalTools = ['retry_commit', 'request_recut', 'hand_off'].map(name => ({
+  name, description: 'End this investigation.',
+  parameters: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] },
+  validate,
+}));
+const outcome = await runAgent({ agentName: 'incident-owner', identity: 'Investigate; end with a terminal tool.',
+  terminalTools, maxTokens: 4096, maxTurns: 0, noProgressGuard: true }, 'Investigate the failing check.');
+console.log(JSON.stringify(outcome));
+```
+
+```python
+from car_runtime.agent_loop import run_agent
+
+def validate(args):
+    return True if args['reason'].strip() else 'Give a concrete reason.'
+
+terminal_tools = [dict(name=name, description='End this investigation.',
+    parameters={'type': 'object', 'properties': {'reason': {'type': 'string'}}, 'required': ['reason']},
+    validate=validate) for name in ['retry_commit', 'request_recut', 'hand_off']]
+outcome = run_agent(dict(agent_name='incident-owner', identity='Investigate; end with a terminal tool.',
+    terminal_tools=terminal_tools, max_tokens=4096, max_turns=0, no_progress_guard=True),
+    'Investigate the failing check.')
+print(outcome)
+```
+
+The runtime checks the declared argument schema before invoking the host validator.
+The validator receives only the decoded argument object. Exactly `true` (`True` in Python)
+accepts; every other result refuses. A string supplies the refusal reason; an empty string
+or other value uses a default reason. Async validators are awaited. A thrown error's
+message is the refusal reason (the default if empty). A validator which never returns hangs the run, just as
+a hung tool does; supply your own bounded validator when it performs I/O.
+
+Terminal tools replace `finish`; declaring `finish` beside them, duplicate names, malformed
+prior messages, or a negative/NaN cap is an error before `runs.start`. With no terminal
+tools, `requireTerminal` (`require_terminal`) makes the built-in `finish` the required
+terminal. Without that option, a text answer still ends as `done`.
+
+`terminal_tool: {name, arguments}` appears only on `success`. `main` exits with code **1** for `failure`, `stalled`, and `no_terminal`, and **0** for other returned statuses (`success`, `partial_success`, `give_up`, `timeout`, `done`).
+The no-progress guard counts a repeat whenever a whole turn's sorted tool-name/argument
+signature has occurred earlier since the last reset, not only on consecutive turns.
+The third repeat nudges and the sixth stops; eight turns without a new successful
+state-changing signature only nudges. Python schemas support `mutating: True`, matching
+Node's `mutating: true`; `write_file` and `edit_file` are also state-changing. Failed
+calls do not reset the guard. `noProgressGuard: false` / `no_progress_guard=False`
+disables it for one run.
+
+For task runs, the per-call `maxTurns` option / Python `max_turns` argument overrides the
+config value when non-null. Null or omission uses the config; a null/omitted config
+uses 8. Zero or positive infinity lifts the task cap. Chat retains its existing cap
+semantics. `maxTokens` / `max_tokens` defaults to 4096.
+
+Resume with `priorMessages` / `prior_messages`, a JSON list of messages shaped as:
+`{role: "user" | "assistant" | "system", content: "text"}`; assistant messages may carry
+`tool_calls: [{id: "call-id", name: "tool-name", arguments: {...}}]`. A tool result is
+`{role: "tool_result", tool_use_id: "call-id", content: "JSON text"}`. `tool_calls` cannot
+be null, and each call needs its id and an `arguments` JSON object. Absent
+`arguments`, null, arrays, and strings are refused before `runs.start`. Node validates
+the JSON round trip, so values that serialize to strings are also refused. Old system
+messages are replaced by the current one. Do not trim a transcript ending on a terminal call: answered calls are retained;
+unanswered calls are closed with an explanatory tool result without rerunning handlers.
+Every ending returns `transcript`; it is never sent to `runs.complete`.
+
+
+Task cap lifting (`0` or positive infinity) applies to `runAgent` / `run_agent`.
+In chat, `maxTurns: 0` / `max_turns=0` performs zero model turns; it does not
+remove the chat budget. Python chat rejects infinity before `runs.start`.
+A refused task configuration throws an Error in Node or raises ValueError in
+Python, rather than returning an outcome. A terminal name cannot collide with
+an ordinary tool name. Node keeps main's missing-identity and numeric-string
+cap behavior.
+
+Python async validators are awaited with `asyncio.run` when no event loop is
+running on the callback thread. If that thread already has an event loop, a
+separate thread runs and awaits the coroutine; the synchronous caller waits
+for its result. A validator that never returns therefore still hangs its run.
+The validator receives a deep copy: mutations cannot rewrite the transcript or
+the arguments checked and recorded by CAR. The daemon's full parameter check
+runs before dispatch to that validator, including enum, nested, array and
+additional-property constraints. Schema refusals count as failed tool calls.
+Each task run restores its declared terminal schemas, including A/B/A reuse.
+
+The initial occurrence is not a repeat: for one identical signature, the third
+repeat is its fourth occurrence and the sixth repeat is its seventh occurrence.
+Repeats of any previously seen whole-turn signature accumulate between resets;
+for example A, B, A, B, A reaches the third repeat on turn five.
+A typed success also includes an evidence entry shaped as
+`{kind: "tool_result", description: "terminal_name", data: { /* original arguments */ }}`.
+
+For supervisor give-up notifications, see [Self-healing](self-healing.md#notify-an-operator-when-a-supervised-agent-gives-up).
+
+## Manifest brief recipes
+
+A mind declares its prompt recipe beside its model/runtime declarations. CAR
+loads and validates `[brief]`; unknown parts, sources or fields are refused.
+See [the brief protocol](websocket-protocol/brief.md) for the stored source
+contracts, byte budgets, provenance and host compile/read calls.
+
+```toml
+[brief]
+class_id = "calendar"
+[[brief.parts]]
+part = "bead"
+source = "bead_index"
+max_bytes = 2000
+[[brief.parts]]
+part = "class_scope"
+source = "class_table"
+max_bytes = 2000
+[[brief.parts]]
+part = "identity"
+source = "identity_graph"
+path = "identity/calendar"
+max_bytes = 18000
+[[brief.parts]]
+part = "precedents"
+source = "decision_ledger"
+count = 3
+max_bytes = 3000
+[[brief.parts]]
+part = "skills"
+source = "skills_registry"
+max_bytes = 2000
+```
+
+Use owner-curated graph identity/TELOS slices and task-specific content sufficient
+for 8,000–30,000 UTF-8 bytes. Short or over-budget output is refused, never padded.
+Compile after changing a recipe and before starting its mind. Grace's own recipe
+and the live two-Mac writer trace are not established by the test-agent fixture.
 
 {% endraw %}

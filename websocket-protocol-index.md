@@ -7,7 +7,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 **Not indexed, on purpose:** the separate "## Notification methods (server → client)" section (`host.event`, `voice.event`, `coder.event`, `coder.discuss.event`, `browser.signin_needed`/`resolved`) documents push-notification *payload shapes*, not additional namespaced RPC methods — read it directly in the full doc. Six headings documented **inside** "## Method reference" itself are excluded for the same reason — they are server-initiated pushes, not client-callable requests: `browser.view.event`, `models.pull_progress`, `models.upgrade_available`, `models.suggestion_available`, `runs.trace.event`, and `coder.session_changed` (documented a second time, briefly, in the separate Notification methods section above). The "a2a (in-core dispatcher)" subsection's 9-11 A2A v1.0 methods are also excluded: they're documented as a table of `PascalCase` / `slash/form` name pairs with no per-method heading to anchor to, and the source doc doesn't say which form is the literal wire `method` string.
 
-**86 namespaces, 514 methods.**
+**91 namespaces, 557 methods.**
 
 ## a2a (7)
 
@@ -33,10 +33,12 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`a2ui/subscribe`](websocket-protocol/a2ui.md#a2uisubscribe) — Opt this WS connection into a2ui.event...
 - [`a2ui/unsubscribe`](websocket-protocol/a2ui.md#a2uiunsubscribe) — Idempotent.
 
-## accounts (2)
+## accounts (4)
 
+- [`accounts.bench`](websocket-protocol/accounts.md#accountsbench) — Operator-only. Unknown labels fail. benched: false...
 - [`accounts.list`](websocket-protocol/accounts.md#accountslist) — OS-native account discovery.
 - [`accounts.open`](websocket-protocol/accounts.md#accountsopen)
+- [`accounts.usage`](websocket-protocol/accounts.md#accountsusage) — Operator-only: refused to supervised agents.
 
 ## admission (1)
 
@@ -64,7 +66,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`agent_permissions.set_observer`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — Host-management-only.
 - [`agent_permissions.set_tool`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — Host-management-only and capability-gated.
 
-## agents (22)
+## agents (23)
 
 - [`agents.chat`](websocket-protocol/agents.md#agentschat) — Unknown agent. An agent_id that is neither attached...
 - [`agents.chat.approve`](websocket-protocol/agents.md#agentschatapprove) — Authorization: the caller must be the host session...
@@ -83,6 +85,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`agents.register_basics`](websocket-protocol/agents.md#agentsregister_basics) — Registers CAR's built-in agent utility tools...
 - [`agents.remove`](websocket-protocol/agents.md#agentsremove) — Authorization: host-management authority; or an...
 - [`agents.restart`](websocket-protocol/agents.md#agentsrestart) — Authorization: the same bound agent id, an...
+- [`agents.session_brief`](websocket-protocol/agents.md#agentssession_brief) — Params: { id: string } — enrolled session agent id.
 - [`agents.start`](websocket-protocol/agents.md#agentsstart) — Authorization: the same bound agent id, an...
 - [`agents.stop`](websocket-protocol/agents.md#agentsstop) — Authorization: the same bound agent id, an...
 - [`agents.tail_log`](websocket-protocol/agents.md#agentstail_log) — Bounded read: each stream is read via a bounded...
@@ -105,9 +108,38 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`automation.shortcuts.list`](websocket-protocol/automation.md#automationshortcutslist) — Enumerates Shortcuts.app entries.
 - [`automation.shortcuts.run`](websocket-protocol/automation.md#automationshortcutsrun) — Invokes a Shortcut.
 
+## beads (12)
+
+- [`beads.accept`](websocket-protocol/beads.md#beadsaccept)
+- [`beads.bind_factory`](websocket-protocol/beads.md#beadsbind_factory) — Role: host; host authority required.
+- [`beads.create_child`](websocket-protocol/beads.md#beadscreate_child)
+- [`beads.create_root`](websocket-protocol/beads.md#beadscreate_root)
+- [`beads.events`](websocket-protocol/beads.md#beadsevents)
+- [`beads.get`](websocket-protocol/beads.md#beadsget)
+- [`beads.handoff`](websocket-protocol/beads.md#beadshandoff)
+- [`beads.index`](websocket-protocol/beads.md#beadsindex) — Role: host; host authority required to enroll or...
+- [`beads.list`](websocket-protocol/beads.md#beadslist)
+- [`beads.rebuild`](websocket-protocol/beads.md#beadsrebuild) — Role: host; host authority required.
+- [`beads.stale`](websocket-protocol/beads.md#beadsstale)
+- [`beads.touch`](websocket-protocol/beads.md#beadstouch)
+
+## board (5)
+
+- [`board.comment`](websocket-protocol/board.md#boardcomment) — Appends a remark to any item on the caller's board,...
+- [`board.history`](websocket-protocol/board.md#boardhistory)
+- [`board.list`](websocket-protocol/board.md#boardlist)
+- [`board.transition`](websocket-protocol/board.md#boardtransition) — Moves an item the caller's account owns to state,...
+- [`board.upsert`](websocket-protocol/board.md#boardupsert)
+
 ## bookmarks (1)
 
 - [`bookmarks.list`](websocket-protocol/bookmarks.md#bookmarkslist)
+
+## brief (3)
+
+- [`brief.compile`](websocket-protocol/brief.md#briefcompile) — Params: { agent_id: string, bead_id: string }.
+- [`brief.curate_fact`](websocket-protocol/brief.md#briefcurate_fact) — Params: { agent_id: string, fact_id: string, body:...
+- [`brief.read`](websocket-protocol/brief.md#briefread) — Params: { brief_id: string }.
 
 ## browser (21)
 
@@ -209,6 +241,16 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`contacts.containers`](websocket-protocol/contacts.md#contactscontainers)
 - [`contacts.find`](websocket-protocol/contacts.md#contactsfind)
 
+## conversation (7)
+
+- [`conversation.answer`](websocket-protocol/conversation.md#conversationanswer) — Host authority required.
+- [`conversation.assistant.bind`](websocket-protocol/conversation.md#conversationassistantbind) — Host-management authority only.
+- [`conversation.change_subject`](websocket-protocol/conversation.md#conversationchange_subject) — Host authority required.
+- [`conversation.emergency`](websocket-protocol/conversation.md#conversationemergency) — Same caller access and validation as open.
+- [`conversation.get`](websocket-protocol/conversation.md#conversationget) — Only the original asker principal or host may read...
+- [`conversation.list`](websocket-protocol/conversation.md#conversationlist) — Host authority required; includes raw owner text.
+- [`conversation.open`](websocket-protocol/conversation.md#conversationopen) — Available to authenticated askers.
+
 ## credentials (4)
 
 - [`credentials.issue`](websocket-protocol/credentials.md#credentialsissue)
@@ -258,7 +300,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 ## feedback (4)
 
 - [`feedback.compose_preview`](websocket-protocol/feedback.md#feedbackcompose_preview) — The consent preview: assembles the exact...
-- [`feedback.list`](websocket-protocol/feedback.md#feedbacklist) — the newest limit merged local/server rows, kept in...
+- [`feedback.list`](websocket-protocol/feedback.md#feedbacklist) — "anonymous" — saved on the anonymous lane (signed...
 - [`feedback.status`](websocket-protocol/feedback.md#feedbackstatus) — filtered to the one entry when submission_id is...
 - [`feedback.submit`](websocket-protocol/feedback.md#feedbacksubmit) — Composes the same bundle and durably enqueues it in...
 
@@ -300,7 +342,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 ## host (14)
 
 - [`host.agents`](websocket-protocol/host.md#hostagents) — Who sees which rows.
-- [`host.approvals`](websocket-protocol/host.md#hostapprovals) — Resolved rows created more than 24 hours ago are...
+- [`host.approvals`](websocket-protocol/host.md#hostapprovals) — Every row has the same readiness fields as...
 - [`host.devices`](websocket-protocol/host.md#hostdevices) — Parslee Core exposes this same read-only roster...
 - [`host.dismiss_approval`](websocket-protocol/host.md#hostdismiss_approval) — Role: agent: every supervised agent may call it,...
 - [`host.events`](websocket-protocol/host.md#hostevents) — Who sees which events (#3419).
@@ -379,6 +421,19 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`lease.release`](websocket-protocol/lease.md#leaserelease) — Clean handoff — the next acquire grants immediately...
 - [`lease.renew`](websocket-protocol/lease.md#leaserenew) — Heartbeat: extend expires_at_ms without bumping the...
 - [`lease.status`](websocket-protocol/lease.md#leasestatus) — The linearizable read of the current lease (the...
+
+## ledger (10)
+
+- [`ledger.class.override`](websocket-protocol/ledger.md#ledgerclassoverride)
+- [`ledger.class.put`](websocket-protocol/ledger.md#ledgerclassput)
+- [`ledger.classes.list`](websocket-protocol/ledger.md#ledgerclasseslist)
+- [`ledger.dispatch`](websocket-protocol/ledger.md#ledgerdispatch)
+- [`ledger.get`](websocket-protocol/ledger.md#ledgerget)
+- [`ledger.grade`](websocket-protocol/ledger.md#ledgergrade)
+- [`ledger.grade_note`](websocket-protocol/ledger.md#ledgergrade_note)
+- [`ledger.list`](websocket-protocol/ledger.md#ledgerlist)
+- [`ledger.put`](websocket-protocol/ledger.md#ledgerput)
+- [`ledger.rung_changes.list`](websocket-protocol/ledger.md#ledgerrung_changeslist)
 
 ## mail (6)
 
@@ -662,9 +717,12 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 - [`speech.prepare`](websocket-protocol/inference.md#speechprepare) — Provisions the managed mlx-audio runtime (a uv venv...
 
-## spend (2)
+## spend (5)
 
+- [`spend.assign_class`](websocket-protocol/spend.md#spendassign_class) — Role: host, with no agent binding; unauthorized...
 - [`spend.costs`](websocket-protocol/spend.md#spendcosts) — Role: operator. A session bound to a supervised...
+- [`spend.limits`](websocket-protocol/spend.md#spendlimits) — Role: host.
+- [`spend.set_limit`](websocket-protocol/spend.md#spendset_limit) — Role: host, with no agent binding.
 - [`spend.status`](websocket-protocol/spend.md#spendstatus) — Role: operator in the generated role table (the...
 
 ## state (5)
@@ -689,11 +747,11 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`sync.assistant_action.put`](websocket-protocol/sync.md#syncassistant_actionput--syncassistant_actionget) — Put params: { record: SupervisedActionRecord };...
 - [`sync.assistant_checkpoint.get`](websocket-protocol/sync.md#syncassistant_checkpointput--syncassistant_checkpointget) — Put params: { checkpoint: AssistantCheckpoint };...
 - [`sync.assistant_checkpoint.put`](websocket-protocol/sync.md#syncassistant_checkpointput--syncassistant_checkpointget) — Put params: { checkpoint: AssistantCheckpoint };...
-- [`sync.checkpoint`](websocket-protocol/sync.md#synccheckpoint) — Compute + upload a device-side checkpoint at the...
+- [`sync.checkpoint`](websocket-protocol/sync.md#synccheckpoint) — Returns { published: false } without uploading a...
 - [`sync.fence_check`](websocket-protocol/sync.md#syncfence_check) — The executor dispatch fence at the point of effect...
 - [`sync.knowledge`](websocket-protocol/sync.md#syncknowledge) — Read the synced knowledge facts, optionally pumping...
 - [`sync.pump`](websocket-protocol/sync.md#syncpump) — With org-scope sync on, each configured org's...
-- [`sync.rebase`](websocket-protocol/sync.md#syncrebase) — Cold bootstrap / straggler re-entry: re-anchor on...
+- [`sync.rebase`](websocket-protocol/sync.md#syncrebase) — With no relay checkpoint, returns { rebased: false,...
 - [`sync.record_intent`](websocket-protocol/sync.md#syncrecord_intent) — Write the leased-execution intent ledger...
 - [`sync.record_turn`](websocket-protocol/sync.md#syncrecord_turn) — For a tool turn, provenance: "external" marks...
 - [`sync.resume`](websocket-protocol/sync.md#syncresume) — provenance is "external" for retrieved content and...
@@ -771,7 +829,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`classify`](websocket-protocol/top-level.md#classify) — Matching: a bare number answers with that label...
 - [`detokenize`](websocket-protocol/top-level.md#detokenize) — inverse of tokenize, decoded without skipping...
 - [`embed`](websocket-protocol/top-level.md#embed)
-- [`infer`](websocket-protocol/top-level.md#infer) — Supplying a non-null model is a hard pin.
+- [`infer`](websocket-protocol/top-level.md#infer) — prompt is required, even when messages carries the...
 - [`infer_stream`](websocket-protocol/top-level.md#infer_stream) — Explicit-model pinning is identical to infer: a...
 - [`rerank`](websocket-protocol/inference.md#rerank) — Rerank candidate documents against a query using a...
 - [`search`](websocket-protocol/inference.md#search) — Backend resolution (daemon-side, from its...

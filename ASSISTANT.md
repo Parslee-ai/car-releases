@@ -1,7 +1,7 @@
 {% raw %}
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.60.0**. Check yours with `car --version`; if it
+> Describes CAR **0.61.2**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -460,8 +460,9 @@ the prose": before the run is reported as finished, operational claims in the
 model's own summary ("I ran the tests", "the file is updated") are
 cross-checked against the actual tool receipts from *this* run. An unmatched
 claim is not silently trusted — a deterministic pass (e.g. `--until` goal
-mode) only annotates the reply with a `[claim check]` note, while a
-model-judged completion is failed closed on an unmatched claim. This array is
+mode) adds a `[claim check]` note to a plain reply, or emits it as a separate
+Text event beside unchanged formatted JSON. A model-judged completion is failed
+closed on an unmatched claim. This array is
 empty here because nothing in the summary asserted anything the receipts
 didn't back up.
 

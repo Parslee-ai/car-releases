@@ -207,7 +207,12 @@ echoes it; the daemon forwards it unchanged.
 `kind` is a discriminated enum:
 
 - `inference_started` — a model call is about to begin. `model: string`,
-  `attempt: number`, `turn: number`. Emitted before the generator is awaited.
+  `attempt: number`, `turn: number`. Emitted before the generator is awaited,
+  and repeated every 60 s while the call is still awaited, with
+  `waiting_ms: number` (how long it has waited) present only on the repeats.
+  The repeats exist so an idle watchdog that renews on any frame does not
+  give up on a slow call; a host that shows one waiting line per call
+  ignores a frame that carries `waiting_ms`.
 - `inference_retry` — a transient remote failure will be retried.
   `model: string`, `attempt: number`, `reason: "http_status" | "transport"`,
   `backoff_ms: number`. The reason is generic; provider response bodies are not
@@ -404,8 +409,15 @@ methods on its server-bound WS connection:
     not provider capability — a non-vision provider rejects the images
     downstream at inference. See the FFI `imagesJson` / `images_json`
     param.
-- `agent.chat.cancel { session_id }` — a notification (no id) to most
-  agents: best-effort fire-and-forget; the agent should short-circuit its
+- `agent.chat.cancel { session_id, turn_id? }` — a notification (no id) to
+  most agents: best-effort fire-and-forget. `turn_id` is the daemon's id for
+  the turn being stopped, sent whenever that turn's route had one. An agent
+  that retains its ordering entry stops that turn and every older turn of the session, never a
+  newer turn the host has started under the same `session_id`, and stops
+  every turn of the session when it is absent. Bundled receivers retain up to 1,024 named ordering entries across sessions: per built-in assistant service, per Node process-wide chat queue, and per Python client queue. The queues' record of which turns have started is bounded too, at 2,048 owner and session pairs, each holding its newest started turn, and gives up the oldest pair no retained entry still names. An absent, unseen or evicted identity uses the legacy session-wide Stop and can affect newer current turns. A bridge drops only that runtime owner's queued session turns and permits its own cancellation handler to receive that Stop; it does not itself terminate arbitrary handler code. An agent declares that it
+  does so by acknowledging `agent.chat` with
+  `{ accepted: true, stops_by_turn_id: true }`; only then does the daemon
+  send a Stop for a replaced turn while a newer turn holds the session id; the agent should short-circuit its
   inference stream and `inference.stream.cancel` upstream. It should also
   release any approval it has parked and skip a goal check that has not
   run. The bundled `car do --serve` assistant is sent it as a request, and
@@ -423,8 +435,9 @@ methods on its server-bound WS connection:
   `registerChatHandler` / `register_chat_handler`: a cancel for a turn
   still waiting for that handler drops the turn before the handler sees
   it and sends its terminal `agent.chat.event { kind: "error", error:
-  "cancelled" }`, and every cancel still reaches the agent's own
-  `agent.chat.cancel` notification handler.
+  "cancelled" }`. Its own `agent.chat.cancel` notification handler hears
+  the Stop unless a retained named ordering entry shows that its turn is
+  newer; an absent, unseen or evicted identity permits session-wide delivery.
 - The daemon also sends `agent.chat.cancel` (always as a notification)
   when it ends a turn's route without a Stop, because nobody can answer
   that turn's approvals or read its reply any more: the host that

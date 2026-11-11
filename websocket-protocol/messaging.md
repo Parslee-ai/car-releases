@@ -4,6 +4,51 @@
 
 ### messaging
 
+Approval questions share the [owner conversation floor](conversation.md). Only the
+current approval is presented; other approvals wait. Bare approve/deny replies
+answer that presented topic, unless an expiry requires clarification. A known non-send releases its reservation for the next tick; an unknown
+outcome retains it. A named code can answer a previously presented parked topic
+and dismiss a clarification. Pending approvals past their deadline at a sync
+tick emit a host event and an eventlog alert, including already mirrored approvals.
+
+The governed `messaging.send` tool has optional `message_kind` (separate from
+recipient `kind`: direct/channel). For the paired owner, omission means
+`question`; questions join this same floor, and `emergency` interrupts through
+it. The only other accepted owner kinds are `notice`, `standup`, `draft_to_send` and
+`back_online`; these also cross the floor mutex boundary. Every other owner
+kind is refused with a reason. Owner questions default to a 24-hour deadline from acceptance, including time
+spent waiting behind approvals. Optional `deadline_ms` overrides it with a future
+Unix-millisecond deadline. The 60-second deadline is reserved for clarification.
+Every accepted owner-question send returns a receipt containing `topic_id`
+(also retained in `message_id` for compatibility), `queued`, `delivered`, and an
+optional `reason`. `queued:true` means the question is waiting or parked;
+`queued:false` means it is not waiting for a turn. `delivered` reports a
+confirmed send by this call (or its cached keyed receipt);
+a reused topic can return `delivered:false` when no new send was attempted.
+Acceptance is not delivery acknowledgement.
+A known soft send failure (for example, Messages offline) returns the normal
+receipt with `queued:false`, `delivered:false`, and the failure `reason`. The
+floor keeps trying on subsequent ticks until the question's deadline. The caller
+should retain the topic id and fetch its answer or `expired` state with
+`conversation.get {topic_id}`; the attached session supplies the asker principal.
+Questions and answers remain recorded. Delivery failures also emit
+`conversation.delivery_failed` host events and local alerts-journal entries.
+Refusals (bad recipient kind, unpaired recipient, or refused owner message kind)
+and hard failures that leave no accepted topic return errors. A transport failure
+after acceptance keeps the topic and returns its receipt. If the transport outcome
+is unknown, the floor retains the send reservation to avoid duplicate delivery;
+`delivered:false` does not authorize a blind resend of an unknown outcome.
+
+Without an `idempotency_key`, identical question text and message kind from the
+same asker reuse an unexpired open, waiting, or parked topic. After a
+`delivered:false` receipt, poll `conversation.get` instead of sending again; a
+retry of the same live question returns its topic id. Reuse preserves the
+original deadline. Different text or kind creates a new topic. Settled or expired questions may be asked again. A supplied
+idempotency key keeps its existing semantics: it identifies the accepted request
+for that asker even if the text changes or the topic has finished. Use distinct
+keys to intentionally ask identical questions as separate requests.
+Other recipients retain their existing send behavior.
+
 The **multi-channel** approval-transport config surface. This is the **only**
 allowlist/config-mutation path in the system for the opt-in approval transport.
 Every method here is **host/local-auth gated**: when the daemon has a host token
@@ -51,5 +96,22 @@ allowlist, and pairing code; both channels default disabled (opt-in). An unknown
 - **Params**: `{ channel?: "imessage" | "slack" }` (default `"imessage"`)
 - **Returns**: `MessagingTestSendResponse` — `{ ok: boolean, error?: string }`. Sends a fixed, clearly-labeled self-test message (`"CAR test: your iMessage approvals are connected. No action needed."`) to the channel's paired handle and returns the outcome synchronously. A pure send probe: it mints **NO** approval/pairing mapping and resolves nothing — it only proves the daemon can actually deliver (so a pass genuinely proves macOS Automation works; a failure surfaces the same actionable error a real send would). `ok:false` carries an actionable `error` (channel off, no paired handle, Automation denied, recipient-not-found). The outcome is recorded into liveness, so a following `messaging.status` reflects it in `last_send_*`. Host/local-auth gated. (Slack not yet wired — returns a clear "not supported on this channel yet" error.)
 
+
+`message_kind: "notice"` asks nothing. It sends through the same serialized
+owner-floor transport while leaving the current question and topic count
+unchanged. Standup and back-online messages may use this kind. It creates no
+answer attribution and does not take the question slot.
+
+At installation the host binds the named assistant using
+`conversation.assistant.bind {agent_id}`. That durable binding checks the
+session's authenticated agent on owner-handle `messaging.send`,
+`host.request_approval`, and conversation opens. Other agents and plain sessions
+are refused and recorded in the existing floor journal once an assistant is
+bound. Before the first binding, authenticated callers may submit approvals
+and send to the owner's handles as before. The first binding is durably
+recorded in the floor journal and activates the assistant gate. Non-owner
+recipients retain their consent checks.
+`agents.install` accepts `owner_assistant: true` beside the manifest to bind
+that agent after a successful install. Worker bundles cannot hold this role.
 
 {% endraw %}
