@@ -406,6 +406,13 @@ Those directories are exclusively created and consumed by one build; shared
 lookup caches such as `xcrun_db*` remain write-denied, so `xcrun` may print a
 cache-write warning on a cold lookup without widening the boundary.
 
+On macOS a contract check, the builder's or the verifier's `run_check`, writes
+the shared `/tmp`, `/var/tmp` and Darwin user temporary directory only by the
+names tools that ignore `TMPDIR` create there: bash here-document spools
+(`sh-thd-<digits>`) and `mktemp`'s `tmp.<random>` files and folders. Any other
+write there fails, and the check's output names the path and says to write
+under `$TMPDIR` instead. The model's own shell gets none of these names.
+
 Protected baseline and verifier checks do not execute tools from the merged
 login PATH directly. CAR puts the trusted Cargo/rustup proxy directory first,
 then keeps merged entries whose canonical path and every ancestor are owned by
@@ -818,6 +825,20 @@ window ends `stalled`, even if an older line preceded it. Setting
 `silence_window_secs` to `0` disables both outcomes. A
 non-JSON run prints its terminal label and reason to stderr; `run_end` carries
 the same reason and retained workspace path.
+
+While `car code` waits on the daemon, it prints a line to stderr every 30
+seconds, for example `still waiting: enumerating for 2m10s (this wait 5m02s)`:
+the phase (the request it is waiting on, then each state the session moves
+to), how long that phase and the whole wait have run. When the daemon has sent
+nothing at all for 45 seconds the line adds `the CAR service has not answered
+for <time>, still waiting`. None of this ends the wait or claims that work
+moved: the daemon's silence and no-progress rules above end stalled work, never
+a client clock. While it watches a session, `car code` also reads the session's
+recorded state once a minute, so a session that ended without its event
+reaching the CLI is reported once the daemon answers that read, normally
+within a minute. One read is outstanding at a time, and an unanswered one
+holds nothing: the session's events, Ctrl-C and the keepalive are handled
+while it is out.
 
 With red checks, a headless native session keeps iterating until it succeeds or
 ends through `NoProgress` (the idle-iteration guard or session no-progress turn

@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.60.0 (2026-11-08). Every subcommand the installed binary reports is
+> 0.62.0 (2026-11-12). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 86 top-level commands, 185 nested subcommands
+> 88 top-level commands, 190 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 86 subcommands spanning several different jobs:
+`car` is one binary with 88 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -214,13 +214,14 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car init`](#car-init) | Initialize a .car/ project directory for team-shared configuration |
 | [`car doctor`](#car-doctor) | Diagnose (and optionally repair) a CAR install: corrupt model weights, unparseable `~/.car` state files, version skew, and leftover files from a previous install. Runs entirely against the local filesystem — no daemon required, so it works even when `car-server` won't start |
 | [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; CAR tries to send a report saved while signed in to Parslee in the background, and `car feedback --list` shows whether it went. One saved signed out stays on this computer for `--export`. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first |
-| [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it |
+| [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it. It also re-pins the CAR plugin in Claude Code and Codex to the release now installed, when that plugin's marketplace already follows Parslee-ai/car (or points at a folder that no longer exists); a marketplace on your own checkout or fork is reported, never replaced |
 | [`car purge`](#car-purge) | Remove this CAR install's own state under `~/.car` (config, logs, managed models, binaries) and reap any OS-level schedules CAR installed — for a clean slate before a reinstall. On macOS this also clears CarHost.app's user-level state and resets its privacy (TCC) permissions, so a reinstall really does re-run permission onboarding. NEVER touches the shared HuggingFace model cache (other tools use it); managed models are symlinks into it, so only the links are removed, not the multi-GB blobs. (To uninstall a single contributed agent instead, use `car uninstall <id>`.) |
 | [`car code`](#car-code) | Open a coding conversation in your repository. Ask questions, plan a change, or describe work to implement; review the checks and edits, then keep iterating in the same conversation |
 | [`car board`](#car-board) | Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board launched by an agent cannot. Closing the board never stops a run |
 | [`car do`](#car-do) | CAR Assistant: a general-purpose agent that works out of the box |
 | [`car policy-check-hook`](#car-policy-check-hook) | Evaluate a host's proposed tool call against `.car/policies/` and answer on stdout with that host's hook decision envelope |
 | [`car peer-inbox-hook`](#car-peer-inbox-hook) | Tell a running Claude Code session that colleagues' messages wait for it. Wired by the CAR plugin as a Claude Code hook (after a prompt or a tool call, and before stopping); reads the count `car claude`'s collaboration server keeps. Prints nothing outside a `car claude` session, and always exits 0 |
+| [`car board-hook`](#car-board-hook) | Brief a coding-assistant session from the shared work board. Wired by the CAR plugin as a Claude Code hook: at session start it adds the briefing (at most 30 lines), and on each prompt a line when items on the current branch changed. Prints nothing without a daemon, and always exits 0 |
 | [`car worktree`](#car-worktree) | Lease a warm git worktree from this repo's pool instead of creating one per task (acquire, release, status, reclaim, clean, and `hook` for the CAR Claude Code plugin). Off until the repo commits .car/worktree-pool.toml with `enabled = true` |
 | [`car project`](#car-project) | Manage CAR-managed projects (a named, git-backed workspace CAR creates for you — no repo to pick) |
 | [`car parslee`](#car-parslee) | Parslee platform capabilities for the signed-in account (requires `car auth login`) |
@@ -261,6 +262,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car fleet`](#car-fleet) | What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon |
 | [`car mp`](#car-mp) | Multiplayer development: a work item moves Build → Improve → Polish through different developers before it merges, each stage a coder session on its owner's machine with the engine they choose. Needs a running daemon and a shared git remote |
 | [`car claude`](#car-claude) | Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon |
+| [`car codex`](#car-codex) | Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent, installs session-only collaboration and policy hooks, injects the daemon brief, and removes the agent on exit. Needs a running daemon. Arguments after `--` go to `codex` |
 | [`car publish`](#car-publish) | Publish a contributed agent to the registry (Parslee-ai/car#182 phase 5). Reads a local agent's `manifest.toml`, signs it for `--audience public` (ed25519 key at `$CAR_PUBLISH_KEY_PATH`), stages it at the versioned `agents/<namespace>/<name>/<version>/` path, updates `index.json` + the README catalog, re-runs the EXACT `car registry validate` CI gate locally, and opens a PR against the registry repo. Aborts (no PR) on a missing signing key or a validation failure |
 | [`car help`](#car-help) | Print this message or the help of the given subcommand(s) |
 
@@ -2247,7 +2249,9 @@ car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's 
 wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also
 creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling /
 wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates
-`car-mcp` lacks it
+`car-mcp` lacks it. It also re-pins the CAR plugin in Claude Code and Codex to the release now
+installed, when that plugin's marketplace already follows Parslee-ai/car (or points at a folder that
+no longer exists); a marketplace on your own checkout or fork is reported, never replaced
 
 Usage: car update [OPTIONS]
 
@@ -2393,15 +2397,97 @@ Fullscreen supervision board for coder sessions — one screen for every run on 
 started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its
 outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded
 discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board
-launched by an agent cannot. Closing the board never stops a run
+launched by an agent cannot. Closing the board never stops a run.
+
+`car board items` is a different board: the shared work board of what every session has in flight
+(see `car board items --help`).
 
 Usage: car board [OPTIONS]
+       car board <COMMAND>
+
+Commands:
+  items      List the shared work board: what is in flight, who is driving it, and what it waits on
+  (the coder-session monitor is plain `car board`)
+  history    One item's history: each change, the session that made it, comments
+  brief      The briefing a session starts with, for the current directory's branch
+  reconcile  Make a project's board follow its code host (opt-in). The daemon then marks items done
+  or abandoned when their PR merges or is abandoned, moves them to review when a PR opens, and opens
+  and closes a "main is red" incident per failing pipeline, every few minutes
+  help       Print this message or the help of the given subcommand(s)
 
 Options:
-      --repo <REPO>  Repository the board opens against — pre-fills new runs and grounds
-      discussions. Relative paths (`.`, `../sibling`) resolve against your current directory
-      (default: `.`)
-  -h, --help         Print help
+      --repo <REPO>
+          Repository the board opens against — pre-fills new runs and grounds discussions. Relative
+          paths (`.`, `../sibling`) resolve against your current directory (default: `.`)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### car board items
+
+```text
+List the shared work board: what is in flight, who is driving it, and what it waits on (the
+coder-session monitor is plain `car board`)
+
+Usage: car board items [OPTIONS]
+
+Options:
+      --project <PROJECT>
+      --state <STATE>            open, in_progress, waiting, review, done, abandoned
+      --kind <KIND>              work, incident, policy, ask, finding
+      --related-to <RELATED_TO>  Items related to a ticket, branch, PR, or item id
+      --all                      Include done and abandoned items older than 14 days
+      --org <ORG>                An organization this CAR holds a login for (default: personal)
+      --json
+  -h, --help                     Print help
+```
+
+#### car board history
+
+```text
+One item's history: each change, the session that made it, comments
+
+Usage: car board history [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --org <ORG>
+      --json
+  -h, --help       Print help
+```
+
+#### car board brief
+
+```text
+The briefing a session starts with, for the current directory's branch
+
+Usage: car board brief [OPTIONS]
+
+Options:
+      --org <ORG>
+  -h, --help       Print help
+```
+
+#### car board reconcile
+
+```text
+Make a project's board follow its code host (opt-in). The daemon then marks items done or abandoned
+when their PR merges or is abandoned, moves them to review when a PR opens, and opens and closes a
+"main is red" incident per failing pipeline, every few minutes
+
+Usage: car board reconcile <COMMAND>
+
+Commands:
+  add     Watch a project: its board items follow the repository's PRs and main pipelines
+  list    List watched projects
+  remove  Stop watching a project
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
 ```
 
 ### car do
@@ -2577,6 +2663,19 @@ Options:
   -h, --help  Print help
 ```
 
+### car board-hook
+
+```text
+Brief a coding-assistant session from the shared work board. Wired by the CAR plugin as a Claude
+Code hook: at session start it adds the briefing (at most 30 lines), and on each prompt a line when
+items on the current branch changed. Prints nothing without a daemon, and always exits 0
+
+Usage: car board-hook
+
+Options:
+  -h, --help  Print help
+```
+
 ### car worktree
 
 ```text
@@ -2630,9 +2729,9 @@ Lease a slot checked out on BRANCH and print its path (the only line on stdout)
 An existing local branch is switched to, a branch on origin is tracked, otherwise BRANCH is created
 from the base. The same owner acquiring the same branch again gets the same slot back without
 fetching. A branch whose holder process is gone is handed over with its uncommitted work. Before a
-new slot is handed out, origin is fetched; a failed fetch is fatal unless --offline. With every slot
-leased, dead holders' clean slots are reclaimed first; then it waits up to --wait minutes, or exits
-3.
+new slot is handed out, origin is fetched (a repo with no origin is never fetched, as if --offline);
+a failed fetch is fatal unless --offline. With every slot leased, dead holders' clean slots are
+reclaimed first; then it waits up to --wait minutes, or exits 3.
 
 Usage: car worktree acquire [OPTIONS] <BRANCH>
 
@@ -2645,7 +2744,8 @@ Options:
           Any path inside the repository (default: the current directory)
 
       --base <REF>
-          Start new branches from this ref (default: origin/HEAD's target, else origin/main)
+          Start new branches from this ref (default: origin/HEAD's target, else origin/main; in a
+          repo with no origin, the main checkout's branch, or its commit when detached)
 
       --wait <MIN>
           Wait up to this many whole minutes for a slot when the pool is full
@@ -2706,7 +2806,8 @@ Options:
           Release a slot that is not yours, or one a killed acquire left mid-switch
 
       --base <REF>
-          Park the slot on this ref (default: origin/HEAD's target, else origin/main)
+          Park the slot on this ref (default: origin/HEAD's target, else origin/main; with no
+          origin, the main checkout's branch or commit)
 
   -h, --help
           Print help (see a summary with '-h')
@@ -2776,7 +2877,7 @@ Options:
       `archive/wt/...` plus `<parent>/<repo>-archive/<name>/`), then reset the slot to a clean
       detached base. A failed save leaves it as it is
       --base <REF>     Reset archived slots to this ref (default: origin/HEAD's target, else
-      origin/main)
+      origin/main; with no origin, the main checkout's branch or commit)
   -h, --help           Print help
 
 Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
@@ -2827,7 +2928,8 @@ Options:
           [default: 48]
 
       --base <REF>
-          Judge "merged" against this ref (default: origin/HEAD's target, else origin/main)
+          Judge "merged" against this ref (default: origin/HEAD's target, else origin/main; with no
+          origin, the main checkout's branch or commit)
 
       --offline
           Do not fetch first (or WT_POOL_OFFLINE=1)
@@ -3001,6 +3103,8 @@ Commands:
   in-daemon
   run       Run a registered agent on an input
   list      List registered in-daemon agents
+  publish   Register your flagship assistant as your agent in Parslee, in every organization you
+  belong to, and publish what it can do there
   where     Show where a declarative or supervised agent's files live
   external  Show installed external agentic CLIs (Claude Code, Codex, Gemini): which binary each
   resolved to, and whether it can actually run
@@ -3067,6 +3171,25 @@ Usage: car agent list
 
 Options:
   -h, --help  Print help
+```
+
+#### car agent publish
+
+```text
+Register your flagship assistant as your agent in Parslee, in every organization you belong to, and
+publish what it can do there.
+
+`car auth login` does this for you; run it again after joining an organization or updating CAR.
+Needs a Parslee sign-in, not the daemon.
+
+Usage: car agent publish [OPTIONS]
+
+Options:
+      --json
+          Emit the per-login outcome as JSON
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 #### car agent where
@@ -4863,9 +4986,9 @@ Options:
       --as-host
           Present CAR's local host key without asking, for an unattended deploy script run by the
           server's owner. Needs the host-token file, and is refused for a process CAR launched as a
-          supervised agent. That refusal reads environment variables an agent controls, so on Linux
-          the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the
-          key file (car#3706)
+          supervised agent. That refusal reads environment variables an agent controls, so the
+          kernel is what keeps the key from it: on Linux the agent's wall, on the Mac the profile
+          every unwalled agent runs under (car#3706)
 
   -h, --help
           Print help (see a summary with '-h')
@@ -4903,6 +5026,7 @@ Arguments:
   supervised agent's environment, which prints that agent's own
 
 Options:
+      --limits     View owner/class limits and their audit history (host authority)
       --all        Every principal's spend, with a total and the server's zone
       --url <URL>  WebSocket URL of the running car-server daemon [default: ws://127.0.0.1:9100/]
       --json       Output the daemon's result as JSON instead of a table
@@ -4944,9 +5068,9 @@ Options:
   a person runs it in their terminal and answers yes, or uses the CAR app
       --as-host    Present CAR's local host key without asking, for an unattended deploy script run
       by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
-      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
-      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
-      file (car#3706)
+      a supervised agent. That refusal reads environment variables an agent controls, so the kernel
+      is what keeps the key from it: on Linux the agent's wall, on the Mac the profile every
+      unwalled agent runs under (car#3706)
   -h, --help       Print help
 ```
 
@@ -4967,9 +5091,9 @@ Options:
   a person runs it in their terminal and answers yes, or uses the CAR app
       --as-host    Present CAR's local host key without asking, for an unattended deploy script run
       by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
-      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
-      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
-      file (car#3706)
+      a supervised agent. That refusal reads environment variables an agent controls, so the kernel
+      is what keeps the key from it: on Linux the agent's wall, on the Mac the profile every
+      unwalled agent runs under (car#3706)
   -h, --help       Print help
 ```
 
@@ -4990,9 +5114,9 @@ Options:
   a person runs it in their terminal and answers yes, or uses the CAR app
       --as-host    Present CAR's local host key without asking, for an unattended deploy script run
       by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
-      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
-      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
-      file (car#3706)
+      a supervised agent. That refusal reads environment variables an agent controls, so the kernel
+      is what keeps the key from it: on Linux the agent's wall, on the Mac the profile every
+      unwalled agent runs under (car#3706)
   -h, --help       Print help
 ```
 
@@ -5035,9 +5159,9 @@ Options:
   a person runs it in their terminal and answers yes, or uses the CAR app
       --as-host    Present CAR's local host key without asking, for an unattended deploy script run
       by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
-      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
-      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
-      file (car#3706)
+      a supervised agent. That refusal reads environment variables an agent controls, so the kernel
+      is what keeps the key from it: on Linux the agent's wall, on the Mac the profile every
+      unwalled agent runs under (car#3706)
   -h, --help       Print help
 ```
 
@@ -5532,6 +5656,22 @@ collaboration tools, runs `claude` in this terminal, and removes the agent when 
 after `--` go to `claude`. Needs a running daemon
 
 Usage: car claude [ARGS]...
+
+Arguments:
+  [ARGS]...
+
+Options:
+  -h, --help  Print help
+```
+
+### car codex
+
+```text
+Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent,
+installs session-only collaboration and policy hooks, injects the daemon brief, and removes the
+agent on exit. Needs a running daemon. Arguments after `--` go to `codex`
+
+Usage: car codex [ARGS]...
 
 Arguments:
   [ARGS]...

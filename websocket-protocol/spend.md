@@ -35,6 +35,8 @@ orchestrator's own calls are capped; its workers' calls are not counted
 against its cap until workers PR 5 (`docs/proposals/orchestrator-workers.md`)
 adds the orchestrator's key to every worker call.
 
+**Asking the owner** (car#3407). The first time an agent is refused at its own cap in a period, CAR opens one owner-facing `HostApprovalRequest` for that agent and period, id `spend-cap:<principal>:<per>:<reset unix seconds>`, with one option, `acknowledge`. Its text names the agent, the cap, the spend and the reset time, and says how to raise the cap: install a version of the bundle with a larger `[spend]` cap, since caps change only that way. Further refusals in the period open no more requests, and neither does one after a daemon restart: once the request is open, a marker under the meter's `spend/cap-approvals/` records the period. A request that could not be opened leaves no marker, so the next refusal asks again. Nothing resumes until the cap is raised or the period resets. A shared cap below a worker tree's root asks nothing, as it names no amount. `[workers.spend]` caps are #4339, and declarative-agent caps are #4340.
+
 **The refusal, error `-32018`.** Every refusal is a JSON-RPC error with
 `code: -32018`, the exact text below as `message`, and a stable
 `error.data.reason`:

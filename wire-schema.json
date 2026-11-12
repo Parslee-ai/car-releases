@@ -5138,10 +5138,8 @@
             "harness",
             "measured_at",
             "name",
-            "runs",
             "score",
-            "source_url",
-            "spread"
+            "source_url"
           ],
           "type": "object"
         },
@@ -5780,7 +5778,6 @@
                 }
               },
               "required": [
-                "draft_hf_repo",
                 "hf_repo",
                 "hf_weight_file",
                 "type"

@@ -308,6 +308,9 @@ echoes it; the daemon forwards it unchanged.
   The exception is a refused `agents.chat.approve`: after a `resolved: false`
   or error reply no `approval_resolved` follows. That reply is the terminal
   signal, and the daemon closes the row itself (`timeout` or `interrupted`).
+  For an agent whose turn acknowledged `approval_frames: true`, a decision
+  forwarded with no `approval_resolved` yet when the turn's route ends closes
+  the row `unknown`, never a guessed word; show it as "outcome unknown".
 - Approval ids are opaque. The daemon mints one per approval the agent
   parks, and the flagship assistant's own ids are unique across turns and
   sessions too. Every turn of a chat shares one `session_id`, so a host

@@ -4,7 +4,7 @@
 
 ### multi
 
-Multi-agent coordination. All variants delegate per-agent execution back to the client via `multi.run_agent` callbacks (same pattern as `tools.execute`).
+Multi-agent coordination. All variants delegate per-agent execution back to the client via `multi.run_agent` callbacks (same pattern as `tools.execute`). A callback's params are `{ spec, task, callback_id }`: pass `callback_id` on every `infer` / `infer_stream` call the run makes, so its metered rows are tied to that run and not to another running beside it ([events](events.md), car#3492). It is optional; a client that omits it keeps the earlier, overlap-guarded reading.
 
 All variants also accept an optional `budget` object — a runtime-enforced coordination budget (see [`BudgetLimits`](#budgetlimits) below).
 

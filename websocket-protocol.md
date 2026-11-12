@@ -83,6 +83,7 @@ Negotiation is fail-closed:
 - `feedback.v1` is optional and gates every `feedback.*` method: a negotiated v3 session that did not request it is refused with `-32008` (`protocol capability mismatch:`) naming the capability. The bundled host requests it as an optional capability so an older daemon still connects.
 - `workers.start-values.v1` is optional and gates nothing: it says `workers.start` accepts `values`, the per-worker secret values an orchestrator hands a worker at start (see [workers](websocket-protocol/workers.md)). An orchestrator that needs them asks for it in `optional_capabilities` and checks `negotiated_capabilities`; an older daemon refuses `values` as an unknown field.
 - Negotiation is per connection. A reconnect starts unnegotiated and repeats `session.auth` (when enabled) → `server.handshake` → `host.subscribe`.
+- A refused `server.handshake` leaves the connection unnegotiated, even after an earlier one succeeded on it: methods that need a negotiated protocol or capability are refused until a later handshake succeeds.
 - Bundled clients reject an old daemon's unknown-method response, a malformed success, and a handshake timeout instead of proceeding on an unproven protocol.
 
 The bundled NAPI/PyO3/UniFFI clients run this handshake automatically (via
@@ -304,17 +305,17 @@ That one read is by design (see the third bullet above): weights are a shared
 multi-gigabyte cache, and the daemon does not write to it. "Isolated" here means
 isolated state, not an empty machine.
 
-Without `CAR_HOME`, a second daemon shares one root with the first, and the
-following applies instead.
+Without a distinct `CAR_HOME`, a second daemon shares one root with the first,
+and it does not start. The auth-token file and the shared socket are
+**per-user singletons**, neither path carrying a port or instance id, and one
+`car-server` per state root owns them: the **primary**, which holds the
+advisory lock on `<CAR_HOME>/run/daemon.lock`. A daemon that finds the lock held
+logs `another car-server already owns this CAR_HOME shared state` and exits
+before it adopts any state or listens, so it can neither overwrite the token
+file nor end the primary's running work during its own boot. Run an isolated
+secondary daemon with its own `CAR_HOME`, as above.
 
-The auth-token file and that shared socket are **per-user singletons** — neither path carries a port or instance id. Only one `car-server` per user owns them: the **primary**, decided by an advisory lock on `~/.car/run/daemon.lock` plus a liveness probe of the shared socket (so an already-running daemon whose binary predates the lock is still respected).
-
-A non-primary daemon starts normally but:
-
-- does **not** write the shared auth-token file — its token stays in memory, so reach it with the value supplied through `--auth-token`, `CAR_AUTH_TOKEN`, `--auth-token-file`, or `CAR_AUTH_TOKEN_FILE`; the file form is read and deleted at startup;
-- binds `car-server-<port>.sock` instead of the shared path.
-
-Both are logged at startup. Before this, a second daemon on another port silently overwrote the token file (breaking every client of the running daemon with `token mismatch`) and unlinked its live socket, leaving that listener orphaned until it restarted — with nothing logged on either side (Parslee-ai/car#629).
+Before the lock, a second daemon on another port silently overwrote the token file (breaking every client of the running daemon with `token mismatch`) and unlinked its live socket, leaving that listener orphaned until it restarted, with nothing logged on either side (Parslee-ai/car#629).
 
 ## Server-initiated requests
 
@@ -627,8 +628,8 @@ cannot read, replace, or delete it. The complete reserved contract is:
 | `auth.switch_org` | `organization_id` (req), `api_base?` | `{ authenticated, session }` — **silently** switches the signed-in account's active organization: mints a fresh token scoped to `organization_id` via the refresh grant's `organization_id` override (the backend validates membership; no browser), persists the rotated tokens, and returns the refreshed session. Inference follows immediately (the new token carries `active_org`). The org must be one the login belongs to (`session.Organizations[]`). The daemon then re-activates its Parslee session for the same login, so host identity, the `parslee` field of `session.auth`, and feedback lane binding follow the new org; skipped when `api_base` names a different authority than the active login. |
 | `auth.accounts` | `api_base?` | `{ accounts: [{ id, email?, name?, active }] }` — every stored Parslee **login** (multiple can coexist; exactly one is `active`). Migrates a pre-multi-login session into the registry on first call. |
 | `auth.switch_account` | `account_id` (req), `api_base?` | `{ authenticated, session }` — make another held login the active view (one compare-and-swap publication of the V2 record; every login keeps its own refresh token), refresh, and return the newly-active login's session. The active login is the CLI/UI default view; it does not change the default org. |
-| `auth.remove_account` | `account_id` (req) | `{ ok, accounts }` — forget a stored login (deletes its stashed tokens). If it was active, another remaining login becomes active, or the session clears when none remain. A default org held by the removed login is cleared, never moved to another login. |
-| `auth.logout` | — | `{ ok: true }` — clears stored Parslee credentials and the default org. |
+| `auth.remove_account` | `account_id` (req) | `{ ok, accounts, warnings }` — forget a stored login (deletes its stashed tokens). First asks that login's issuer to revoke this device's certificate; a revoke that did not go through (offline, refused) is a line in `warnings` and does not stop the removal. If it was active, another remaining login becomes active, or the session clears when none remain. A default org held by the removed login is cleared, never moved to another login. |
+| `auth.logout` | — | `{ ok: true, warnings }` — clears stored Parslee credentials and the default org. First asks each login's issuer to revoke this device's certificate (`DELETE …/device-cert/{device}`); a revoke that did not go through is a line in `warnings`, the sign-out still happens, and such a certificate expires within 12 hours. |
 | `auth.organizations` | — | `{ organizations: [{ context: { api_base, account_id, organization_id }, email?, role? }], default: WorkContext \| null, default_error? }` — `default_error` names an unreadable `work-contexts.json` without hiding the list. Errors while `PARSLEE_ACCESS_TOKEN` overrides the stored logins. Every (login, org) pair **every** signed-in login holds, not just the active one, read locally from the `memberships` claim of each login's own tokens (no network). Sorted by account, then org. The claim reflects membership when the token was minted; the issuer re-checks it on every context renewal. |
 | `auth.default_context.get` | — | `{ default: WorkContext \| null }` — the person's default org: what new work uses when nothing more specific (an explicit choice, the repository's `.car/config.toml`, the agent's default) names one. Stored in `work-contexts.json` under the CAR state root; separate from the active login. A malformed file is an error, not an empty default. |
 | `auth.default_context.set` | `organization_id` (req), `account_id?` | `{ default: WorkContext }` — set the default org. The signed-in login that holds the org supplies the account; `account_id` is required only when more than one does (otherwise the call fails naming them). The issuer must mint a credential for the org first, so a default is never an org this CAR cannot use. Cleared automatically when its login is removed or signed out, or when the issuer answers `invalid_organization` for it. |
@@ -821,9 +822,9 @@ method after the non-secret protocol negotiation. This is appropriate **only** w
   malicious web pages can still open WebSockets to `localhost`
   (browsers don't enforce CORS for WebSocket upgrades) but
   cannot read the token from disk, so they fail at
-  `session.auth`. The token is also `cache-control: no-store`
-  on the UI server's auth-token endpoint and the UI server is
-  loopback-bound, so a remote page can't fetch it either.
+  `session.auth`. No HTTP route serves the daemon or host token
+  (the old `GET /auth-token` is gone), so a page cannot fetch
+  it either.
 - ❌ **Multi-user / network-reachable**: not supported. Don't
   bind to a routable interface; don't expose the port through
   reverse proxies; don't run `car-server` as a shared service.
@@ -932,6 +933,8 @@ car-server --no-auth --port 9100   # auth off (opt-out)
    - **Linux**: `$XDG_RUNTIME_DIR/ai.parslee.car/auth-token` if set,
      otherwise `~/.config/ai.parslee.car/auth-token`
    - **Windows**: `%LOCALAPPDATA%\ai.parslee.car\auth-token`
+   - With `CAR_HOME` set, on any platform:
+     `$CAR_HOME/ai.parslee.car/auth-token` instead, as above.
 3. Installs the token on `ServerState`. Every WS connection MUST
    call `session.auth` as its first JSON-RPC method; non-auth
    methods on unauthenticated sessions get `{"code": -32001,

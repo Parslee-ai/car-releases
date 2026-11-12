@@ -4,6 +4,10 @@
 
 ### health
 
+The person's health data on this Mac (sleep, workouts and activity, once they
+grant access), not the daemon's liveness: `health.status` reports whether that
+data can be read. Whether the daemon is up is `car doctor`'s question.
+
 #### `health.status`
 - **Params**: `{}`
 - **Returns**: current health permission/availability status

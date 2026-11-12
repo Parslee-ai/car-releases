@@ -47,7 +47,7 @@ that it is given each new start. A start whose row could not be written still
 starts, is logged, and still reaches those event logs, with `data.record_error`
 saying why it was not recorded. Such an event has no `data.seq`: it was never
 numbered, because it is delivered from the daemon's memory, not from the file
-(and so is not delivered again after a daemon restart). The warning is also in the worker's own start
+(and so is not delivered again after a daemon restart). The daemon keeps the newest 1,024 such starts; when older ones were let go before a host session read them, that session gets one `worker_starts_omitted` event with `data.unrecorded: true` and `data.omitted`, how many it missed, and no `data.handle` (car#3381). The warning is also in the worker's own start
 record, `workers/<handle>/starts.jsonl`. Windows, a Linux host where the file
 wall cannot be applied, and a Mac where it cannot be applied or its self-test
 failed (the daemon itself runs inside a Seatbelt sandbox, say) refuse every

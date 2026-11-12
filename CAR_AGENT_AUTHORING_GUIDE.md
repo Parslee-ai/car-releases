@@ -4116,7 +4116,7 @@ car setup --use-case assistant --tier balanced --cloud-ok --yes   # interactive:
 #### Daemon vs `models serve` — two different servers
 
 ```bash
-car daemon --port 9100             # execs the car-server CAR daemon (JSON-RPC over WS)
+car daemon --port 9100             # runs the car-server CAR daemon (JSON-RPC over WS) and waits on it
 car models serve <model> --port 8000 --dry-run --json   # execs EXTERNAL `vllm-mlx serve` (OpenAI-compatible MLX)
 ```
 
@@ -4599,7 +4599,7 @@ handle.cancel();
 
 The dream loop runs `MemgineEngine` consolidation on a timer. It is **purely algorithmic — no LLM** — and so does not need a registered runner.
 
-`spawn_dream_loop(memgine: Arc<Mutex<MemgineEngine>>, config: DreamConfig, max_iterations: Option<u32>) -> DreamHandle`. `DreamConfig { interval_secs (default 3600), embeddings_path, trajectory_dir, outcome_profiles_path }`. Each pass calls `engine.consolidate_with_data(trajectories, model_profiles)`. `DreamHandle::cancel()` stops it; `join` yields `Vec<ConsolidationReport>`.
+`spawn_dream_loop(memgine: Arc<Mutex<MemgineEngine>>, config: DreamConfig, max_iterations: Option<u32>) -> DreamHandle`. `DreamConfig { interval_secs (default 3600), embeddings_path, trajectory_dir, outcome_profiles_path }`. Each pass calls `engine.consolidate_with_data(trajectories, model_profiles)`. `DreamHandle::cancel()` stops it; `join` yields `Vec<ConsolidationReport>`. `spawn_dream_loop_over(graphs: Arc<dyn DreamGraphs>, …)` runs the same loop over any set of graphs: the daemon passes its own (car#3495), so each hourly pass consolidates the shared graph and every supervised agent's and memory namespace's graph, loaded or only on disk, each under its own lock and saved when the pass changed it. Trajectory and model insights go into the shared graph only, and the daemon's loop writes no `embeddings.bin`: embeddings stay in each graph.
 
 To register the consolidation work as a persistent scheduled task instead, use `ensure_dream_task(store: &TaskStore) -> bool` — idempotently creates a Task named **`car-dream`** (`DREAM_TASK_NAME`) with prompt `"memory.consolidate"` on an `Interval` trigger of `'1h'`. Returns `true` if newly created, `false` if one already exists. Exposed as NAPI `ensureDreamTask() -> boolean` / PyO3 `ensure_dream_task() -> bool`.
 
@@ -7011,7 +7011,7 @@ When you add or change any of these surfaces, keep all binding surfaces in sync 
 
 ## CLI Command Reference
 
-The `car` binary (defined in `car-rs/crates/car-cli/src/main.rs`) is the native command-line entrypoint for the Common Agent Runtime. Every subcommand lives in one flat `clap` `Commands` enum — there is no `agents`, `mcp`, `a2a`, `registry`, or `bundle` command group. `main()` parses `Cli::parse()` and matches `cli.command`. Many commands accept `--json` for machine-readable output.
+The `car` binary (defined in `car-rs/crates/car-cli/src/main.rs`) is the native command-line entrypoint for the Common Agent Runtime. Every subcommand lives in one `clap` `Commands` enum, some with their own subcommands (`car registry`, `car agent`, `car models`, `car auth` and others); there is no `mcp`, `a2a` or `bundle` command group. The full reference, generated from `car --help`, is `release-mirror/CLI.md`. `main()` parses `Cli::parse()` and matches `cli.command`. Many commands accept `--json` for machine-readable output.
 
 ### The daemon-first model (read this first)
 
@@ -7037,7 +7037,7 @@ match infer_via_daemon_once(&url, req).await {
 }
 ```
 
-> **`car daemon` ≠ `car models serve`.** `car daemon` execs the **CAR `car-server` daemon** (default port 9100). `car models serve` execs an **external `vllm-mlx serve`** OpenAI-compatible MLX runtime (default port 8000). They are unrelated. Also note: there is no top-level `car serve`, `car recommend`, or `car generate` — `serve`/`recommend` are `models` subcommands, and generation is `car infer` / `car image` / `car video`.
+> **`car daemon` ≠ `car models serve`.** `car daemon` runs the **CAR `car-server` daemon** (default port 9100). `car models serve` execs an **external `vllm-mlx serve`** OpenAI-compatible MLX runtime (default port 8000). They are unrelated. Also note: there is no top-level `car serve`, `car recommend`, or `car generate` — `serve`/`recommend` are `models` subcommands, and generation is `car infer` / `car image` / `car video`.
 
 ### Starting the daemon
 
@@ -7046,7 +7046,7 @@ car daemon              # -p/--port defaults to 9100
 car daemon --port 9100
 ```
 
-`cmd_daemon` (`main.rs:5342`) does **not** run a server itself — it execs the separate `car-server` binary with `--port`. If that binary is missing it prints the build hint and exits 1:
+`cmd_daemon` does **not** run a server itself: it starts the separate `car-server` binary with `--port` as a child and waits for it to exit (`Command::status`), so `car daemon` stays in the foreground for the daemon's life. If that binary is missing it prints the build hint and exits 1:
 
 ```rust
 fn cmd_daemon(port: u16) {
@@ -8540,7 +8540,7 @@ These are gaps the multi-agent survey flagged between CAR's *shipped* capability
 - **Where to look:** `car-bundle (AgentManifest, sign_manifest/verify_signature, canonical_manifest_bytes); car-cli Commands::Install/Start/Stop/Ls/Inspect/TailLog/Uninstall; car-registry Supervisor (install_manifest, per-agent token, RestartPolicy, auto_start); docs/contributed-agents.md + examples/contrib-template/. Needs a cookbook recipe and a note that agent-bundle-spec multi-file format is still DRAFT vs single-manifest shipped.`
 
 #### Complete CLI command reference / map
-- **Why it matters:** The 'car' CLI is a primary surface for a single-agent author (info, verify, simulate, optimize, replay, infer, image, video, embed, models *, setup, speech *, daemon, init, auth *, install/start/stop/restart/ls/inspect/tail-log/uninstall, dream, eval, browse, secrets *). README scatters a handful across many sections; there is no single 'CLI reference' page. Notably the non-obvious facts — 'serve' and 'recommend' are under 'models' not top-level, text-gen is 'car infer' not 'car generate', 'car daemon' delegates to car-server, and there is NO bundle/mcp/a2a/registry top-level subcommand — are undocumented and easy to get wrong.
+- **Why it matters:** The 'car' CLI is a primary surface for a single-agent author (info, verify, simulate, optimize, replay, infer, image, video, embed, models *, setup, speech *, daemon, init, auth *, install/start/stop/restart/ls/inspect/tail-log/uninstall, dream, eval, browse, secrets *). The generated reference `release-mirror/CLI.md` lists every command; README mentions only a handful. The non-obvious facts are easy to get wrong: 'serve' and 'recommend' are under 'models', not top-level; text generation is 'car infer', not 'car generate'; 'car daemon' runs car-server as a child; and there is no bundle/mcp/a2a top-level subcommand (there is a `car registry`).
 - **Where to look:** `car-cli/src/main.rs Commands enum (line 35) + ModelCommands/AuthCommands/SpeechCommands/BrowseCommands/SecretCommands; cross-check against README scattered mentions. Needs a docs/cli-reference.md.`
 
 #### Workflow and scheduler subsystems

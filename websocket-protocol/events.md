@@ -6,7 +6,10 @@
 
 **Scope.** `events.query`, `events.cost_by_agent`, `events.stats` and
 `events.chain.verify` read only the calling connection's session event log,
-not another connection's. One exception: before answering `events.query`, the
+not another connection's. With `{ agent }`, `events.query` and
+`events.cost_by_agent` instead read that principal's records daemon-wide:
+its spend-ledger calls and its ambiguous sub-agent reports (below), under
+the same authorization ([heal](heal.md#eventscost_by_agent)). One exception: before answering `events.query`, the
 daemon copies `worker_started` and `worker_starts_omitted` events for workers
 the session may see into a host or orchestrator session's log (see
 [workers](workers.md)). Those copies are then part of that session's log, so
@@ -122,24 +125,35 @@ it.
   `multi.run_agent`, and the client's model calls either go through the
   daemon's `infer`, each its own row above with its own `call_id`, or go to
   a provider directly and are only self-reported. The daemon tells the two
-  apart per sub-agent run by whether any `call_id`-bearing
-  `inference_metered` row was written to the session log while that
-  callback was open. If one was, the row is marked `summary_of: "infer"`
+  apart per sub-agent run by the `inference_metered` rows written to the
+  session log while that callback was open. The callback carries a
+  `callback_id`, and a client that passes it as `infer`'s `callback_id`
+  tags each call's row with it: a row tagged with this run's callback is
+  this run's, and a row tagged with another callback never counts for it
+  (car#3492). Every `multi.run_agent` callback on the session counts as
+  open for this, including `scheduler.run` and `scheduler.run_loop`
+  callbacks and runs with no spend attribution. An untagged row, from a
+  client that does not pass the id, counts for the run only while no other
+  callback on the session overlapped it. With an overlap it could be either
+  run's: the run's row is marked `summary_of: "ambiguous"`, kept, and listed
+  apart from the measured totals (`ambiguous_reports`,
+  `ambiguous_reported_cost_usd` below), so two real calls are counted as two
+  and no run's cost is dropped. If the run's calls went through `infer`, the
+  row is marked `summary_of: "infer"`
   and `events.cost_by_agent` and `metrics_totals` skip it, so the calls are
   counted once, on the `infer` rows; the self-report CAR never verifies is
   kept on the row but not counted. If none was, the row is the only record
   of those calls: it is not marked and folds under the payer, as the
-  figures folded before the mark existed. The rule and its limit, for a
-  client that mixes the two: a run with ANY `infer` row is marked, so the
-  self-reported cost of the direct calls it made beside them is not folded;
-  and with parallel sub-agents an `infer` row written while two callbacks
-  are open marks both. The log the daemon watches is the whole session's,
-  so the same holds for an unrelated `infer` on the same session during a
-  callback (a chat call mid-swarm): it marks a self-reporting run's row as a
-  summary and that run's self-reported cost drops from `cost_by_agent` and
-  `metrics_totals`. That error only ever loses cost from the view, never
-  counts a dollar twice, and never touches the spend meter, which counts
-  every call the daemon made. A client that mixes the two styles in one swarm
+  figures folded before the mark existed. The limit, for a client that
+  mixes the two: a run with ANY of its own `infer` rows is marked, so the
+  self-reported cost of the direct calls it made beside them is not folded.
+  The log the daemon watches is the whole session's, so an unrelated
+  untagged `infer` on the same session during a callback that no other
+  callback overlaps (a chat call mid-run) is read as that run's: it marks a
+  self-reporting run's row as a summary, and that run's self-reported cost
+  drops from `cost_by_agent` and `metrics_totals`. A client closes this by
+  passing `callback_id` on its calls. The spend meter is never touched by
+  this: it counts every call the daemon made. A client that mixes the two styles in one swarm
   is decided per run, each run by its own callback's window, and a run is
   matched to its decision by the callback that produced it, not by its
   `sub_agent` name, so same-name sub-agents running together do not swap
@@ -149,6 +163,19 @@ it.
   call, one an older CAR wrote (`agent` the sub-agent's name), or one
   written by an embedder running car-multi with no daemon meter — folds
   under its `agent`.
+- **Ambiguous reports over a principal's records (`{ agent }`).** When a run
+  is marked `summary_of: "ambiguous"`, the daemon also keeps its
+  self-report for the paying principal, stored apart from the session
+  journal and the spend ledger (beside the ledger, never counted against a
+  cap, never dropped). `events.query { agent }` returns each as an
+  `inference_metered` row with `data` `{ agent, sub_agent, cause?,
+  summary_of: "ambiguous", reported_tokens_in, reported_tokens_out,
+  reported_cost_usd, tokens_in, tokens_out, cost_usd }` and `run_id` when the
+  request had a run, newest first among the ledger's rows by time.
+  `events.cost_by_agent { agent }` lists them in `ambiguous_reports` and
+  `ambiguous_reported_cost_usd` and never in `calls`, `tokens_in`,
+  `tokens_out` or `cost_usd`; the figures are what the runner reported, not
+  measured. A per-run reader skips them as it skips every `summary_of` row.
 
 #### `events.chain.enable`
 - **Params**: `null`

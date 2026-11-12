@@ -6,7 +6,12 @@
 
 The owner's decision ledger, stored in the same device oplog as assistant action
 records. All methods require host-management authority, including grades; a
-supervised agent cannot grade itself or override its class. Node and Python use
+supervised agent cannot grade itself or override its class. The one other caller
+is the owner's signed-in dashboard (`car ui`), which may call `ledger.list`,
+`ledger.classes.list`, `ledger.rung_changes.list` and `ledger.grade`: the
+methods its decision-ledger feed, one-click grades and autonomy view use. Its
+grades must carry `source: "dashboard"`, and it cannot settle an undo
+(`undo_resolution`). Node and Python use
 the generated `HostClient` methods (`ledgerList` / `ledger_list`, etc.); Swift
 and Kotlin use the host-management daemon bridge.
 
@@ -35,7 +40,16 @@ A class has `id`, `name`, `rung`, `allowed_tools`, `denied_tools`,
 `pass_rate_bars` (map keyed by rung, with `min_tap_cases`, `min_clean_streak`,
 `pass_rate`), `tap_graded_case_count`, `clean_streak_length`, and nullable
 `last_mover`, plus optional `approval_rules:string[]`, `report_format:string`,
-and `skill_ids:string[]` for the brief compiler. Configuration through put preserves the existing rung and counters.
+and `skill_ids:string[]` for the brief compiler. Optional
+`standup_reports: "stored"|"learned"|"source_health"` marks a class whose
+entries the owner's standup reports as records rather than decisions (the
+assistant's `standup.reports`); it is omitted on a decision class and on every
+class stored before the field existed. Any other value is refused with
+`invalid class: unknown variant ...`. Put replaces it with what the caller
+sends, like the other policy fields. The dashboard's standup numbers read it
+from `ledger.classes.list` and from nothing else: every entry in a class that
+carries it is a record, left out of handled, needed and the out-of-the-loop
+share; agents working now still counts its actor. Configuration through put preserves the existing rung and counters.
 Creation records `{creation: class_id}` in `last_mover` and rung history, with
 no owner override. Grades, owner overrides and recorded lineage caps can change
 a rung. Promotion reads the TARGET rung's `pass_rate_bars[target]`, never the
@@ -128,7 +142,7 @@ Returns the class after an idempotent explicit owner override. `out_loop` is ref
 
 **Params:** `{ class_id?: string }`.
 
-Returns `{class_id, from, to, cause, at}[]`. Causes name a committed grade, override, creation, or `{lineage: source_class_id}` cap in the same ledger transaction. A successor filter includes every predecessor recursively, deduplicating shared ancestors.
+Returns `{class_id, from, to, cause, at, grade_record?}[]`. Causes name a committed grade, override, creation, or `{lineage: source_class_id}` cap in the same ledger transaction. A grade-caused change also carries `grade_record: {entry_id, kind, source, at}`, naming the decision and the grade that moved the rung. A successor filter includes every predecessor recursively, deduplicating shared ancestors.
 
 The dispatch boundary covers configured assistant executor tools in daemon MCP
 runs and coding discussions, including delegates. Both the entry and dispatch
@@ -148,8 +162,9 @@ Direct messaging RPCs, engine Message actions, proposal.submit callbacks,
 loop-intercepted delegation, and supervised/CLI assistant runs are not covered
 by this boundary. Provider reconciliation and classifier construction are later
 Grace work. Provider-message ids remain null until a provider read-back adapter
-is integrated. Ledger rows are body-owned; cross-device write arbitration and
-phone/dashboard grading UIs are outside this change.
+is integrated. Ledger rows are body-owned; cross-device write arbitration is outside this
+change. The dashboard's feed and grades are described above; the phone grades
+through the owner's assistant.
 
 CLI: `car ledger list --json`; `car ledger grade <id> good --version <n>
 --operation-id <stable-id> --json`. Reuse that operation id for a retry.

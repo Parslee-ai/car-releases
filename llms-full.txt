@@ -10,7 +10,7 @@ readers to a sign-in page. This bundle intentionally excludes
 CLAUDE.md, the private repo's root README.md, and individual crate
 READMEs — see the header comment in scripts/build-llms-full.sh for why.
 
-SIZE: 2398 KB, roughly 599K tokens at ~4 chars/token — this bundle is LARGE. If your context budget is
+SIZE: 2420 KB, roughly 605K tokens at ~4 chars/token — this bundle is LARGE. If your context budget is
 tight, read llms.txt instead (a few KB) and fetch only the documents it
 names; every one of them is published individually.
 
@@ -124,17 +124,17 @@ Source: release-mirror/CLI.md
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.60.0 (2026-11-08). Every subcommand the installed binary reports is
+> 0.62.0 (2026-11-12). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 86 top-level commands, 185 nested subcommands
+> 88 top-level commands, 190 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 86 subcommands spanning several different jobs:
+`car` is one binary with 88 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -335,13 +335,14 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car init`](#car-init) | Initialize a .car/ project directory for team-shared configuration |
 | [`car doctor`](#car-doctor) | Diagnose (and optionally repair) a CAR install: corrupt model weights, unparseable `~/.car` state files, version skew, and leftover files from a previous install. Runs entirely against the local filesystem — no daemon required, so it works even when `car-server` won't start |
 | [`car feedback`](#car-feedback) | Report a problem to Parslee. Captures a redacted diagnostic bundle (your description, the `car doctor` report, bounded log tails, and a version stamp) into the local outbox at `~/.car/feedback-outbox` — nothing is uploaded by this command; CAR tries to send a report saved while signed in to Parslee in the background, and `car feedback --list` shows whether it went. One saved signed out stays on this computer for `--export`. Works with the daemon down, like `car doctor`. macOS and Windows; Linux needs its own leak-path audit first |
-| [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it |
+| [`car update`](#car-update) | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it. It also re-pins the CAR plugin in Claude Code and Codex to the release now installed, when that plugin's marketplace already follows Parslee-ai/car (or points at a folder that no longer exists); a marketplace on your own checkout or fork is reported, never replaced |
 | [`car purge`](#car-purge) | Remove this CAR install's own state under `~/.car` (config, logs, managed models, binaries) and reap any OS-level schedules CAR installed — for a clean slate before a reinstall. On macOS this also clears CarHost.app's user-level state and resets its privacy (TCC) permissions, so a reinstall really does re-run permission onboarding. NEVER touches the shared HuggingFace model cache (other tools use it); managed models are symlinks into it, so only the links are removed, not the multi-GB blobs. (To uninstall a single contributed agent instead, use `car uninstall <id>`.) |
 | [`car code`](#car-code) | Open a coding conversation in your repository. Ask questions, plan a change, or describe work to implement; review the checks and edits, then keep iterating in the same conversation |
 | [`car board`](#car-board) | Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board launched by an agent cannot. Closing the board never stops a run |
 | [`car do`](#car-do) | CAR Assistant: a general-purpose agent that works out of the box |
 | [`car policy-check-hook`](#car-policy-check-hook) | Evaluate a host's proposed tool call against `.car/policies/` and answer on stdout with that host's hook decision envelope |
 | [`car peer-inbox-hook`](#car-peer-inbox-hook) | Tell a running Claude Code session that colleagues' messages wait for it. Wired by the CAR plugin as a Claude Code hook (after a prompt or a tool call, and before stopping); reads the count `car claude`'s collaboration server keeps. Prints nothing outside a `car claude` session, and always exits 0 |
+| [`car board-hook`](#car-board-hook) | Brief a coding-assistant session from the shared work board. Wired by the CAR plugin as a Claude Code hook: at session start it adds the briefing (at most 30 lines), and on each prompt a line when items on the current branch changed. Prints nothing without a daemon, and always exits 0 |
 | [`car worktree`](#car-worktree) | Lease a warm git worktree from this repo's pool instead of creating one per task (acquire, release, status, reclaim, clean, and `hook` for the CAR Claude Code plugin). Off until the repo commits .car/worktree-pool.toml with `enabled = true` |
 | [`car project`](#car-project) | Manage CAR-managed projects (a named, git-backed workspace CAR creates for you — no repo to pick) |
 | [`car parslee`](#car-parslee) | Parslee platform capabilities for the signed-in account (requires `car auth login`) |
@@ -382,6 +383,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car fleet`](#car-fleet) | What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon |
 | [`car mp`](#car-mp) | Multiplayer development: a work item moves Build → Improve → Polish through different developers before it merges, each stage a coder session on its owner's machine with the engine they choose. Needs a running daemon and a shared git remote |
 | [`car claude`](#car-claude) | Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon |
+| [`car codex`](#car-codex) | Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent, installs session-only collaboration and policy hooks, injects the daemon brief, and removes the agent on exit. Needs a running daemon. Arguments after `--` go to `codex` |
 | [`car publish`](#car-publish) | Publish a contributed agent to the registry (Parslee-ai/car#182 phase 5). Reads a local agent's `manifest.toml`, signs it for `--audience public` (ed25519 key at `$CAR_PUBLISH_KEY_PATH`), stages it at the versioned `agents/<namespace>/<name>/<version>/` path, updates `index.json` + the README catalog, re-runs the EXACT `car registry validate` CI gate locally, and opens a PR against the registry repo. Aborts (no PR) on a missing signing key or a validation failure |
 | [`car help`](#car-help) | Print this message or the help of the given subcommand(s) |
 
@@ -2368,7 +2370,9 @@ car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's 
 wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also
 creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling /
 wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates
-`car-mcp` lacks it
+`car-mcp` lacks it. It also re-pins the CAR plugin in Claude Code and Codex to the release now
+installed, when that plugin's marketplace already follows Parslee-ai/car (or points at a folder that
+no longer exists); a marketplace on your own checkout or fork is reported, never replaced
 
 Usage: car update [OPTIONS]
 
@@ -2514,15 +2518,97 @@ Fullscreen supervision board for coder sessions — one screen for every run on 
 started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its
 outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded
 discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board
-launched by an agent cannot. Closing the board never stops a run
+launched by an agent cannot. Closing the board never stops a run.
+
+`car board items` is a different board: the shared work board of what every session has in flight
+(see `car board items --help`).
 
 Usage: car board [OPTIONS]
+       car board <COMMAND>
+
+Commands:
+  items      List the shared work board: what is in flight, who is driving it, and what it waits on
+  (the coder-session monitor is plain `car board`)
+  history    One item's history: each change, the session that made it, comments
+  brief      The briefing a session starts with, for the current directory's branch
+  reconcile  Make a project's board follow its code host (opt-in). The daemon then marks items done
+  or abandoned when their PR merges or is abandoned, moves them to review when a PR opens, and opens
+  and closes a "main is red" incident per failing pipeline, every few minutes
+  help       Print this message or the help of the given subcommand(s)
 
 Options:
-      --repo <REPO>  Repository the board opens against — pre-fills new runs and grounds
-      discussions. Relative paths (`.`, `../sibling`) resolve against your current directory
-      (default: `.`)
-  -h, --help         Print help
+      --repo <REPO>
+          Repository the board opens against — pre-fills new runs and grounds discussions. Relative
+          paths (`.`, `../sibling`) resolve against your current directory (default: `.`)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### car board items
+
+```text
+List the shared work board: what is in flight, who is driving it, and what it waits on (the
+coder-session monitor is plain `car board`)
+
+Usage: car board items [OPTIONS]
+
+Options:
+      --project <PROJECT>
+      --state <STATE>            open, in_progress, waiting, review, done, abandoned
+      --kind <KIND>              work, incident, policy, ask, finding
+      --related-to <RELATED_TO>  Items related to a ticket, branch, PR, or item id
+      --all                      Include done and abandoned items older than 14 days
+      --org <ORG>                An organization this CAR holds a login for (default: personal)
+      --json
+  -h, --help                     Print help
+```
+
+#### car board history
+
+```text
+One item's history: each change, the session that made it, comments
+
+Usage: car board history [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --org <ORG>
+      --json
+  -h, --help       Print help
+```
+
+#### car board brief
+
+```text
+The briefing a session starts with, for the current directory's branch
+
+Usage: car board brief [OPTIONS]
+
+Options:
+      --org <ORG>
+  -h, --help       Print help
+```
+
+#### car board reconcile
+
+```text
+Make a project's board follow its code host (opt-in). The daemon then marks items done or abandoned
+when their PR merges or is abandoned, moves them to review when a PR opens, and opens and closes a
+"main is red" incident per failing pipeline, every few minutes
+
+Usage: car board reconcile <COMMAND>
+
+Commands:
+  add     Watch a project: its board items follow the repository's PRs and main pipelines
+  list    List watched projects
+  remove  Stop watching a project
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
 ```
 
 ### car do
@@ -2698,6 +2784,19 @@ Options:
   -h, --help  Print help
 ```
 
+### car board-hook
+
+```text
+Brief a coding-assistant session from the shared work board. Wired by the CAR plugin as a Claude
+Code hook: at session start it adds the briefing (at most 30 lines), and on each prompt a line when
+items on the current branch changed. Prints nothing without a daemon, and always exits 0
+
+Usage: car board-hook
+
+Options:
+  -h, --help  Print help
+```
+
 ### car worktree
 
 ```text
@@ -2751,9 +2850,9 @@ Lease a slot checked out on BRANCH and print its path (the only line on stdout)
 An existing local branch is switched to, a branch on origin is tracked, otherwise BRANCH is created
 from the base. The same owner acquiring the same branch again gets the same slot back without
 fetching. A branch whose holder process is gone is handed over with its uncommitted work. Before a
-new slot is handed out, origin is fetched; a failed fetch is fatal unless --offline. With every slot
-leased, dead holders' clean slots are reclaimed first; then it waits up to --wait minutes, or exits
-3.
+new slot is handed out, origin is fetched (a repo with no origin is never fetched, as if --offline);
+a failed fetch is fatal unless --offline. With every slot leased, dead holders' clean slots are
+reclaimed first; then it waits up to --wait minutes, or exits 3.
 
 Usage: car worktree acquire [OPTIONS] <BRANCH>
 
@@ -2766,7 +2865,8 @@ Options:
           Any path inside the repository (default: the current directory)
 
       --base <REF>
-          Start new branches from this ref (default: origin/HEAD's target, else origin/main)
+          Start new branches from this ref (default: origin/HEAD's target, else origin/main; in a
+          repo with no origin, the main checkout's branch, or its commit when detached)
 
       --wait <MIN>
           Wait up to this many whole minutes for a slot when the pool is full
@@ -2827,7 +2927,8 @@ Options:
           Release a slot that is not yours, or one a killed acquire left mid-switch
 
       --base <REF>
-          Park the slot on this ref (default: origin/HEAD's target, else origin/main)
+          Park the slot on this ref (default: origin/HEAD's target, else origin/main; with no
+          origin, the main checkout's branch or commit)
 
   -h, --help
           Print help (see a summary with '-h')
@@ -2897,7 +2998,7 @@ Options:
       `archive/wt/...` plus `<parent>/<repo>-archive/<name>/`), then reset the slot to a clean
       detached base. A failed save leaves it as it is
       --base <REF>     Reset archived slots to this ref (default: origin/HEAD's target, else
-      origin/main)
+      origin/main; with no origin, the main checkout's branch or commit)
   -h, --help           Print help
 
 Turn the pool on for a repo by committing .car/worktree-pool.toml with `enabled = true`.
@@ -2948,7 +3049,8 @@ Options:
           [default: 48]
 
       --base <REF>
-          Judge "merged" against this ref (default: origin/HEAD's target, else origin/main)
+          Judge "merged" against this ref (default: origin/HEAD's target, else origin/main; with no
+          origin, the main checkout's branch or commit)
 
       --offline
           Do not fetch first (or WT_POOL_OFFLINE=1)
@@ -3122,6 +3224,8 @@ Commands:
   in-daemon
   run       Run a registered agent on an input
   list      List registered in-daemon agents
+  publish   Register your flagship assistant as your agent in Parslee, in every organization you
+  belong to, and publish what it can do there
   where     Show where a declarative or supervised agent's files live
   external  Show installed external agentic CLIs (Claude Code, Codex, Gemini): which binary each
   resolved to, and whether it can actually run
@@ -3188,6 +3292,25 @@ Usage: car agent list
 
 Options:
   -h, --help  Print help
+```
+
+#### car agent publish
+
+```text
+Register your flagship assistant as your agent in Parslee, in every organization you belong to, and
+publish what it can do there.
+
+`car auth login` does this for you; run it again after joining an organization or updating CAR.
+Needs a Parslee sign-in, not the daemon.
+
+Usage: car agent publish [OPTIONS]
+
+Options:
+      --json
+          Emit the per-login outcome as JSON
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 #### car agent where
@@ -4984,9 +5107,9 @@ Options:
       --as-host
           Present CAR's local host key without asking, for an unattended deploy script run by the
           server's owner. Needs the host-token file, and is refused for a process CAR launched as a
-          supervised agent. That refusal reads environment variables an agent controls, so on Linux
-          the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the
-          key file (car#3706)
+          supervised agent. That refusal reads environment variables an agent controls, so the
+          kernel is what keeps the key from it: on Linux the agent's wall, on the Mac the profile
+          every unwalled agent runs under (car#3706)
 
   -h, --help
           Print help (see a summary with '-h')
@@ -5024,6 +5147,7 @@ Arguments:
   supervised agent's environment, which prints that agent's own
 
 Options:
+      --limits     View owner/class limits and their audit history (host authority)
       --all        Every principal's spend, with a total and the server's zone
       --url <URL>  WebSocket URL of the running car-server daemon [default: ws://127.0.0.1:9100/]
       --json       Output the daemon's result as JSON instead of a table
@@ -5065,9 +5189,9 @@ Options:
   a person runs it in their terminal and answers yes, or uses the CAR app
       --as-host    Present CAR's local host key without asking, for an unattended deploy script run
       by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
-      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
-      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
-      file (car#3706)
+      a supervised agent. That refusal reads environment variables an agent controls, so the kernel
+      is what keeps the key from it: on Linux the agent's wall, on the Mac the profile every
+      unwalled agent runs under (car#3706)
   -h, --help       Print help
 ```
 
@@ -5088,9 +5212,9 @@ Options:
   a person runs it in their terminal and answers yes, or uses the CAR app
       --as-host    Present CAR's local host key without asking, for an unattended deploy script run
       by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
-      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
-      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
-      file (car#3706)
+      a supervised agent. That refusal reads environment variables an agent controls, so the kernel
+      is what keeps the key from it: on Linux the agent's wall, on the Mac the profile every
+      unwalled agent runs under (car#3706)
   -h, --help       Print help
 ```
 
@@ -5111,9 +5235,9 @@ Options:
   a person runs it in their terminal and answers yes, or uses the CAR app
       --as-host    Present CAR's local host key without asking, for an unattended deploy script run
       by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
-      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
-      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
-      file (car#3706)
+      a supervised agent. That refusal reads environment variables an agent controls, so the kernel
+      is what keeps the key from it: on Linux the agent's wall, on the Mac the profile every
+      unwalled agent runs under (car#3706)
   -h, --help       Print help
 ```
 
@@ -5156,9 +5280,9 @@ Options:
   a person runs it in their terminal and answers yes, or uses the CAR app
       --as-host    Present CAR's local host key without asking, for an unattended deploy script run
       by the server's owner. Needs the host-token file, and is refused for a process CAR launched as
-      a supervised agent. That refusal reads environment variables an agent controls, so on Linux
-      the agent's wall is what keeps the key from it; on the Mac an unwalled agent can read the key
-      file (car#3706)
+      a supervised agent. That refusal reads environment variables an agent controls, so the kernel
+      is what keeps the key from it: on Linux the agent's wall, on the Mac the profile every
+      unwalled agent runs under (car#3706)
   -h, --help       Print help
 ```
 
@@ -5661,6 +5785,22 @@ Options:
   -h, --help  Print help
 ```
 
+### car codex
+
+```text
+Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent,
+installs session-only collaboration and policy hooks, injects the daemon brief, and removes the
+agent on exit. Needs a running daemon. Arguments after `--` go to `codex`
+
+Usage: car codex [ARGS]...
+
+Arguments:
+  [ARGS]...
+
+Options:
+  -h, --help  Print help
+```
+
 ### car publish
 
 ```text
@@ -5712,7 +5852,7 @@ Source: release-mirror/ASSISTANT.md
 
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.61.2**. Check yours with `car --version`; if it
+> Describes CAR **0.62.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -6238,7 +6378,7 @@ Source: release-mirror/MCP.md
 
 # CAR as an MCP server
 
-> Describes CAR **0.61.2**. Check yours with `car --version`; if it
+> Describes CAR **0.62.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 Wire CAR's graph memory, skill storage, static plan verification, and policy
@@ -7581,7 +7721,7 @@ Source: docs/CAPABILITIES.md
 
 <!-- Generated by scripts/build-capabilities.sh. Do not edit by hand. -->
 
-Schema v2. 14 groups claim 80 workspace crates and 25 named programs/binaries exactly once.
+Schema v2. 14 groups claim 81 workspace crates and 25 named programs/binaries exactly once.
 
 ## Capability groups
 
@@ -7858,6 +7998,7 @@ Tamper-evident events, telemetry, conformance, benchmarks, and StateBench memory
 | `car-memgine-eval` | StateBench evaluation bridge for Rust car-memgine | yes |
 | `car-selfheal` | Deterministic self-healing signal detection core for Common Agent Runtime | yes |
 | `car-telemetry` | Tracing and OpenTelemetry initialization for CAR | yes |
+| `car-test-support` | Shared test helpers for CAR's integration tests (isolated ServerState). Dev-dependency only; never published. | yes |
 
 **Programs and binaries**
 
@@ -7908,6 +8049,7 @@ Hidden clap commands are excluded.
 | `car agent external` | Show installed external agentic CLIs (Claude Code, Codex, Gemini): which binary each resolved to, and whether it can actually run |
 | `car agent list` | List registered in-daemon agents |
 | `car agent new` | Describe an agent in plain language; CAR builds, verifies, and registers it to run in-daemon |
+| `car agent publish` | Register your flagship assistant as your agent in Parslee, in every organization you belong to, and publish what it can do there |
 | `car agent run` | Run a registered agent on an input |
 | `car agent where` | Show where a declarative or supervised agent's files live |
 | `car approvals` | Agent approval policy — the default posture for what agents may do without asking. Proxies the daemon's `agent_permissions.*` surface (the CLI counterpart to the CarHost "Approvals" settings / onboarding step) |
@@ -8191,7 +8333,7 @@ Hidden clap commands are excluded.
 | `car tools call` | Invoke one CAR built-in tool in this process; no daemon is contacted |
 | `car ui` | Sign a browser in to the daemon's dashboard with a one-time link |
 | `car uninstall` | Uninstall a contributed agent (Parslee-ai/car#182 phase 4). Stops the running child if any, removes the manifest from `~/.car/agents/<id>/`, and reaps the legacy `agents.json` entry. Idempotent |
-| `car update` | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it |
+| `car update` | Update the locally-installed `car` CLI and its sibling `car-server` daemon to the latest release (or `--version <X.Y.Z>`), in place — regardless of how they were installed. Reconciles the drift that otherwise builds up when one channel updates and another doesn't (e.g. CarHost.app auto-updates its bundled daemon via Sparkle but leaves the `/usr/local/bin/car` CLI behind). The npm/PyPI `car-runtime` client packages are separate — this command never touches them; `car doctor` reports which of your agents have drifted, and prints the exact command per environment. Both remedies pin: `npm install car-runtime@<version>` (`npm update` CANNOT cross a 0.x minor — npm reads `^0.41.0` as `>=0.41.0 <0.42.0`, so it is a no-op) and `<venv>/bin/python -m pip install -U car-runtime==<version>` (a bare `-U` can be silently defeated by the consumer's own pin, and the wrong interpreter installs into an environment that does not hold the stale wheel). On macOS it also creates the `car-mcp` link beside a `car` that links into CarHost.app (or replaces a dangling / wrong-bundle one): Sparkle never re-runs the package postinstall, so an install that predates `car-mcp` lacks it. It also re-pins the CAR plugin in Claude Code and Codex to the release now installed, when that plugin's marketplace already follows Parslee-ai/car (or points at a folder that no longer exists); a marketplace on your own checkout or fork is reported, never replaced |
 | `car verify` | Statically verify a proposal |
 | `car video` | Generate a video with a local MLX model |
 | `car voice` | Voiceprint enrollment — teach CAR your voice so it knows who's speaking (the owner drives commands; other voices are context). Proxies the daemon's `voice.*` surface |
@@ -10565,6 +10707,7 @@ Negotiation is fail-closed:
 - `feedback.v1` is optional and gates every `feedback.*` method: a negotiated v3 session that did not request it is refused with `-32008` (`protocol capability mismatch:`) naming the capability. The bundled host requests it as an optional capability so an older daemon still connects.
 - `workers.start-values.v1` is optional and gates nothing: it says `workers.start` accepts `values`, the per-worker secret values an orchestrator hands a worker at start (see [workers](websocket-protocol/workers.md)). An orchestrator that needs them asks for it in `optional_capabilities` and checks `negotiated_capabilities`; an older daemon refuses `values` as an unknown field.
 - Negotiation is per connection. A reconnect starts unnegotiated and repeats `session.auth` (when enabled) → `server.handshake` → `host.subscribe`.
+- A refused `server.handshake` leaves the connection unnegotiated, even after an earlier one succeeded on it: methods that need a negotiated protocol or capability are refused until a later handshake succeeds.
 - Bundled clients reject an old daemon's unknown-method response, a malformed success, and a handshake timeout instead of proceeding on an unproven protocol.
 
 The bundled NAPI/PyO3/UniFFI clients run this handshake automatically (via
@@ -10786,17 +10929,17 @@ That one read is by design (see the third bullet above): weights are a shared
 multi-gigabyte cache, and the daemon does not write to it. "Isolated" here means
 isolated state, not an empty machine.
 
-Without `CAR_HOME`, a second daemon shares one root with the first, and the
-following applies instead.
+Without a distinct `CAR_HOME`, a second daemon shares one root with the first,
+and it does not start. The auth-token file and the shared socket are
+**per-user singletons**, neither path carrying a port or instance id, and one
+`car-server` per state root owns them: the **primary**, which holds the
+advisory lock on `<CAR_HOME>/run/daemon.lock`. A daemon that finds the lock held
+logs `another car-server already owns this CAR_HOME shared state` and exits
+before it adopts any state or listens, so it can neither overwrite the token
+file nor end the primary's running work during its own boot. Run an isolated
+secondary daemon with its own `CAR_HOME`, as above.
 
-The auth-token file and that shared socket are **per-user singletons** — neither path carries a port or instance id. Only one `car-server` per user owns them: the **primary**, decided by an advisory lock on `~/.car/run/daemon.lock` plus a liveness probe of the shared socket (so an already-running daemon whose binary predates the lock is still respected).
-
-A non-primary daemon starts normally but:
-
-- does **not** write the shared auth-token file — its token stays in memory, so reach it with the value supplied through `--auth-token`, `CAR_AUTH_TOKEN`, `--auth-token-file`, or `CAR_AUTH_TOKEN_FILE`; the file form is read and deleted at startup;
-- binds `car-server-<port>.sock` instead of the shared path.
-
-Both are logged at startup. Before this, a second daemon on another port silently overwrote the token file (breaking every client of the running daemon with `token mismatch`) and unlinked its live socket, leaving that listener orphaned until it restarted — with nothing logged on either side (Parslee-ai/car#629).
+Before the lock, a second daemon on another port silently overwrote the token file (breaking every client of the running daemon with `token mismatch`) and unlinked its live socket, leaving that listener orphaned until it restarted, with nothing logged on either side (Parslee-ai/car#629).
 
 ## Server-initiated requests
 
@@ -11109,8 +11252,8 @@ cannot read, replace, or delete it. The complete reserved contract is:
 | `auth.switch_org` | `organization_id` (req), `api_base?` | `{ authenticated, session }` — **silently** switches the signed-in account's active organization: mints a fresh token scoped to `organization_id` via the refresh grant's `organization_id` override (the backend validates membership; no browser), persists the rotated tokens, and returns the refreshed session. Inference follows immediately (the new token carries `active_org`). The org must be one the login belongs to (`session.Organizations[]`). The daemon then re-activates its Parslee session for the same login, so host identity, the `parslee` field of `session.auth`, and feedback lane binding follow the new org; skipped when `api_base` names a different authority than the active login. |
 | `auth.accounts` | `api_base?` | `{ accounts: [{ id, email?, name?, active }] }` — every stored Parslee **login** (multiple can coexist; exactly one is `active`). Migrates a pre-multi-login session into the registry on first call. |
 | `auth.switch_account` | `account_id` (req), `api_base?` | `{ authenticated, session }` — make another held login the active view (one compare-and-swap publication of the V2 record; every login keeps its own refresh token), refresh, and return the newly-active login's session. The active login is the CLI/UI default view; it does not change the default org. |
-| `auth.remove_account` | `account_id` (req) | `{ ok, accounts }` — forget a stored login (deletes its stashed tokens). If it was active, another remaining login becomes active, or the session clears when none remain. A default org held by the removed login is cleared, never moved to another login. |
-| `auth.logout` | — | `{ ok: true }` — clears stored Parslee credentials and the default org. |
+| `auth.remove_account` | `account_id` (req) | `{ ok, accounts, warnings }` — forget a stored login (deletes its stashed tokens). First asks that login's issuer to revoke this device's certificate; a revoke that did not go through (offline, refused) is a line in `warnings` and does not stop the removal. If it was active, another remaining login becomes active, or the session clears when none remain. A default org held by the removed login is cleared, never moved to another login. |
+| `auth.logout` | — | `{ ok: true, warnings }` — clears stored Parslee credentials and the default org. First asks each login's issuer to revoke this device's certificate (`DELETE …/device-cert/{device}`); a revoke that did not go through is a line in `warnings`, the sign-out still happens, and such a certificate expires within 12 hours. |
 | `auth.organizations` | — | `{ organizations: [{ context: { api_base, account_id, organization_id }, email?, role? }], default: WorkContext \| null, default_error? }` — `default_error` names an unreadable `work-contexts.json` without hiding the list. Errors while `PARSLEE_ACCESS_TOKEN` overrides the stored logins. Every (login, org) pair **every** signed-in login holds, not just the active one, read locally from the `memberships` claim of each login's own tokens (no network). Sorted by account, then org. The claim reflects membership when the token was minted; the issuer re-checks it on every context renewal. |
 | `auth.default_context.get` | — | `{ default: WorkContext \| null }` — the person's default org: what new work uses when nothing more specific (an explicit choice, the repository's `.car/config.toml`, the agent's default) names one. Stored in `work-contexts.json` under the CAR state root; separate from the active login. A malformed file is an error, not an empty default. |
 | `auth.default_context.set` | `organization_id` (req), `account_id?` | `{ default: WorkContext }` — set the default org. The signed-in login that holds the org supplies the account; `account_id` is required only when more than one does (otherwise the call fails naming them). The issuer must mint a credential for the org first, so a default is never an org this CAR cannot use. Cleared automatically when its login is removed or signed out, or when the issuer answers `invalid_organization` for it. |
@@ -11303,9 +11446,9 @@ method after the non-secret protocol negotiation. This is appropriate **only** w
   malicious web pages can still open WebSockets to `localhost`
   (browsers don't enforce CORS for WebSocket upgrades) but
   cannot read the token from disk, so they fail at
-  `session.auth`. The token is also `cache-control: no-store`
-  on the UI server's auth-token endpoint and the UI server is
-  loopback-bound, so a remote page can't fetch it either.
+  `session.auth`. No HTTP route serves the daemon or host token
+  (the old `GET /auth-token` is gone), so a page cannot fetch
+  it either.
 - ❌ **Multi-user / network-reachable**: not supported. Don't
   bind to a routable interface; don't expose the port through
   reverse proxies; don't run `car-server` as a shared service.
@@ -11414,6 +11557,8 @@ car-server --no-auth --port 9100   # auth off (opt-out)
    - **Linux**: `$XDG_RUNTIME_DIR/ai.parslee.car/auth-token` if set,
      otherwise `~/.config/ai.parslee.car/auth-token`
    - **Windows**: `%LOCALAPPDATA%\ai.parslee.car\auth-token`
+   - With `CAR_HOME` set, on any platform:
+     `$CAR_HOME/ai.parslee.car/auth-token` instead, as above.
 3. Installs the token on `ServerState`. Every WS connection MUST
    call `session.auth` as its first JSON-RPC method; non-auth
    methods on unauthenticated sessions get `{"code": -32001,
@@ -12438,6 +12583,10 @@ See `docs/proposals/remote-mcp-connectors.md`.
 - **Returns**: `{ contacts: Contact[] }`
 
 ### health
+
+The person's health data on this Mac (sleep, workouts and activity, once they
+grant access), not the daemon's liveness: `health.status` reports whether that
+data can be read. Whether the daemon is up is `car doctor`'s question.
 
 #### `health.status`
 - **Params**: `{}`
@@ -14063,7 +14212,7 @@ If you key memory per project, bind a namespace. `session.auth { memory_namespac
 
 #### `models.recommend`
 - **Params**: `{ use_case?, tier?, cloud_ok? }` — `use_case` ∈ `assistant | coding | search | vision | transcription | summarize` (default `assistant`); `tier` ∈ `fastest | balanced | most_capable` (default `balanced`); `cloud_ok` (default `false`) lets remote models compete. Present-but-invalid enum values are rejected as invalid params.
-- **Returns**: a `RecommendationSet` — `{ picks: [Recommendation], not_enough_memory: [Recommendation], note? }`. A `Recommendation` is `{ model_id, display_name, role, rationale, download_mb, already_installed, fit: "fits"|"too_big"|"server_provided"|"unknown", acceleration, is_local, requires_cloud_consent, trust_tier, score, within_recommendation_target }`. `within_recommendation_target` is the automatic-selection gate: false candidates remain visible but require an explicit choice. Older serialized recommendations that omit this additive field deserialize as true. `picks` is ranked best-first; `note` is always present when `picks` is empty (machine too small, no cloud key, nothing in the lane), may flag a cloud top pick, and reports corrupt/unreadable persisted policy recovery.
+- **Returns**: a `RecommendationSet` — `{ picks: [Recommendation], not_enough_memory: [Recommendation], note?, memory_ceiling_mb? }`. A `Recommendation` is `{ model_id, display_name, role, rationale, download_mb, already_installed, fit: "fits"|"too_big"|"server_provided"|"unknown", acceleration, is_local, requires_cloud_consent, trust_tier, score, within_recommendation_target, estimated_peak_mb }`. `memory_ceiling_mb` is the resource policy's local-model ceiling the fit verdicts were judged against, present when a policy is in force: a model in `not_enough_memory` is over that ceiling, a share of the machine's memory, not all of it (car#3532). `estimated_peak_mb` is the row's estimated peak resident memory at the recommender's typical context (weights, KV cache and runtime margin), `0` for a model whose memory is not this machine's; preflight at a request's own context can differ (car#3536). Both are additive: a recommendation from an older daemon reads `memory_ceiling_mb` absent and `estimated_peak_mb` as `0`. `within_recommendation_target` is the automatic-selection gate: false candidates remain visible but require an explicit choice. Older serialized recommendations that omit this additive field deserialize as true. `picks` is ranked best-first; `note` is always present when `picks` is empty (machine too small, no cloud key, nothing in the lane), may flag a cloud top pick, and reports corrupt/unreadable persisted policy recovery.
 - Ranks registry models for this machine + intent using the running engine's active local-model resource policy — the same policy used by `models.preflight` and list/search fit annotations. The engine initializes it from persisted state (missing state defaults to Everyday), and `models.resource_policy.set` saves and applies it together. Everyday Assistant/Balanced puts known-fitting, tool-capable local candidates inside the recommendation target first; heavier and unknown-memory rows remain visible. Policy loading does not read credentials.
 
 #### `models.setup_plan`
@@ -14263,7 +14412,7 @@ or another local program cannot end the sign-in.
   reason reports the same text in its result.
 ### multi
 
-Multi-agent coordination. All variants delegate per-agent execution back to the client via `multi.run_agent` callbacks (same pattern as `tools.execute`).
+Multi-agent coordination. All variants delegate per-agent execution back to the client via `multi.run_agent` callbacks (same pattern as `tools.execute`). A callback's params are `{ spec, task, callback_id }`: pass `callback_id` on every `infer` / `infer_stream` call the run makes, so its metered rows are tied to that run and not to another running beside it ([events](events.md), car#3492). It is optional; a client that omits it keeps the earlier, overlap-guarded reading.
 
 All variants also accept an optional `budget` object — a runtime-enforced coordination budget (see [`BudgetLimits`](#budgetlimits) below).
 
@@ -14437,8 +14586,8 @@ Schedule a **deterministic command** on a cadence expressed ONCE, with the OS ba
 - A connection authenticated as a supervised agent is the credential-read broker path. The daemon derives `agent_id` from `session.auth` (never from params), constructs a `secret.get` tool action carrying the canonical service/key and that identity, and evaluates it through the connection's policy engine before reading. A supervised agent may read only the names its manifest declares in `secrets` (service `car`); any other name, or any other service, returns an error whose JSON message has `code: "not_declared"` and is journaled as a `policy_violation` with `outcome: "not_declared"`. This check runs after the inference-consumer and work-context rules, which are unchanged, and a declaration never widens either. A policy denial returns an error whose JSON message has `code: "policy_denied"`; clients must not fall back to direct storage after any daemon response.
 - The native CLI uses `operator_broker: true` only for a loopback URL and authenticates with the owner-only local host-token file. The ordinary daemon token is available to loopback dashboard clients and therefore is not sufficient proof of the daemon user's filesystem identity; the cross-host `CAR_AUTH_TOKEN` override is never used for this role. The daemon accepts operator mode only from an authenticated host session with no supervised-agent identity and only while daemon auth is enabled. This allows `car keys`, provider resolution, and Parslee auth to reuse the daemon's already-approved credential-store identity, including their private provider/auth slots. A supervised agent cannot set this flag to bypass policy, and a `--no-auth` daemon cannot grant it.
 - Every broker attempt appends one redacted event. Reads the daemon makes for an agent at spawn (its declared `secrets`) are journaled to `agent-secret-reads.jsonl` beside the peer-message journal with the same fields plus `via: "spawn"`. Supervised events are `action_succeeded` with `outcome: "read"`, `action_failed` with `outcome: "secret_store_error"` (or `"log_record_failed"`, below), or `policy_violation` with `outcome: "policy_denied"`; their data contains `tool`, `service`, `key`, authenticated `agent_id`, and outcome (plus denying policy names). Operator events contain `tool`, `service`, `key`, `caller_role: "operator"`, and outcome. Values and backend error text are never journaled.
-- **Recorded before it is handed** (car#3637): a supervised agent is handed a value only after the value's salted fingerprint has been durably written into the record of every run of the agent this daemon holds and has not finished (see `agents.tail_log`, Per-run log files). Otherwise the call fails with `code: "log_record_error"` (journaled as `action_failed` with `outcome: "log_record_failed"`) and nothing is handed over. That includes: this daemon holding no run of the agent (a process that outlived an earlier daemon and is not adopted, or not adopted yet, still holds the agent's token), a run with no record, a record that cannot be read or parsed right now (it is left as it is), and one the value cannot be written into (it is removed or emptied in place, so no reader, `car feedback` included, takes that run's raw file as holding no value). No other exceptions.
-- Environment-keyed resolution still checks a non-empty process environment value before this RPC. Every daemon refusal is terminal. A supervised process also fails closed on transport failure; the operator CLI falls back to its existing direct store only when no daemon response arrives within the two-second broker bound. This keeps standalone CLI use working while preventing an answered denial from becoming a local read.
+- **Recorded before it is handed** (car#3637): a supervised agent is handed a value only after the value's salted fingerprint has been durably written into the record of every run of the agent this daemon holds and has not finished, and, while it holds one, of every other run of the agent whose raw log is still on disk (see `agents.tail_log`, Per-run log files). A process that outlived an earlier daemon and was not adopted holds the agent's token, so it may be the one asking: its own run's record names the value too (car#3677). Otherwise the call fails with `code: "log_record_error"` (journaled as `action_failed` with `outcome: "log_record_failed"`) and nothing is handed over. That includes: this daemon holding no run of the agent (a process that outlived an earlier daemon and is not adopted, or not adopted yet, still holds the agent's token; its record is not this daemon's to write into), a run with no record, a record that cannot be read or parsed right now (it is left as it is), and one the value cannot be written into (it is removed or emptied in place, so no reader, `car feedback` included, takes that run's raw file as holding no value). No other exceptions.
+- Environment-keyed resolution still checks a non-empty process environment value before this RPC. Every daemon refusal is terminal but one: a `log_record_error` whose `context.pending_adoption` is `true` (this daemon holds no run of the agent and a run's raw log is on disk, so the asking process may be a survivor of the last daemon not adopted yet) is asked again every 250 ms for up to 30 seconds by a supervised agent's broker, and refused after that (car#3670). A supervised process also fails closed on transport failure; the operator CLI falls back to its existing direct store only when no daemon response arrives within the two-second broker bound. This keeps standalone CLI use working while preventing an answered denial from becoming a local read.
 - **A worker** (see [workers](workers.md)) reads the same way, for its declared names only. For a name its orchestrator handed over in `workers.start` `values`, it reads that value, and for any other declared name the store's. The read is journaled as above, in the worker's own folder, with the name and no value. No other agent has a per-agent value: an installed agent reads the one CAR-wide value for each name.
 - Host and ordinary authenticated callers that omit `operator_broker` retain the existing generic `secret.get` behavior. Daemon-private slots remain unavailable on that generic path.
 
@@ -14974,7 +15123,7 @@ All `state.*` methods accept an optional `tenant_id: string` sibling field (Pars
 - **Who is reporting.** The daemon, not the caller, decides who a report comes from. A session bound to a supervised agent reports as `agent:<id>`, and its source is stored as `agent:<id>/<source>`; every other session is an operator, and its source is stored under the name given. A source name cannot contain `/`, so an agent can neither overwrite an operator's `neo` nor another agent's sources.
 - **How the grade reaches routing.** Each source's grades are kept per model and task, apart from the outcomes of served calls: they change no call counts, no success or failure counts, and not the served quality EMA. A source's quality is a running mean over its reports whose window is capped at 8 cases, so a newer verdict keeps moving it, and reporting again under the same source with `n` of 8 or more replaces its quality outright. `models.route` pools the grades into `reliability` at benchmark weight, one unit per case, under three caps: 8 units per source, 8 units for all of one reporter's sources together, and 16 units for every reporter together. One reporter, whatever source names it uses, therefore moves a model's `reliability` at most two thirds of the way from its catalog prior to the quality it reports, and all external grades together at most four fifths; graded calls the daemon served are not capped. Each route candidate lists the grades under `external_grades` (see [`models.route`](#modelsroute)).
 - **Expiry and source slots.** A source not updated for 90 days stops counting toward `reliability`; reporting under it again starts it afresh. Each reporter may keep 8 current sources per model and task. A new source past that takes the slot of the reporter's stalest source if that one has gone stale, and is refused with `source_limit_reached` otherwise. There is no call that deletes a source; correct a mistaken grade by reporting under the same source again.
-- **Limits.** Each supervised agent may report 30 times a minute, and operator sessions share one budget of 30 a minute; past that the call is refused with `rate_limited` and `error.data.retry_after_secs`. The profile is written to disk before the call returns; if that write fails, the call is refused with `persist_failed` even though the grade counts in memory until the daemon restarts.
+- **Limits.** Each supervised agent may report 30 times a minute, and operator sessions share one budget of 30 a minute; past that the call is refused with `rate_limited` and `error.data.retry_after_secs`. The profile is written to disk before the call returns; if that write fails, the call is refused with `persist_failed` and the grade is taken back, so it does not count in memory either and a retry counts it once (car#3515).
 - **Errors.** Every refusal is `-32019` with `error.data.reason`: `unknown_model`, `invalid_quality`, `invalid_n`, `invalid_source`, `invalid_model`, `invalid_reporter`, `source_limit_reached`, `rate_limited` or `persist_failed`. A malformed or missing field is `invalid params`.
 ### memory (additional)
 
@@ -15091,7 +15240,12 @@ All `state.*` methods accept an optional `tenant_id: string` sibling field (Pars
 
 The owner's decision ledger, stored in the same device oplog as assistant action
 records. All methods require host-management authority, including grades; a
-supervised agent cannot grade itself or override its class. Node and Python use
+supervised agent cannot grade itself or override its class. The one other caller
+is the owner's signed-in dashboard (`car ui`), which may call `ledger.list`,
+`ledger.classes.list`, `ledger.rung_changes.list` and `ledger.grade`: the
+methods its decision-ledger feed, one-click grades and autonomy view use. Its
+grades must carry `source: "dashboard"`, and it cannot settle an undo
+(`undo_resolution`). Node and Python use
 the generated `HostClient` methods (`ledgerList` / `ledger_list`, etc.); Swift
 and Kotlin use the host-management daemon bridge.
 
@@ -15120,7 +15274,16 @@ A class has `id`, `name`, `rung`, `allowed_tools`, `denied_tools`,
 `pass_rate_bars` (map keyed by rung, with `min_tap_cases`, `min_clean_streak`,
 `pass_rate`), `tap_graded_case_count`, `clean_streak_length`, and nullable
 `last_mover`, plus optional `approval_rules:string[]`, `report_format:string`,
-and `skill_ids:string[]` for the brief compiler. Configuration through put preserves the existing rung and counters.
+and `skill_ids:string[]` for the brief compiler. Optional
+`standup_reports: "stored"|"learned"|"source_health"` marks a class whose
+entries the owner's standup reports as records rather than decisions (the
+assistant's `standup.reports`); it is omitted on a decision class and on every
+class stored before the field existed. Any other value is refused with
+`invalid class: unknown variant ...`. Put replaces it with what the caller
+sends, like the other policy fields. The dashboard's standup numbers read it
+from `ledger.classes.list` and from nothing else: every entry in a class that
+carries it is a record, left out of handled, needed and the out-of-the-loop
+share; agents working now still counts its actor. Configuration through put preserves the existing rung and counters.
 Creation records `{creation: class_id}` in `last_mover` and rung history, with
 no owner override. Grades, owner overrides and recorded lineage caps can change
 a rung. Promotion reads the TARGET rung's `pass_rate_bars[target]`, never the
@@ -15213,7 +15376,7 @@ Returns the class after an idempotent explicit owner override. `out_loop` is ref
 
 **Params:** `{ class_id?: string }`.
 
-Returns `{class_id, from, to, cause, at}[]`. Causes name a committed grade, override, creation, or `{lineage: source_class_id}` cap in the same ledger transaction. A successor filter includes every predecessor recursively, deduplicating shared ancestors.
+Returns `{class_id, from, to, cause, at, grade_record?}[]`. Causes name a committed grade, override, creation, or `{lineage: source_class_id}` cap in the same ledger transaction. A grade-caused change also carries `grade_record: {entry_id, kind, source, at}`, naming the decision and the grade that moved the rung. A successor filter includes every predecessor recursively, deduplicating shared ancestors.
 
 The dispatch boundary covers configured assistant executor tools in daemon MCP
 runs and coding discussions, including delegates. Both the entry and dispatch
@@ -15233,8 +15396,9 @@ Direct messaging RPCs, engine Message actions, proposal.submit callbacks,
 loop-intercepted delegation, and supervised/CLI assistant runs are not covered
 by this boundary. Provider reconciliation and classifier construction are later
 Grace work. Provider-message ids remain null until a provider read-back adapter
-is integrated. Ledger rows are body-owned; cross-device write arbitration and
-phone/dashboard grading UIs are outside this change.
+is integrated. Ledger rows are body-owned; cross-device write arbitration is outside this
+change. The dashboard's feed and grades are described above; the phone grades
+through the owner's assistant.
 
 CLI: `car ledger list --json`; `car ledger grade <id> good --version <n>
 --operation-id <stable-id> --json`. Reuse that operation id for a retry.
@@ -15536,7 +15700,10 @@ follow-up behind the same trait. The device is the holder.
 
 **Scope.** `events.query`, `events.cost_by_agent`, `events.stats` and
 `events.chain.verify` read only the calling connection's session event log,
-not another connection's. One exception: before answering `events.query`, the
+not another connection's. With `{ agent }`, `events.query` and
+`events.cost_by_agent` instead read that principal's records daemon-wide:
+its spend-ledger calls and its ambiguous sub-agent reports (below), under
+the same authorization ([heal](#eventscost_by_agent)). One exception: before answering `events.query`, the
 daemon copies `worker_started` and `worker_starts_omitted` events for workers
 the session may see into a host or orchestrator session's log (see
 [workers](workers.md)). Those copies are then part of that session's log, so
@@ -15652,24 +15819,35 @@ it.
   `multi.run_agent`, and the client's model calls either go through the
   daemon's `infer`, each its own row above with its own `call_id`, or go to
   a provider directly and are only self-reported. The daemon tells the two
-  apart per sub-agent run by whether any `call_id`-bearing
-  `inference_metered` row was written to the session log while that
-  callback was open. If one was, the row is marked `summary_of: "infer"`
+  apart per sub-agent run by the `inference_metered` rows written to the
+  session log while that callback was open. The callback carries a
+  `callback_id`, and a client that passes it as `infer`'s `callback_id`
+  tags each call's row with it: a row tagged with this run's callback is
+  this run's, and a row tagged with another callback never counts for it
+  (car#3492). Every `multi.run_agent` callback on the session counts as
+  open for this, including `scheduler.run` and `scheduler.run_loop`
+  callbacks and runs with no spend attribution. An untagged row, from a
+  client that does not pass the id, counts for the run only while no other
+  callback on the session overlapped it. With an overlap it could be either
+  run's: the run's row is marked `summary_of: "ambiguous"`, kept, and listed
+  apart from the measured totals (`ambiguous_reports`,
+  `ambiguous_reported_cost_usd` below), so two real calls are counted as two
+  and no run's cost is dropped. If the run's calls went through `infer`, the
+  row is marked `summary_of: "infer"`
   and `events.cost_by_agent` and `metrics_totals` skip it, so the calls are
   counted once, on the `infer` rows; the self-report CAR never verifies is
   kept on the row but not counted. If none was, the row is the only record
   of those calls: it is not marked and folds under the payer, as the
-  figures folded before the mark existed. The rule and its limit, for a
-  client that mixes the two: a run with ANY `infer` row is marked, so the
-  self-reported cost of the direct calls it made beside them is not folded;
-  and with parallel sub-agents an `infer` row written while two callbacks
-  are open marks both. The log the daemon watches is the whole session's,
-  so the same holds for an unrelated `infer` on the same session during a
-  callback (a chat call mid-swarm): it marks a self-reporting run's row as a
-  summary and that run's self-reported cost drops from `cost_by_agent` and
-  `metrics_totals`. That error only ever loses cost from the view, never
-  counts a dollar twice, and never touches the spend meter, which counts
-  every call the daemon made. A client that mixes the two styles in one swarm
+  figures folded before the mark existed. The limit, for a client that
+  mixes the two: a run with ANY of its own `infer` rows is marked, so the
+  self-reported cost of the direct calls it made beside them is not folded.
+  The log the daemon watches is the whole session's, so an unrelated
+  untagged `infer` on the same session during a callback that no other
+  callback overlaps (a chat call mid-run) is read as that run's: it marks a
+  self-reporting run's row as a summary, and that run's self-reported cost
+  drops from `cost_by_agent` and `metrics_totals`. A client closes this by
+  passing `callback_id` on its calls. The spend meter is never touched by
+  this: it counts every call the daemon made. A client that mixes the two styles in one swarm
   is decided per run, each run by its own callback's window, and a run is
   matched to its decision by the callback that produced it, not by its
   `sub_agent` name, so same-name sub-agents running together do not swap
@@ -15679,6 +15857,19 @@ it.
   call, one an older CAR wrote (`agent` the sub-agent's name), or one
   written by an embedder running car-multi with no daemon meter — folds
   under its `agent`.
+- **Ambiguous reports over a principal's records (`{ agent }`).** When a run
+  is marked `summary_of: "ambiguous"`, the daemon also keeps its
+  self-report for the paying principal, stored apart from the session
+  journal and the spend ledger (beside the ledger, never counted against a
+  cap, never dropped). `events.query { agent }` returns each as an
+  `inference_metered` row with `data` `{ agent, sub_agent, cause?,
+  summary_of: "ambiguous", reported_tokens_in, reported_tokens_out,
+  reported_cost_usd, tokens_in, tokens_out, cost_usd }` and `run_id` when the
+  request had a run, newest first among the ledger's rows by time.
+  `events.cost_by_agent { agent }` lists them in `ambiguous_reports` and
+  `ambiguous_reported_cost_usd` and never in `calls`, `tokens_in`,
+  `tokens_out` or `cost_usd`; the figures are what the runner reported, not
+  measured. A per-run reader skips them as it skips every `summary_of` row.
 
 #### `events.chain.enable`
 - **Params**: `null`
@@ -15882,7 +16073,8 @@ session and says which models resolved to which vendors.
   targets[], rejected[{ repo, reason }], review_models[],
   panel[{ model, vendor? }], panel_warning?, coder_pin?{ model, source },
   run_refusal?, engine, spend_meter, unattended{ coder_model?, review_models[],
-  source?, refusal? }, orgs[], discovered[{ repo, checkout?, reason? }] }`.
+  source?, refusal? }, running_unattended?{ coder_model?, review_models[],
+  source? }, orgs[], discovered[{ repo, checkout?, reason? }] }`.
 - `orgs` lists the configured `[[org]]` owners. `discovered` is what the most
   recent sweep found under them: each repository it will work, with its
   checkout, plus any reason an owner produced nothing (`roots` empty, no
@@ -15923,6 +16115,11 @@ session and says which models resolved to which vendors.
   unattended cadence is running, and stops when the cadence task ends. `review_models`, `coder_model` and `engine` at the top level
   apply to a sweep a person starts with `heal.run`, which may use frontier
   models.
+- `unattended` is resolved from `heal.toml` as it is now. A running cadence
+  keeps the models it started with until the daemon restarts; while it runs,
+  `running_unattended` names those, so an edit to `[unattended]` shows as the
+  next models without claiming the running cadence uses them. Absent while no
+  cadence runs.
 - `spend_meter` is the spend meter's health, the same object `spend.status`
   and `spend.costs` report: `{ healthy, last_error, clock, zone, zone_source }`,
   or `{ healthy: true, last_error: null, note }` when no supervisor is
@@ -16148,7 +16345,8 @@ session and says which models resolved to which vendors.
 #### `selfheal.status`
 - **Params**: `null`
 - **Returns**: `{ cadence_secs, auto_fix_enabled, max_concurrent, max_per_day,
-  max_rounds_per_key, auto_fix_refusal_reason?, last_tick_at, route,
+  max_rounds_per_key, auto_fix_refusal_reason?, notification_refusal_reason?,
+  config_warnings?, last_tick_at, route,
   source_checkout?, refusal_reason?, detectors, detection_count, warning_count,
   critical_count, dismissed_count, filing_mode }`.
 - `route` is `"local"` only when the tick validates a filesystem candidate as
@@ -16168,6 +16366,13 @@ session and says which models resolved to which vendors.
   fail-closed config validation. The three limits default to 1 concurrent, 3
   starts per UTC day, and 3 rounds per key and cannot be raised. A malformed or
   raised-limit config disables auto-fix and sets `auto_fix_refusal_reason`.
+  A refused `[selfheal] notification_command` (an empty program or argument,
+  a control character, a stored secret in an argument, or an unexpected
+  field) sends no agent notification and sets `notification_refusal_reason`;
+  a TOML syntax error anywhere in the file is reported as the file's, with its
+  line. `config_warnings` names each key under `[selfheal]` nothing reads, such
+  as a misspelling, which is otherwise ignored. `car selfheal status` and
+  `car info` print both.
   `filing_mode` is `"pr-only"` after a local route is validated with auto-fix
   enabled; otherwise it is `"watch-only"`. The daemon runs one non-overlapping
   tick immediately at boot and then every 900 seconds by default.
@@ -16274,9 +16479,27 @@ edits the maintainer's working tree or index.
   credential's session, only itself (another is refused `-32003`,
   `data.reason: "not_your_agent"`, and recorded). Without it, the method
   behaves exactly as before.
-- **Returns**: array of `{ agent, calls, tokens_in, tokens_out, cost_usd }` —
-  the per-agent token/cost report, folded from `InferenceMetered` events by
-  their `agent` field (EPIC G / G3). It reads only the calling connection's
+- **Returns**: array of `{ agent, calls, tokens_in, tokens_out, cost_usd,
+  priced_calls, subscription_calls, unpriced_calls, ambiguous_reports,
+  ambiguous_reported_cost_usd }` — the per-agent
+  token/cost report, folded from `InferenceMetered` events by their `agent`
+  field (EPIC G / G3). `cost_usd` sums only the `priced_calls` (a provider's
+  figure, a list price, or a local model's $0). A subscription call adds no
+  dollars, and an `unpriced_calls` call's cost is unknown, not $0, so a row
+  with any is a lower bound. Calls that name no agent are their own
+  `"unattributed"` row, never merged into an agent's. `ambiguous_reports`
+  counts `multi.*` sub-agent self-reports the daemon could not tie to one
+  run (rows marked `summary_of: "ambiguous"`, see [events](events.md)), and
+  `ambiguous_reported_cost_usd` is what those runners reported: listed apart,
+  never part of `calls` or `cost_usd`, whose measured rows already count the
+  calls once (car#3492). Over a principal's ledger (`{ agent }`) every call
+  names its payer, and a call from a connection bound to no agent is the
+  `operator`'s, so the daemon-wide rows are the agents' and `operator`. The
+  daemon keeps each payer's ambiguous self-reports beside its ledger (a
+  separate file, never a ledger row, never counted against a cap, never
+  dropped: rotated by size and read whole), so `{ agent }` reports them too,
+  under the same authorization; `events.query { agent }` returns them as
+  `inference_metered` rows marked `summary_of: "ambiguous"`. It reads only the calling connection's
   session log (see [events](events.md) for scope and journal retention). A
   multi-agent run reports cost per agent;
   provenance (which tool/workflow) is queryable via
@@ -16918,10 +17141,10 @@ owner: it presents CAR's local host key without asking, with or without a
 terminal or `--yes`. It needs the host-token file, and without it the command is
 refused before connecting, naming the file. It is refused, before connecting,
 in a process started as a supervised agent. That refusal reads only
-`CAR_AGENT_ID` and `CAR_AGENT_TOKEN`, which an agent controls. On Linux the
-agent's wall keeps the host-token file from it. On the Mac an unwalled agent
-inherits `HOME` and can read that file, so it can unset both variables and
-present the key (car#3706). Plain `--yes` still never presents
+`CAR_AGENT_ID` and `CAR_AGENT_TOKEN`, which an agent controls. The kernel keeps the host-token file from it: on Linux the agent's wall, and on
+the Mac a profile every agent the wall does not confine starts under (all but
+CAR's own assistant), which denies the host-token files, so unsetting both
+variables does not help (car#3706). Plain `--yes` still never presents
 the key. With `CAR_AGENT_ID` or `CAR_AGENT_TOKEN` set they never present the key:
 `agents.install`, `agents.remove` and the approval-policy changes are refused
 before connecting, and
@@ -17017,7 +17240,9 @@ refused ("Host authority fails closed").
   The binding is durable in the conversation floor; worker bundles are refused.
   Without a binding, owner-floor submissions are refused. The host may also
   bind an existing installation with `conversation.assistant.bind {agent_id}`.
-- **Returns**: `{report: {missingOptional: [{namespace, feature}]}, agent: ManagedAgent | null}`.
+- **Returns**: `{report: {missingOptional: [{namespace, feature}]}, agent: ManagedAgent | null, method_allowlist?: string[], shared_secrets?: [{key, declared_by: string[]}]}`.
+  `shared_secrets` names each key the manifest declares that another installed agent declares too, with those agents' ids: the secret store holds one value per name, so the new agent is handed the same value at its next start, and `car install` says so by name (car#3561). Absent when none is shared.
+  `method_allowlist` is the daemon method scope the install bound to the agent's token, normalized as it is stored, and is present whenever the manifest declares one, even when `agent` is `null`: absent means the token may call every agent-role daemon method, `[]` that it may call none. `car install` shows the same scope before it asks, with what it means on the platform: on Linux the agent's folder wall makes it a wall; on the Mac it limits the token only, since the agent runs as the user and can read what the user can, CAR's own credential files included (car#3397). The in-process binding install returns the same field.
   `agent` has the same flat shape as an `agents.list` row, without the list-only fields (`attached`, `tools`, `manifest_path`, `log_path`, `stderr_log_path`, `session_id`, `network_fence_warning`, `handshake`). The installed spec records `version`, the manifest's `agent.version`, but `agent` does not carry it.
 - A **worker bundle** (`[agent] role = "worker"`) is never installed as an
   agent: it goes to the bundle store, `<CAR_HOME>/bundles/<name>/<version>/`,
@@ -17155,7 +17380,7 @@ refused ("Host authority fails closed").
 - **Note**: the capture format is raw child output with no per-line timestamps, so a true cross-stream timestamp interleave isn't available; combined ordering is stdout-then-stderr with each side independently budgeted.
 - **Bounded read**: each stream is read via a **bounded backward seek** (at most an 8 MiB tail, across its runs), not a whole-file slurp — keeping repeated polling (e.g. a live-follow viewer re-fetching every 2s) cheap regardless of how large the on-disk log has grown. A log larger than the ceiling is truncated to its last 8 MiB; the partial leading line is dropped and `more` is forced `true`. Combined-view paging (`stream: "combined"` + `offset`) is **not** order-preserving — a combined page is a stdout-block followed by a stderr-block, so prepending an older combined page scrambles that ordering; page within a single stream (`stdout`/`stderr`) to scroll back, or open the file directly.
 - **Per-run log files** (car#3637): each start of an agent (a run) writes files of its own in the agent's log folder (`<CAR_HOME>/logs/`, or a worker's own): `<id>.<run>.stdout.raw` and `<id>.<run>.stderr.raw`, created new (never reused) and owner-only, where `<run>` is `<start ms>-<daemon nonce>-<n>` and so unique to the daemon instance that began it. Beside them, `<id>.<run>.run.json` records a salted SHA-256 fingerprint, never the value, of every secret value the run is handed: its declared `secrets` at the spawn, and each `secret.get` reply before it is answered. A stream reads as the agent's kept runs one after another, oldest first, and `n`, `offset`, `more`, the totals and the 8 MiB ceiling apply across them. The daemon keeps the last 20 finished runs per agent (the `CAR_AGENT_LOG_RUNS_KEPT` environment variable of `car-server` sets another number) and deletes older runs' redacted logs when a run ends. A run is kept or deleted whole: one with a withheld file or a raw file left is kept, and so is the newest run this daemon began, wherever a clock stepped back sorts it. Before deleting a run's files the daemon writes `<id>.<run>.pruning`; a run with that file is not served, and the next deletion finishes it, so a delete that fails partway never leaves half a run served as whole. A withheld file is never deleted.
-- **Recorded before it is handed**: `secret.get` hands a supervised agent a value only after recording it, durably, in the record of every unfinished run of the agent this daemon holds; with no such run, no record, a record that cannot be read now, or a write that fails, it refuses with `log_record_error` (see `secret.get`). So a run's record never says it was handed less than it was.
+- **Recorded before it is handed**: `secret.get` hands a supervised agent a value only after recording it, durably, in the record of every unfinished run of the agent this daemon holds and, while it holds one, of every other run whose raw log is still on disk (car#3677); with no held run, the refusal says `pending_adoption` when a survivor's raw log is on disk and the agent's broker asks again for a bounded time (car#3670); with no such run, no record, a record that cannot be read now, or a write that fails, it refuses with `log_record_error` (see `secret.get`). So a run's record never says it was handed less than it was.
 - **Delivered secrets**: every value the daemon handed the agent (its declared `secrets`, and any value its `secret.get` returned) is replaced with `[redacted]` in every line this method returns, alongside the pattern redaction every tail gets; each line of a multi-line value (a PEM key) that is at least eight characters long is also redacted on its own. While a run's process is alive, its raw files are read and redacted in memory: each file's window is redacted whole before it is split into lines, so a value spanning lines is found; up to 64 KiB before a window that starts partway into the file is read too, so a value the window's start cuts is replaced before the partial first line is dropped; and a raw file that ends partway through a line has the longest end that begins a handed value replaced with `[redacted]`, since the rest of that value may not be written yet. A file at a log's name that is a symbolic link, or that has a second name, is not served. Once the process is gone (`agents.stop`, `agents.restart`, `agents.remove`, a crash or exit, daemon shutdown), the daemon ends the run before it spawns the next one or replies: for each stream it reads the raw file from its first byte, writes it with every handed value replaced to a temporary in the same folder, fsyncs it, renames it to `<id>.<run>.<stream>.log`, a name that does not exist yet, syncs the folder, and only then unlinks the raw file. That `.log` file, the run's redacted log, is what this method and feedback bundles read from then on. Nothing is truncated, and nothing is renamed over an existing file (the rename refuses an existing name), so the end works the same on a local disk and on an SMB/Azure Files state root. Where the file system has no rename that refuses an existing name, the daemon links the temporary to the new name and unlinks the temporary instead, never a plain rename; where it has hard links neither (an SMB mount on macOS), the end fails closed: the raw file stays, served redacted, and the failure is reported as below. The copy stops at the raw file's length when the run's end began, so a writer that never stops cannot hold it open. Because the whole raw file is read in one pass, a value is found however it was split across writes; a copy that ends partway through a line has the longest end that begins a handed value replaced too, since the process may have been stopped mid-write. A process that outlives the agent and still holds a raw file open (a descendant left running, or one that moved to its own process group) writes into a file that no longer has a name: **those late writes, through that open descriptor, are dropped**, and never reach any file this method, a feedback bundle or a later run reads (for a run that is withheld instead, below, they go to its withheld file, which nothing reads). This covers a process writing through a descriptor it already holds. Where agents are not walled into their own folder (Windows, and on macOS every agent but a worker or an orchestrator), a process of the same user that can open the log folder can do anything that user can, including reading a raw file while it runs or linking it to another name; the daemon does not trust a `.log` that is a symbolic link, has a second name or is the raw file itself, and replaces it with a redacted copy, but it does not defend against that user otherwise. A stream that wrote nothing leaves no file. If the redacted log cannot be written or the raw file cannot be unlinked, the raw file stays, this method keeps serving it redacted, the failure is reported in the agent's `status_reason` (`agents.list`) or as `log_scrub_error` in the `agents.remove` result, and the next stop, removal or shutdown tries again; shutdown retries once and waits for every run's end. The daemon keeps every value it delivered, older and rotated ones together, until the agent is removed (when a stopped agent holds more than 256 and no run of it is still open, it releases them all).
 - **After a daemon restart**: values are never persisted, so a new daemon recovers the runs earlier daemons left before it spawns or adopts the agent, and at startup for every other registered agent. A stream whose `.log` exists, as a regular file with one name, has its raw file removed. Otherwise, when the agent's declared secrets as resolved now include every value the run's record names, the raw file is redacted into its `.log` as above. Otherwise (a value rotated or removed, a store that cannot answer, a record that is missing or unreadable) the raw file is **withheld**: renamed to `<id>.<run>.<stream>.withheld` (`-<n>` added if that name is taken), never returned here, never put in a feedback bundle, and never deleted automatically. Temporaries such a daemon left are removed. A daemon touches only the runs it began, the ones it recovers this way, and the run of a process it adopts. Recovery treats every run another daemon began as that daemon's leftover, which holds because one daemon at a time owns a state root; two daemons sharing an SMB/Azure Files state root, where that lock does not hold, is a known limit (car#3634). A value `secret.get` hands while a run's end has failed (a process left over from it may still ask) is recorded against that run until its `.log` is written. An adopted process (one still running from an earlier daemon) carries its run on the third line of its pid record. The daemon resolves the agent's declared secrets at adoption: when they include every value the run's record names, the run is its own, served redacted, and ends in its `.log` as above; otherwise nothing of that run is returned while it runs, and it is withheld when it ends.
 - **Notes in the tail**: each stream's first page (`offset` 0) can end with lines starting `[car: ` that name what is not shown: the withheld files, a run an earlier daemon left that is not yet recovered, or an adopted run this daemon cannot vouch for. Those lines come on top of `n`, are not counted in `stdout_total`/`stderr_total`, end the stdout part of `lines` (so they can sit in the middle of the combined list), and are what any other reader of this method, such as self-healing detection, also sees.
@@ -17231,7 +17456,7 @@ refused ("Host authority fails closed").
   - Without `session_id`, removes all standing goals the caller may clear and returns `{ cleared: number }`: every goal for the host or an unbound client, only its own for a supervised agent. A supervised agent clearing another caller's goal by `session_id` is refused (see `goal.set` ownership).
 
 #### `agent.chat` (daemon → agent reverse-call) + `agent.chat.event`
-- For attached supervised agents, `agents.chat` reverse-calls **`agent.chat`** on the target agent's WS connection — resolved via `attached_agents`, so the agent must have `session.auth`'d **with its `agent_id`** (`{ session_id, prompt, turn_id, model?, attachments?, goal?, context?, cwd? }`). The optional `model` is forwarded unchanged from the host request. The agent **acks** `{ accepted: true }` immediately, then streams its reply as **`agent.chat.event`** notifications `{ session_id, turn_id?, kind, delta? }` (`kind: "inference_started" | "inference_retry" | "model_served" | "token" | "tool_call" | "tool_result" | "todos" | "approval_pending" | "approval_resolved" | "goal_evaluated" | "receipt_report" | "done" | "error" | "auth_required"`), which the daemon rewrites to `agents.chat.event` for the host. `turn_id` is the daemon's id for the turn; an agent that echoes it on every frame (`car do --serve` does) has its frames matched to that turn: a frame naming another turn's id (a turn the host's next `agents.chat` on the same `session_id` replaced, or one that has ended) is dropped, so a replaced turn's late terminal cannot end its successor. Its approval frames are the exception: the replaced turn keeps running, so a card it raises after it was replaced reaches the host, which can answer it, and the turn's `approval_resolved` for that card reaches the host too; a card it raised before was closed with its route, and its late `approval_resolved` is consumed against the carried card, as described under `agents.chat.approve`. A host may receive frames before the `agents.chat` reply that carries `turn_id`, so it should use `turn_id` to correlate frames with a turn, never as a gate. A frame without `turn_id` is matched by `session_id` alone, as before. `inference_started { model, attempt, turn, waiting_ms? }` arrives before CAR awaits a model call, and again every 60 s while the call is still awaited, with `waiting_ms` saying how long, so a host's idle watchdog keeps seeing a slow call; and `inference_retry { model, attempt, reason, backoff_ms }` arrives before remote retry backoff. `model_served` carries `{ model_id, local_last_resort, substituted_from?, substitution_reason? }` before each completed turn's content, so a host can identify the actual serving model, mark an on-device last-resort turn, and say which model it replaced and why. `tool_result` carries the bounded/redacted observation shape documented above. `goal_evaluated` is emitted by goal-driven agents after each verifier pass as `{ iteration, met, grounded, reason }`; `receipt_report` carries bounded per-tool receipts, desktop actions when present, and the software completion matrix. `auth_required { reason, message }` replaces the `done`/`error` frame when the turn could not reach Parslee inference because of the account: it follows `receipt_report`, nothing follows it, and on the goal path the loop returns before the verifier runs, so no `goal_evaluated` is emitted for that iteration. `agents.chat.cancel` proxies to `agent.chat.cancel` (a request to the bundled assistant, whose `dispatched` answer it relays; a notification to any other agent), with params `{ session_id, turn_id? }`: `turn_id` names the daemon's id for the turn being stopped whenever its route had one. An agent that retains its ordering entry stops that turn and every older turn of the session, never a newer one the host started after it; with no `turn_id` it stops every turn of the session. An agent says it does so by acknowledging `agent.chat` with `{ accepted: true, stops_by_turn_id: true }`, recorded for its connection from that first acknowledgement; `car do --serve` and the Python chat bridge declare it (the Node bridge does not: a JavaScript handler may still be running an older turn when a newer one starts, and its Stop would reach both); `agents.chat.approve` reverse-*requests* `agent.chat.approve` (resolving an `approval_pending` gate so the turn resumes). In-daemon declarative agents skip the reverse call and stream `token`/`goal_evaluated`/terminal frames directly; cancel flips a local run flag and halts at the next model/tool/goal-check boundary; inline `agents.chat.goal` and image attachments are rejected for them because their own manifest `goal` and scratch-worktree runner own completion.
+- For attached supervised agents, `agents.chat` reverse-calls **`agent.chat`** on the target agent's WS connection — resolved via `attached_agents`, so the agent must have `session.auth`'d **with its `agent_id`** (`{ session_id, prompt, turn_id, model?, attachments?, goal?, context?, cwd? }`). The optional `model` is forwarded unchanged from the host request. The agent **acks** `{ accepted: true }` immediately, then streams its reply as **`agent.chat.event`** notifications `{ session_id, turn_id?, kind, delta? }` (`kind: "inference_started" | "inference_retry" | "model_served" | "token" | "tool_call" | "tool_result" | "todos" | "approval_pending" | "approval_resolved" | "goal_evaluated" | "receipt_report" | "done" | "error" | "auth_required"`), which the daemon rewrites to `agents.chat.event` for the host. `turn_id` is the daemon's id for the turn; an agent that echoes it on every frame (`car do --serve` does) has its frames matched to that turn: a frame naming another turn's id (a turn the host's next `agents.chat` on the same `session_id` replaced, or one that has ended) is dropped, so a replaced turn's late terminal cannot end its successor. Its approval frames are the exception: the replaced turn keeps running, so a card it raises after it was replaced reaches the host, which can answer it, and the turn's `approval_resolved` for that card reaches the host too; a card it raised before was closed with its route, and its late `approval_resolved` is consumed against the carried card, as described under `agents.chat.approve`. A host may receive frames before the `agents.chat` reply that carries `turn_id`, so it should use `turn_id` to correlate frames with a turn, never as a gate. A frame without `turn_id` is matched by `session_id` alone, as before. `inference_started { model, attempt, turn, waiting_ms? }` arrives before CAR awaits a model call, and again every 60 s while the call is still awaited, with `waiting_ms` saying how long, so a host's idle watchdog keeps seeing a slow call; and `inference_retry { model, attempt, reason, backoff_ms }` arrives before remote retry backoff. `model_served` carries `{ model_id, local_last_resort, substituted_from?, substitution_reason? }` before each completed turn's content, so a host can identify the actual serving model, mark an on-device last-resort turn, and say which model it replaced and why. `tool_result` carries the bounded/redacted observation shape documented above. `goal_evaluated` is emitted by goal-driven agents after each verifier pass as `{ iteration, met, grounded, reason }`; `receipt_report` carries bounded per-tool receipts, desktop actions when present, and the software completion matrix. `auth_required { reason, message }` replaces the `done`/`error` frame when the turn could not reach Parslee inference because of the account: it follows `receipt_report`, nothing follows it, and on the goal path the loop returns before the verifier runs, so no `goal_evaluated` is emitted for that iteration. `agents.chat.cancel` proxies to `agent.chat.cancel` (a request to the bundled assistant, whose `dispatched` answer it relays; a notification to any other agent), with params `{ session_id, turn_id? }`: `turn_id` names the daemon's id for the turn being stopped whenever its route had one. An agent that retains its ordering entry stops that turn and every older turn of the session, never a newer one the host started after it; with no `turn_id` it stops every turn of the session. An agent says it does so by acknowledging `agent.chat` with `{ accepted: true, stops_by_turn_id: true }`, recorded for its connection from that first acknowledgement; `car do --serve` and the Python chat bridge declare it (the Node bridge does not: a JavaScript handler may still be running an older turn when a newer one starts, and its Stop would reach both). An agent whose gate ends every approval it parks with its own `approval_resolved` says so with `approval_frames: true` in the same acknowledgement, recorded for that turn's route; `car do --serve` declares it. On such a route a decision forwarded through `agents.chat.approve` leaves the mirrored ledger row to that frame, and a route that ends (a Stop, a replaced turn, a failed send, a disconnect) before the frame for a decision that was already forwarded closes the row `unknown`: the gate may have settled it either way. A decision forwarded before the turn's acknowledgement waits for it (up to the acknowledgement timeout) to learn which rule applies, and a route that ends before that acknowledgement closes its row `unknown` too. Without the declaration rows close as described under `agents.chat.approve`; `agents.chat.approve` reverse-*requests* `agent.chat.approve` (resolving an `approval_pending` gate so the turn resumes). In-daemon declarative agents skip the reverse call and stream `token`/`goal_evaluated`/terminal frames directly; cancel flips a local run flag and halts at the next model/tool/goal-check boundary; inline `agents.chat.goal` and image attachments are rejected for them because their own manifest `goal` and scratch-worktree runner own completion.
 - **Bounded Stop history:** Bundled receivers retain up to 1,024 named ordering entries across sessions: per built-in assistant service, per Node process-wide chat queue, and per Python client queue. An absent, unseen or evicted identity uses the legacy session-wide Stop and can affect newer current turns. A bridge drops only that runtime owner's queued session turns and permits its own cancellation handler to receive that Stop; it does not itself terminate arbitrary handler code. See `agent.chat.cancel` in `docs/host-protocol.md`.
 - **FFI (agent side):** `registerChatHandler(handlerFn)` / `register_chat_handler(handler)` installs the handler (stored-callback pattern; the per-`CarRuntime` bridge acks and fires it with the params JSON). `CarRuntime.chatEvent(sessionId, kind, delta?)` / `chat_event(...)` emits each `agent.chat.event`; `chatTurnEvent(sessionId, turnId, kind, delta?)` / `chat_turn_event(session_id, turn_id, kind, delta=None)` emits it naming the turn. The params JSON the handler receives carries the turn's `turn_id`; pass it to `chatTurnEvent` / `chat_turn_event` so the frames are matched to that turn. **The handler may call any runtime method and should run the turn inline** — in Python it is dispatched on a dedicated CAR-owned OS thread, never a tokio worker, so `infer_tracked`, `submit_proposal`, `state_set`, and `chat_event` all work from inside it. Before car#905 the Python bridge dispatched on a runtime worker and every one of those raised `PanicException: Cannot start a runtime from within a runtime`; because that is a `BaseException` and `chat_event` hit the same wall, the accepted turn was stranded with the host receiving zero frames. Any `threading.Thread` offload written to work around that is now unnecessary. NAPI was never affected (async `ThreadsafeFunction` dispatch). The same contract covers the `tools.execute`, `tools.cancel`, and `voice.event` callbacks. A `--serve` agent **attaches automatically**: the binding sends `agent_id` on `session.auth` when `CAR_AGENT_ID` + `CAR_AGENT_TOKEN` are set (the supervisor injects them). The bundled `create-car-agent` harness wires all of this in `--serve`, keeping an ephemeral per-`session_id` message thread and running the standard propose→verify→execute loop per turn.
 - Bundled `car do` / `car do --serve` assistant loops run proactive memory before every model turn. The hidden pass maintains compact execution-state memory from the runtime event log, selects at most one relevant remembered fact/procedural warning, and injects it as a `## Proactive Memory` context block. This uses the same assistant memory bank as `remember` / `recall`, but does not require the model to call `recall`; maintenance/intervention decisions are journaled as `proactive_memory_maintained` and `proactive_memory_intervention`. Memory derived from a chat's own runtime events (a failed tool call, a retry, a capped turn) is kept to that chat: it is never injected into another chat, and within its chat it is injected at most once per turn (a goal turn's iterations and a delegated sub-task included) rather than on every model call of the turn. The assistant's `recall` answers only from remembered facts, never from this derived memory.
@@ -17382,7 +17607,7 @@ refused ("Host authority fails closed").
   - The four-choice `answer` is forwarded only from a host-management session. The other caller allowed to approve — the client session that started the chat turn (for example another agent that called `agents.chat`) — is reduced to the legacy `decision`: it may approve one parked call, never create standing authority. While the person's host holds a turn's route, an agent connection cannot answer an approval in it. An agent that starts a chat itself is that chat's starting session, so it can approve one parked call there, never with a remembered answer; the same is true of a client that starts a turn on a session id whose earlier host has disconnected. A host built from an older release sends a plain `decision` and so remembers nothing, and this agent behind an older daemon may be told `resolved: true` for an allow answer that was not remembered (that daemon does not forward the kind).
 - **Authorization**: the caller must be the host session that started the chat turn, or a host-management session authenticated with `session.auth { host_token }`. A supervised agent connection can approve a parked action only in a turn it started itself, and never with a remembered answer.
 - **Returns**: `{ resolved: boolean, session_id: string }` — the daemon reverse-*requests* the agent's `agent.chat.approve` handler and relays its `{ resolved }` reply (bounded ack timeout), so the host gets a definitive answer rather than inferring from the stream.
-- The daemon mirrors the chat gate into the host `ApprovalLedger` under the same `approval_id`. A host may call this method directly or call `host.resolve_approval`; the latter recognizes `source: "chat"` and routes to the same parked turn. The ledger row remains pending until the agent emits authoritative `approval_resolved`, the routed resolve succeeds, or the agent refuses the decision (see below), so every host surface converges on the same decision.
+- The daemon mirrors the chat gate into the host `ApprovalLedger` under the same `approval_id`. A host may call this method directly or call `host.resolve_approval`; the latter recognizes `source: "chat"` and routes to the same parked turn. The ledger row remains pending until the agent emits authoritative `approval_resolved`, the routed resolve succeeds, or the agent refuses the decision (see below), so every host surface converges on the same decision. For an agent that declared `approval_frames` (see `agents.chat`) a routed resolve that succeeds does not close the row: only the agent's `approval_resolved` does, so a decision the gate could not record shows the gate's `deny`, never the click's `approve`; `host.resolve_approval` then returns the row as it stands, which may still be pending. A refused decision (`resolved: false` or an error) does not close the row either, since the gate may still be recording an outcome of its own; its `approval_resolved`, or the route's end, does. From such an agent an `approval_resolved` whose `resolution` is not one of the four words is dropped and leaves the card open. An iMessage or Slack reply to a chat approval takes the same path as `host.resolve_approval`.
 - **A card is scoped by its turn.** An agent's approval id need only be unique within a turn: when its `approval_pending` names the turn's `turn_id` (see `agents.chat`), another turn's card under the same id is a different card with its own daemon id, an `approval_resolved` naming a turn closes only that turn's card, and the decision forwarded in `agent.chat.approve` carries that `turn_id`.
 - **Only an outstanding id is forwarded.** Approval frames reach a host only under a daemon-minted `approval_id` (the inline card and the mirrored ledger row share it); an approval frame the daemon cannot map is dropped, not forwarded with the agent's id. Each approval the agent parks gets its own id, a repeated announcement of one still open keeps the id it has, and the daemon keeps the mapping back to the agent's id on the chat turn's route. This method forwards a decision only for an id outstanding on the session's current route, sending the agent its own id. Each id carries one decision: the first call claims it, and a second call, or one whose turn ended before the decision was sent, fails. A failed delivery is not retried; the parked call then times out as declined. When the agent refuses the decision (`resolved: false`, meaning the call had already given up, or an error reply), the daemon closes the mirrored ledger row itself, with `timeout` or `interrupted` respectively, since no `approval_resolved` will follow. Any other id (already answered, expired, from an earlier turn, another session's, or the agent's raw id) fails with an error naming it as not pending, and nothing reaches the agent. A route ends with its turn (or when another `agents.chat` replaces it under the same `session_id`), so a cancelled, failed or replaced turn's approvals cannot be answered under the next turn. The agent's `approval_resolved` is forwarded under the same daemon id. When an older agent reuses its id, the daemon matches the frame by what it says: `approve` or `deny` closes the oldest approval with that id that was answered, anything else (`timeout`) the oldest one that was not; a turn's approvals outlive its route: a replaced turn's are carried onto its successor, and a turn that ends with nothing replacing it (cancelled, a failed send, or its host disconnected) keeps its for the session's next turn from the same agent while that agent stays attached (at most 64 per session and 256 sessions, the least recently held dropped first, and all of them when that agent disconnects; a declarative agent's run sends nothing after it ends and keeps none), so the ended turn's late frames are consumed against them and never close the newer turn's approval. Treat ids as opaque. This keeps an agent built before approval ids carried a turn token, which reused `<session_id>-appr-<n>` from zero each turn, from ever having a stale decision reach a newer call; a host should still disable a turn's unanswered cards when the turn ends.
 
@@ -17511,7 +17736,7 @@ that it is given each new start. A start whose row could not be written still
 starts, is logged, and still reaches those event logs, with `data.record_error`
 saying why it was not recorded. Such an event has no `data.seq`: it was never
 numbered, because it is delivered from the daemon's memory, not from the file
-(and so is not delivered again after a daemon restart). The warning is also in the worker's own start
+(and so is not delivered again after a daemon restart). The daemon keeps the newest 1,024 such starts; when older ones were let go before a host session read them, that session gets one `worker_starts_omitted` event with `data.unrecorded: true` and `data.omitted`, how many it missed, and no `data.handle` (car#3381). The warning is also in the worker's own start
 record, `workers/<handle>/starts.jsonl`. Windows, a Linux host where the file
 wall cannot be applied, and a Mac where it cannot be applied or its self-test
 failed (the daemon itself runs inside a Seatbelt sandbox, say) refuse every
@@ -17869,6 +18094,8 @@ its next call after the period resets goes through by itself. A capped
 orchestrator's own calls are capped; its workers' calls are not counted
 against its cap until workers PR 5 (`docs/proposals/orchestrator-workers.md`)
 adds the orchestrator's key to every worker call.
+
+**Asking the owner** (car#3407). The first time an agent is refused at its own cap in a period, CAR opens one owner-facing `HostApprovalRequest` for that agent and period, id `spend-cap:<principal>:<per>:<reset unix seconds>`, with one option, `acknowledge`. Its text names the agent, the cap, the spend and the reset time, and says how to raise the cap: install a version of the bundle with a larger `[spend]` cap, since caps change only that way. Further refusals in the period open no more requests, and neither does one after a daemon restart: once the request is open, a marker under the meter's `spend/cap-approvals/` records the period. A request that could not be opened leaves no marker, so the next refusal asks again. Nothing resumes until the cap is raised or the period resets. A shared cap below a worker tree's root asks nothing, as it names no amount. `[workers.spend]` caps are #4339, and declarative-agent caps are #4340.
 
 **The refusal, error `-32018`.** Every refusal is a JSON-RPC error with
 `code: -32018`, the exact text below as `message`, and a stable
@@ -18329,7 +18556,7 @@ and the merge-verify gate never leaves the orchestrating host.
 - **Returns**: `FleetComposite { schema_version, generated_at_ms, self_name, instances: [InstanceInventory], agents: [{ id, kind, instances: [string], capability? }], capabilities: [{ name, kind, instances: [string], description? }], models: [{ id, kind, provider?, instances: [string], available_on: [string], max_context_window? }], workers: [{ instance, kind, adapters: [string], max_parallel, repo_root_commits: [string] }], totals: { instances, reachable_instances, full_instances, agents, capabilities, models, workers, worker_slots } }`.
   - Rollups are **by identity across instances**: the same tool on four machines is one capability row naming four instances, and `totals` counts distinct things, not the sum of the per-instance counts.
   - A model served from local weights on one host and through a hosted API on another stays **two rows** (`kind` is part of the key) — different cost, latency, and failure modes, and a router picks between them. `available_on` is the subset that can serve it now; listed-but-unavailable says where a download or a login would unlock capacity.
-  - An instance that could not be read is still a row, with `fidelity: "unreachable"` and an `error` naming the reason. A peer that answered only its public agent card is `fidelity: "card_only"`: its capabilities are real, and its empty agent/model lists mean **unknown, not none**. A LAN host that has not been promoted appears as unreachable with the promotion instruction as its reason. A `fidelity: "full"` report can still carry `error` when that instance's declarative agent registry could not be read; its built agents are then missing from the row, not absent.
+  - An instance that could not be read is still a row, with `fidelity: "unreachable"` and an `error` naming the reason. A peer that answered only its public agent card is `fidelity: "card_only"`: its capabilities are real, and its empty agent/model lists mean **unknown, not none**. An instance that answered itself but could not read part of its own inventory (a damaged `declagents.json`, say) is `fidelity: "partial"`, with `error` naming what was unreadable: the rows present are real, and an empty list is unknown, not none (car#2666). A LAN host that has not been promoted appears as unreachable with the promotion instruction as its reason. A `fidelity: "full"` report can still carry `error` when that instance's declarative agent registry could not be read; its built agents are then missing from the row, not absent.
   - `workers[].repo_root_commits` is how an orchestrator tells, before dispatching, whether a machine can reproduce a base tree. Root commits only — a repository path is local detail a peer has no business learning.
 - **Refused to a supervised agent.** The composite lists every agent, model and peer machine, so there are no "own rows" to give: a session bound to a supervised agent (`session.auth { agent_id, token }`) gets `fleet.composite is not available to a supervised agent: …`, on every platform, and the refusal is logged. Host sessions, the daemon-token operator and the CLI are unchanged.
 - **FFI**: `fleetComposite(includeRemote?, timeoutMs?)` (Node) / `fleet_composite(include_remote=None, timeout_ms=None)` (Python).
@@ -18474,7 +18701,9 @@ injected. The verifier input lists those names as `approved_checks` and maps
 each outcome to the check that backs it as `outcome_checks` (outcome id to
 check name); the verifier is instructed to call `run_check` first for every
 outcome in `outcome_checks` and grade from its result, using its shell only
-for further independent probes and for outcomes no check backs. It never runs the verifier's working copy: each call
+for further independent probes and for outcomes no check backs. The runtime
+enforces the mapping: `run_check` refuses any other check for that outcome,
+and refuses an outcome whose own check is not approved. It never runs the verifier's working copy: each call
 materializes a fresh checkout of the graded tree id from a runtime-owned
 repository the verifier's shell cannot reach, re-hashes what landed on disk and
 refuses unless it is that tree id, and runs it with a
@@ -18545,7 +18774,12 @@ needs verifier isolation and that write confinement; where either is missing
 (Linux and Windows today) `run_check` refuses. The builder's shell is
 unaffected.
 Any other name is refused. The run is recorded as a probe with
-`check: "<name>"`; replay re-runs such a probe through `run_check`. Two limits
+`check: "<name>"` and `passed`: whether the run met the check's own
+assertions (`expect_exit_zero`, `output_contains`, no timeout), judged on the
+unredacted output exactly as the builder's contract gate judges it, while only
+redacted output is stored or shown. A `differential` check's comparison is
+judged at the builder's gate only. A PASS may cite a check probe only when
+`passed` is true; replay re-runs such a probe through `run_check`. Two limits
 are inherent to operator-approved checks and are not new here: the check's
 script comes from the delivered tree, so the builder wrote it; and redaction
 replaces the exact credential value, so output that transforms the value
@@ -19187,7 +19421,11 @@ also controls conversation replies and supplies the default for linked native ta
   is recorded under Not verified and omitted from baseline and execution; it
   does not abort `coder.start`, revision, or restart adoption. If every check is
   held, the session stays `contract_proposed` and unchanged confirmation is
-  refused until the operator approves a held check or adds an executable one. An
+  refused until the operator approves a held check or adds an executable one.
+  A supplied contract is held the same way: when the runtime denies every one
+  of its checks (policy, unapproved network), `coder.start` fails with
+  `no check is left to run`, naming the held checks, because a contract with
+  nothing left to run never passes. An
   outcome that promises specific printed or displayed text must pair with
   `output_contains` or a grep/test/diff-style output assertion in its command.
   Contract repair is asked to add that assertion; an unfixed outcome moves to
@@ -19993,8 +20231,14 @@ principal, open or closed, each with an `open` flag. Every operator connection i
 the same principal, so two operator windows see and may drive the same open
 discussion; a connection bound to an agent identity sees only that agent's.
 The boundary is the credential: a process holding the daemon-wide token is the
-operator here, as it is everywhere else on the daemon. Resolving by id alone let
-any connected client drive, or close mid-turn, a discussion it did not open.
+operator here, as it is everywhere else on the daemon. So any operator client
+may read, send into and close any operator discussion; that sharing is how a
+conversation is picked up from another client (#2073), and a narrower rule
+among clients holding the same token would not be a boundary, since any of
+them can read the transcripts on disk. What ownership separates is an agent's
+discussions from the operator's. A client leaving a discussion detaches from
+it rather than closing it: `car code`'s board sends no `coder.discuss.close`
+when it quits, so a reply another client has running there goes on (#2153).
 
 **One wedged subscriber cannot stall a discussion.** Each subscriber owns a
 bounded outbound queue drained by its own task, so the discussion's event drain
@@ -20524,7 +20768,7 @@ Clients that require this exact override surface must include `permissions.agent
 - **`agent_permissions.evaluate_tool`** — **Host-management-only and capability-gated.** Params `{ agent_id, tool, tier }`. Returns the exact override when present, otherwise the tier posture, plus `has_tool_override`, `active`, `schema_bound`, `schema_digest_present`, the stored non-secret `schema_digest` when present, and `authorization_source`. For `always_allow`, `active` is true only while the exact authenticated agent callback is attached with the matching current schema.
 
 #### `infer`
-- **Params**: `GenerateRequest { prompt: string, messages?: Message[], model?: string, model_id?: string, params?: GenerateParams, context?: string, tools?: ToolDef[], images?: ContentBlock[], cache_control?: boolean, response_format?: ResponseFormat, intent?: IntentHint, client_ref?: string, expected_row_digest?: string, expected_catalog_revision?: string, context_query?: string, memory_intervention?: boolean | ProactiveMemoryRequest }`. `model_id` names an exact immutable catalog identity and is mutually exclusive with `model`.
+- **Params**: `GenerateRequest { prompt: string, messages?: Message[], model?: string, model_id?: string, params?: GenerateParams, context?: string, tools?: ToolDef[], images?: ContentBlock[], cache_control?: boolean, response_format?: ResponseFormat, intent?: IntentHint, client_ref?: string, expected_row_digest?: string, expected_catalog_revision?: string, context_query?: string, memory_intervention?: boolean | ProactiveMemoryRequest, callback_id?: string }`. `callback_id` is the `multi.run_agent` callback whose run makes this call ([multi](multi.md)); a non-empty string of at most 128 bytes; any other value is refused with `-32602` before any model is chosen. `model_id` names an exact immutable catalog identity and is mutually exclusive with `model`.
 - `prompt` is required, even when `messages` carries the conversation. A request without it is refused with `-32602` ``invalid params: missing field `prompt` `` before any model is chosen. When `messages` already ends with the current user turn, send `"prompt": ""`. Sampling settings are not top-level fields: send them inside `params` (`params.max_tokens`, `params.temperature`, `params.stop`, `params.tool_choice`). A system prompt goes in `context` or as a `{ "role": "system", "content": … }` entry at the start of `messages`.
 - **Returns**: `{ text: string, tool_calls: ToolCall[], usage: { input_tokens, output_tokens }, model_used: string, requested_model_id: string | null, resolved_model_id: string, row_digest: string, catalog_revision: string, trace_id: string, latency_ms: number, time_to_first_token_ms: number | null, stop_reason: string | null, local_last_resort?: boolean }`. `local_last_resort` is present and true only when a model installed through CAR (under CAR's models dir or with an install receipt; a model only in the shared Hugging Face cache is skipped and named with `car models adopt`), appended behind a remote-only chain, actually served; an explicitly selected local model is not marked.
 - Supplying a non-null `model` is a hard pin. The daemon forces `params.strict_model` to `true` even when the caller sends `false`, so an error from the selected provider is returned directly instead of appending CAR's on-device last-resort fallback. Omit `model` to let adaptive routing select and fall back across eligible models.
@@ -21329,7 +21573,12 @@ parked gate refuses a decision, answering `resolved: false` (the call had
 already given up) or with an error, no `approval_resolved` follows: the daemon
 closes the row itself as `timeout` or `interrupted` respectively, and
 `host.resolve_approval` returns an error ("was not resolved by the parked
-gate").
+gate"). When the agent's turn acknowledged `approval_frames: true` (see
+`agents.chat` in agents.md), a decision the gate took does not close the row:
+`host.resolve_approval` returns the row as it stands, and the gate's own
+`approval_resolved` closes it with the word the gate recorded, also after a
+refused decision. If that turn's route ends first, the row closes `unknown`. iMessage and Slack replies to a
+chat approval are routed to the parked gate the same way.
 
 #### `browser.signin_needed` / `browser.signin_resolved`
 
@@ -22217,6 +22466,9 @@ echoes it; the daemon forwards it unchanged.
   The exception is a refused `agents.chat.approve`: after a `resolved: false`
   or error reply no `approval_resolved` follows. That reply is the terminal
   signal, and the daemon closes the row itself (`timeout` or `interrupted`).
+  For an agent whose turn acknowledged `approval_frames: true`, a decision
+  forwarded with no `approval_resolved` yet when the turn's route ends closes
+  the row `unknown`, never a guessed word; show it as "outcome unknown".
 - Approval ids are opaque. The daemon mints one per approval the agent
   parks, and the flagship assistant's own ids are unique across turns and
   sessions too. Every turn of a chat shares one `session_id`, so a host
@@ -26123,6 +26375,13 @@ Those directories are exclusively created and consumed by one build; shared
 lookup caches such as `xcrun_db*` remain write-denied, so `xcrun` may print a
 cache-write warning on a cold lookup without widening the boundary.
 
+On macOS a contract check, the builder's or the verifier's `run_check`, writes
+the shared `/tmp`, `/var/tmp` and Darwin user temporary directory only by the
+names tools that ignore `TMPDIR` create there: bash here-document spools
+(`sh-thd-<digits>`) and `mktemp`'s `tmp.<random>` files and folders. Any other
+write there fails, and the check's output names the path and says to write
+under `$TMPDIR` instead. The model's own shell gets none of these names.
+
 Protected baseline and verifier checks do not execute tools from the merged
 login PATH directly. CAR puts the trusted Cargo/rustup proxy directory first,
 then keeps merged entries whose canonical path and every ancestor are owned by
@@ -26535,6 +26794,20 @@ window ends `stalled`, even if an older line preceded it. Setting
 `silence_window_secs` to `0` disables both outcomes. A
 non-JSON run prints its terminal label and reason to stderr; `run_end` carries
 the same reason and retained workspace path.
+
+While `car code` waits on the daemon, it prints a line to stderr every 30
+seconds, for example `still waiting: enumerating for 2m10s (this wait 5m02s)`:
+the phase (the request it is waiting on, then each state the session moves
+to), how long that phase and the whole wait have run. When the daemon has sent
+nothing at all for 45 seconds the line adds `the CAR service has not answered
+for <time>, still waiting`. None of this ends the wait or claims that work
+moved: the daemon's silence and no-progress rules above end stalled work, never
+a client clock. While it watches a session, `car code` also reads the session's
+recorded state once a minute, so a session that ended without its event
+reaching the CLI is reported once the daemon answers that read, normally
+within a minute. One read is outstanding at a time, and an unanswered one
+holds nothing: the session's events, Ctrl-C and the keepalive are handled
+while it is out.
 
 With red checks, a headless native session keeps iterating until it succeeds or
 ends through `NoProgress` (the idle-iteration guard or session no-progress turn
@@ -27571,7 +27844,7 @@ Source: docs/CAR_AGENT_AUTHORING_GUIDE.md (from '## CLI Command Reference' to be
 
 ## CLI Command Reference
 
-The `car` binary (defined in `car-rs/crates/car-cli/src/main.rs`) is the native command-line entrypoint for the Common Agent Runtime. Every subcommand lives in one flat `clap` `Commands` enum — there is no `agents`, `mcp`, `a2a`, `registry`, or `bundle` command group. `main()` parses `Cli::parse()` and matches `cli.command`. Many commands accept `--json` for machine-readable output.
+The `car` binary (defined in `car-rs/crates/car-cli/src/main.rs`) is the native command-line entrypoint for the Common Agent Runtime. Every subcommand lives in one `clap` `Commands` enum, some with their own subcommands (`car registry`, `car agent`, `car models`, `car auth` and others); there is no `mcp`, `a2a` or `bundle` command group. The full reference, generated from `car --help`, is `release-mirror/CLI.md`. `main()` parses `Cli::parse()` and matches `cli.command`. Many commands accept `--json` for machine-readable output.
 
 ### The daemon-first model (read this first)
 
@@ -27597,7 +27870,7 @@ match infer_via_daemon_once(&url, req).await {
 }
 ```
 
-> **`car daemon` ≠ `car models serve`.** `car daemon` execs the **CAR `car-server` daemon** (default port 9100). `car models serve` execs an **external `vllm-mlx serve`** OpenAI-compatible MLX runtime (default port 8000). They are unrelated. Also note: there is no top-level `car serve`, `car recommend`, or `car generate` — `serve`/`recommend` are `models` subcommands, and generation is `car infer` / `car image` / `car video`.
+> **`car daemon` ≠ `car models serve`.** `car daemon` runs the **CAR `car-server` daemon** (default port 9100). `car models serve` execs an **external `vllm-mlx serve`** OpenAI-compatible MLX runtime (default port 8000). They are unrelated. Also note: there is no top-level `car serve`, `car recommend`, or `car generate` — `serve`/`recommend` are `models` subcommands, and generation is `car infer` / `car image` / `car video`.
 
 ### Starting the daemon
 
@@ -27606,7 +27879,7 @@ car daemon              # -p/--port defaults to 9100
 car daemon --port 9100
 ```
 
-`cmd_daemon` (`main.rs:5342`) does **not** run a server itself — it execs the separate `car-server` binary with `--port`. If that binary is missing it prints the build hint and exits 1:
+`cmd_daemon` does **not** run a server itself: it starts the separate `car-server` binary with `--port` as a child and waits for it to exit (`Command::status`), so `car daemon` stays in the foreground for the daemon's life. If that binary is missing it prints the build hint and exits 1:
 
 ```rust
 fn cmd_daemon(port: u16) {
@@ -31465,7 +31738,12 @@ under separate terms — see the README's *License* section.
   approval ledger, and (opt-in) enrolled voiceprints. All on your machine.
 - Secrets go through the OS keystore where available (macOS Keychain) rather
   than plaintext files.
-- No telemetry is sent to Parslee by the runtime.
+- The runtime sends Parslee no analytics or usage telemetry. It does send
+  account-linked operational data when you use a Parslee feature: on sign-in,
+  the daemon's address, its auth token and its capabilities, to register it for
+  your linked devices (`POST /mobile/runtimes`); your account email as the
+  `userId` on hosted-model gateway calls; the traffic of any sync you opt into;
+  and feedback you submit.
 
 ## Roadmap
 

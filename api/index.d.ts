@@ -2967,7 +2967,11 @@ export class CarRuntime {
    * Recommend models for this machine + intent. `useCase`/`tier` are
    * snake_case enum values (e.g. "coding", "most_capable"); `cloudOk` lets
    * cloud models compete. Returns the `RecommendationSet` JSON
-   * (`{ picks, notEnoughMemory, note }`).
+   * (`{ picks, not_enough_memory, note, memory_ceiling_mb? }`): the policy's
+   * local-model ceiling the fit verdicts were judged against, when one is in
+   * force. Each recommendation carries `estimated_peak_mb`, its estimated
+   * peak resident memory at the recommender's context (`0` when its memory
+   * is not this machine's).
    */
   recommend(useCase: string, tier: string, cloudOk: boolean): Promise<string>;
 
@@ -3543,7 +3547,14 @@ export class CarRuntime {
 
   /** Per-agent token/cost report (G3), folded from this connection's metered
    * inference events. Returns a JSON array of
-   * `{agent, calls, tokens_in, tokens_out, cost_usd}`. */
+   * `{agent, calls, tokens_in, tokens_out, cost_usd, priced_calls,
+   * subscription_calls, unpriced_calls, ambiguous_reports,
+   * ambiguous_reported_cost_usd}`. `cost_usd` sums the priced calls only; an
+   * unpriced call's cost is unknown, not $0. Calls naming no agent are the
+   * `"unattributed"` row. `ambiguous_reports` are sub-agent self-reports CAR
+   * could not tie to one run, with their reported dollars in
+   * `ambiguous_reported_cost_usd`: listed apart, never in `calls` or
+   * `cost_usd`. */
   eventCostByAgent(): Promise<string>;
 
   /** Turn on tamper-evident hash chaining for the session event log (A9).
@@ -6854,7 +6865,12 @@ export function agentsUpsert(specJson: string): Promise<string>;
  * manifest's own top-level keys in `manifestJson` (car#3264).
  *
  * Returns JSON
- * `{report: {missingOptional: [{namespace, feature}]}, agent: ManagedAgent|null}`.
+ * `{report: {missingOptional: [{namespace, feature}]}, agent: ManagedAgent|null, method_allowlist?: string[]}`.
+ * `method_allowlist` is the daemon method scope bound to the agent's token,
+ * present whenever the manifest declares one (`[]` denies every method);
+ * absent means every agent-role method. `shared_secrets`
+ * (`[{key, declared_by}]`) names each declared key another installed agent
+ * declares too: the new agent is handed the same stored value.
  */
 export function agentsInstall(manifestJson: string): Promise<string>;
 

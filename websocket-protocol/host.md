@@ -352,7 +352,12 @@ parked gate refuses a decision, answering `resolved: false` (the call had
 already given up) or with an error, no `approval_resolved` follows: the daemon
 closes the row itself as `timeout` or `interrupted` respectively, and
 `host.resolve_approval` returns an error ("was not resolved by the parked
-gate").
+gate"). When the agent's turn acknowledged `approval_frames: true` (see
+`agents.chat` in agents.md), a decision the gate took does not close the row:
+`host.resolve_approval` returns the row as it stands, and the gate's own
+`approval_resolved` closes it with the word the gate recorded, also after a
+refused decision. If that turn's route ends first, the row closes `unknown`. iMessage and Slack replies to a
+chat approval are routed to the parked gate the same way.
 
 #### `browser.signin_needed` / `browser.signin_resolved`
 

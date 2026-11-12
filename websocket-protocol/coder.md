@@ -122,7 +122,9 @@ injected. The verifier input lists those names as `approved_checks` and maps
 each outcome to the check that backs it as `outcome_checks` (outcome id to
 check name); the verifier is instructed to call `run_check` first for every
 outcome in `outcome_checks` and grade from its result, using its shell only
-for further independent probes and for outcomes no check backs. It never runs the verifier's working copy: each call
+for further independent probes and for outcomes no check backs. The runtime
+enforces the mapping: `run_check` refuses any other check for that outcome,
+and refuses an outcome whose own check is not approved. It never runs the verifier's working copy: each call
 materializes a fresh checkout of the graded tree id from a runtime-owned
 repository the verifier's shell cannot reach, re-hashes what landed on disk and
 refuses unless it is that tree id, and runs it with a
@@ -193,7 +195,12 @@ needs verifier isolation and that write confinement; where either is missing
 (Linux and Windows today) `run_check` refuses. The builder's shell is
 unaffected.
 Any other name is refused. The run is recorded as a probe with
-`check: "<name>"`; replay re-runs such a probe through `run_check`. Two limits
+`check: "<name>"` and `passed`: whether the run met the check's own
+assertions (`expect_exit_zero`, `output_contains`, no timeout), judged on the
+unredacted output exactly as the builder's contract gate judges it, while only
+redacted output is stored or shown. A `differential` check's comparison is
+judged at the builder's gate only. A PASS may cite a check probe only when
+`passed` is true; replay re-runs such a probe through `run_check`. Two limits
 are inherent to operator-approved checks and are not new here: the check's
 script comes from the delivered tree, so the builder wrote it; and redaction
 replaces the exact credential value, so output that transforms the value
@@ -835,7 +842,11 @@ also controls conversation replies and supplies the default for linked native ta
   is recorded under Not verified and omitted from baseline and execution; it
   does not abort `coder.start`, revision, or restart adoption. If every check is
   held, the session stays `contract_proposed` and unchanged confirmation is
-  refused until the operator approves a held check or adds an executable one. An
+  refused until the operator approves a held check or adds an executable one.
+  A supplied contract is held the same way: when the runtime denies every one
+  of its checks (policy, unapproved network), `coder.start` fails with
+  `no check is left to run`, naming the held checks, because a contract with
+  nothing left to run never passes. An
   outcome that promises specific printed or displayed text must pair with
   `output_contains` or a grep/test/diff-style output assertion in its command.
   Contract repair is asked to add that assertion; an unfixed outcome moves to
@@ -1641,8 +1652,14 @@ principal, open or closed, each with an `open` flag. Every operator connection i
 the same principal, so two operator windows see and may drive the same open
 discussion; a connection bound to an agent identity sees only that agent's.
 The boundary is the credential: a process holding the daemon-wide token is the
-operator here, as it is everywhere else on the daemon. Resolving by id alone let
-any connected client drive, or close mid-turn, a discussion it did not open.
+operator here, as it is everywhere else on the daemon. So any operator client
+may read, send into and close any operator discussion; that sharing is how a
+conversation is picked up from another client (#2073), and a narrower rule
+among clients holding the same token would not be a boundary, since any of
+them can read the transcripts on disk. What ownership separates is an agent's
+discussions from the operator's. A client leaving a discussion detaches from
+it rather than closing it: `car code`'s board sends no `coder.discuss.close`
+when it quits, so a reply another client has running there goes on (#2153).
 
 **One wedged subscriber cannot stall a discussion.** Each subscriber owns a
 bounded outbound queue drained by its own task, so the discussion's event drain

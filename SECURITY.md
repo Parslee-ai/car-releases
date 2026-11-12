@@ -101,7 +101,12 @@ under separate terms — see the README's *License* section.
   approval ledger, and (opt-in) enrolled voiceprints. All on your machine.
 - Secrets go through the OS keystore where available (macOS Keychain) rather
   than plaintext files.
-- No telemetry is sent to Parslee by the runtime.
+- The runtime sends Parslee no analytics or usage telemetry. It does send
+  account-linked operational data when you use a Parslee feature: on sign-in,
+  the daemon's address, its auth token and its capabilities, to register it for
+  your linked devices (`POST /mobile/runtimes`); your account email as the
+  `userId` on hosted-model gateway calls; the traffic of any sync you opt into;
+  and feedback you submit.
 
 ## Roadmap
 

@@ -2500,7 +2500,14 @@ class CarRuntime:
     def event_cost_by_agent(self) -> str:
         """Per-agent token/cost report (G3), folded from this connection's
         metered inference events. Returns a JSON array of
-        ``{agent, calls, tokens_in, tokens_out, cost_usd}``.
+        ``{agent, calls, tokens_in, tokens_out, cost_usd, priced_calls,
+        subscription_calls, unpriced_calls, ambiguous_reports,
+        ambiguous_reported_cost_usd}``. ``cost_usd`` sums the priced calls
+        only; an unpriced call's cost is unknown, not $0. Calls naming no
+        agent are the ``"unattributed"`` row. ``ambiguous_reports`` are
+        sub-agent self-reports CAR could not tie to one run, with their
+        reported dollars in ``ambiguous_reported_cost_usd``: listed apart,
+        never in ``calls`` or ``cost_usd``.
         """
 
     def metrics_summary(self) -> str:
@@ -3189,7 +3196,12 @@ class CarRuntime:
         """Recommend models for this machine + intent. ``use_case``/``tier``
         are snake_case enum values (e.g. ``"coding"``, ``"most_capable"``);
         ``cloud_ok`` lets cloud models compete. Returns the
-        ``RecommendationSet`` JSON (``{"picks", "not_enough_memory", "note"}``).
+        ``RecommendationSet`` JSON (``{"picks", "not_enough_memory", "note",
+        "memory_ceiling_mb"?}``): the policy's local-model ceiling the fit
+        verdicts were judged against, when one is in force. Each
+        recommendation carries ``estimated_peak_mb``, its estimated peak
+        resident memory at the recommender's context (``0`` when its memory
+        is not this machine's).
         """
 
     def coder_start(
@@ -6382,7 +6394,12 @@ def agents_install(manifest_json: str) -> str:
 
     Returns JSON
     ``{"report": {"missingOptional": [{"namespace", "feature"}]},
-    "agent": ManagedAgent | None}``.
+    "agent": ManagedAgent | None, "method_allowlist"?: [str]}``.
+    ``method_allowlist`` is the daemon method scope bound to the
+    agent's token, present whenever the manifest declares one (``[]``
+    denies every method); absent means every agent-role method.
+    ``shared_secrets`` (``[{"key", "declared_by"}]``) names each declared
+    key another installed agent declares too: it is handed the same value.
     """
 
 

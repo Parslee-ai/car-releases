@@ -126,7 +126,8 @@ session and says which models resolved to which vendors.
   targets[], rejected[{ repo, reason }], review_models[],
   panel[{ model, vendor? }], panel_warning?, coder_pin?{ model, source },
   run_refusal?, engine, spend_meter, unattended{ coder_model?, review_models[],
-  source?, refusal? }, orgs[], discovered[{ repo, checkout?, reason? }] }`.
+  source?, refusal? }, running_unattended?{ coder_model?, review_models[],
+  source? }, orgs[], discovered[{ repo, checkout?, reason? }] }`.
 - `orgs` lists the configured `[[org]]` owners. `discovered` is what the most
   recent sweep found under them: each repository it will work, with its
   checkout, plus any reason an owner produced nothing (`roots` empty, no
@@ -167,6 +168,11 @@ session and says which models resolved to which vendors.
   unattended cadence is running, and stops when the cadence task ends. `review_models`, `coder_model` and `engine` at the top level
   apply to a sweep a person starts with `heal.run`, which may use frontier
   models.
+- `unattended` is resolved from `heal.toml` as it is now. A running cadence
+  keeps the models it started with until the daemon restarts; while it runs,
+  `running_unattended` names those, so an edit to `[unattended]` shows as the
+  next models without claiming the running cadence uses them. Absent while no
+  cadence runs.
 - `spend_meter` is the spend meter's health, the same object `spend.status`
   and `spend.costs` report: `{ healthy, last_error, clock, zone, zone_source }`,
   or `{ healthy: true, last_error: null, note }` when no supervisor is
@@ -392,7 +398,8 @@ session and says which models resolved to which vendors.
 #### `selfheal.status`
 - **Params**: `null`
 - **Returns**: `{ cadence_secs, auto_fix_enabled, max_concurrent, max_per_day,
-  max_rounds_per_key, auto_fix_refusal_reason?, last_tick_at, route,
+  max_rounds_per_key, auto_fix_refusal_reason?, notification_refusal_reason?,
+  config_warnings?, last_tick_at, route,
   source_checkout?, refusal_reason?, detectors, detection_count, warning_count,
   critical_count, dismissed_count, filing_mode }`.
 - `route` is `"local"` only when the tick validates a filesystem candidate as
@@ -412,6 +419,13 @@ session and says which models resolved to which vendors.
   fail-closed config validation. The three limits default to 1 concurrent, 3
   starts per UTC day, and 3 rounds per key and cannot be raised. A malformed or
   raised-limit config disables auto-fix and sets `auto_fix_refusal_reason`.
+  A refused `[selfheal] notification_command` (an empty program or argument,
+  a control character, a stored secret in an argument, or an unexpected
+  field) sends no agent notification and sets `notification_refusal_reason`;
+  a TOML syntax error anywhere in the file is reported as the file's, with its
+  line. `config_warnings` names each key under `[selfheal]` nothing reads, such
+  as a misspelling, which is otherwise ignored. `car selfheal status` and
+  `car info` print both.
   `filing_mode` is `"pr-only"` after a local route is validated with auto-fix
   enabled; otherwise it is `"watch-only"`. The daemon runs one non-overlapping
   tick immediately at boot and then every 900 seconds by default.
@@ -518,9 +532,27 @@ edits the maintainer's working tree or index.
   credential's session, only itself (another is refused `-32003`,
   `data.reason: "not_your_agent"`, and recorded). Without it, the method
   behaves exactly as before.
-- **Returns**: array of `{ agent, calls, tokens_in, tokens_out, cost_usd }` —
-  the per-agent token/cost report, folded from `InferenceMetered` events by
-  their `agent` field (EPIC G / G3). It reads only the calling connection's
+- **Returns**: array of `{ agent, calls, tokens_in, tokens_out, cost_usd,
+  priced_calls, subscription_calls, unpriced_calls, ambiguous_reports,
+  ambiguous_reported_cost_usd }` — the per-agent
+  token/cost report, folded from `InferenceMetered` events by their `agent`
+  field (EPIC G / G3). `cost_usd` sums only the `priced_calls` (a provider's
+  figure, a list price, or a local model's $0). A subscription call adds no
+  dollars, and an `unpriced_calls` call's cost is unknown, not $0, so a row
+  with any is a lower bound. Calls that name no agent are their own
+  `"unattributed"` row, never merged into an agent's. `ambiguous_reports`
+  counts `multi.*` sub-agent self-reports the daemon could not tie to one
+  run (rows marked `summary_of: "ambiguous"`, see [events](events.md)), and
+  `ambiguous_reported_cost_usd` is what those runners reported: listed apart,
+  never part of `calls` or `cost_usd`, whose measured rows already count the
+  calls once (car#3492). Over a principal's ledger (`{ agent }`) every call
+  names its payer, and a call from a connection bound to no agent is the
+  `operator`'s, so the daemon-wide rows are the agents' and `operator`. The
+  daemon keeps each payer's ambiguous self-reports beside its ledger (a
+  separate file, never a ledger row, never counted against a cap, never
+  dropped: rotated by size and read whole), so `{ agent }` reports them too,
+  under the same authorization; `events.query { agent }` returns them as
+  `inference_metered` rows marked `summary_of: "ambiguous"`. It reads only the calling connection's
   session log (see [events](events.md) for scope and journal retention). A
   multi-agent run reports cost per agent;
   provenance (which tool/workflow) is queryable via
