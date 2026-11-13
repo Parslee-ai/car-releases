@@ -3,6 +3,161 @@
 All notable changes are documented in the [GitHub Releases](https://github.com/Parslee-ai/car-releases/releases) for this repo.
 This file is a chronological index linking to each release's full notes.
 
+## [v0.63.0] — 2026-11-13
+
+### Changes
+
+- An A2UI surface's agent ownership is now checked and changed in one step. Before, two supervised agents creating the same surface at the same moment could both pass the ownership check, leaving one recorded as owner of the other's content, and a host replacing a surface could land between an agent's check and its change, so the agent edited or deleted the host's new surface. Now the second creator is refused, and a host replacement either waits for the agent's change or makes it refused.
+
+- The Node agent loop's chat turns (`runChatTurn`) now run their tools on a real daemon: every proposal carries an id, where a chat turn's had none and the daemon refused it. A `runAgent` or chat run that declares its own `write_file` or `edit_file` tool now registers and runs it; before, the loop registered CAR's built-in file tools first and the daemon refused to let the declared ones replace them.
+
+- A daemon bound to a wildcard address (`--host 0.0.0.0` or `::`) now gives supervised agents `CAR_DAEMON_URL=ws://127.0.0.1:<port>` (or `ws://[::1]:<port>`) instead of the wildcard, which is not an address an agent can dial. Any other bind address, the port, and an agent spec's own `CAR_DAEMON_URL` are unchanged.
+
+- Add `host.request_approval` presentation controls: `present: false` keeps an answerable approval row off the phone floor, and `only_if_floor_clear: true` atomically records and returns `floor_busy` without creating or parking a row when a question is current. Both fields are advertised through `capabilities.list`; omitted fields keep existing behavior.
+
+- Held approvals now carry `presented:false` through host replies, lists, snapshots and row events. iOS, Android and macOS keep them answerable in Approvals without notification, sound, banner, new-request activity or attention counts; ordinary and older rows retain their presentation behavior.
+
+- A chat approval row a replaced route kept back, when both its gate outcome and the route's close failed to write, now closes with the gate's outcome when the next route is stopped or replaced again, instead of waiting for a restart to close it `unknown`. Fixes #4303.
+- The Claude Code plugin's policy hook now also sees `Read`, `Grep`, `Glob`, `NotebookRead` and `WebSearch`. After a session reads a file that names key material (`~/.ssh/…`, `.aws/credentials`, a `.pem`, by the fragments CAR's risk classifier uses), a later `WebFetch`, `WebSearch` or command the egress inspector flags in that session asks the person first, naming what was read. Each call is still checked on its own as before. Fixes #3367.
+- Chat's work panel lists, under Context, the tools the conversation's agent can call: the assistant's current model-visible set, or a saved agent's allowlist. An agent that reports no tools, such as an external CLI, shows none rather than a guess, and no skills or connectors are listed because none is bound to a conversation. Fixes #1761.
+- A trajectory record is appended under the file lock, so concurrent writers can no longer split one record across two writes. Fixes #1830.
+- `materialize_checkpoint_messages` takes the whole stored checkpoint and the number of earlier messages, and publishes only the turn's own messages, so a later turn can no longer republish the conversation under new identities. Fixes #1870.
+
+- The owner's conversation floor survives long use and storage trouble. A floor that has recorded more than 1,024 finished questions or answers now drops the oldest ones instead of refusing every new question; a question reservation, a new topic or an assistant binding whose save fails is undone instead of being kept in memory (a failed reservation no longer suppresses every later send, and a failed binding no longer leaves the assistant-only gate on); an approval whose question cannot enter the floor is recorded in the floor's refusal log and tried again on the next tick; and a resolve whose floor save fails leaves the pending approval to survive a restart.
+- With an assistant selected, `host.request_approval` from an unbound session now requires the host token, so an agent that drops its binding can no longer put an approval on the owner's phone. An `approval_resolved` frame carrying a word the gate never emits is dropped while the turn's acknowledgement is still unread, so Chat and approval history agree.
+- `ledger.class.put` and the inline `class` on `ledger.put` keep a stored class's fields the request leaves out (report format, approval rules, skill ids, pass-rate bars) instead of resetting them; a field sent as null is still cleared. `spend.assign_class` enters the decision ledger, and the goal loop adds up each iteration's priced model calls so `max_cost_usd` halts a run.
+- `lattice.inbox` acknowledgements may be `{id, from}`, and a bare id that two senders share is refused with their names instead of marking both read. A peer turn past its time limit is answered at once even if its cancel stalls, a flood of peer messages makes at most four busy-answer tasks, and a session that already authenticated as one principal can no longer rebind to another with `session.auth`.
+- `car approvals set-tool --as-host` sets an approval unattended on a daemon started in a CAR home of its own, and `car approvals set-tool --standing` lets a person authorize one tool override to be re-applied unattended (`agent_permissions.apply_standing`); a changed schema, a different agent, tool or mode, or a later change by a person ends or refuses the standing authorization.
+- A forge write from chat always asks the person, with no trust, full-access or saved answer standing in for the question, and the loop strips a model-supplied approval marker. The read-only git shortcut refuses `--ext-diff` and `--textconv`; listing or printing an archive with `unzip` takes the read-only shortcut; and folder agents read Word, Excel and PowerPoint files with a read-only tool instead of asking.
+- Chat and saved agents: saved agents take chat image attachments with the run's first model request, asking chat to change an agent built elsewhere proposes an edit of it, the standing-agent task list ends at the draft, an empty final turn after tool narration ends as an error, an inline `agents.chat` goal no longer records its result against the goal it replaced, and chat's git push and sudo refusals say what to do instead of naming a coder session.
+- Smaller fixes: an agent restart refuses a brief whose class policy was edited since it was compiled, removing or re-enrolling a voiceprint drops the cached speaker pipeline, `http_request` flags a body its charset cannot decode as binary, and a failed terminal approval receipt carries the typed `action_failed` cause. Parslee Core no longer states a CAR release its own lookup does not support.
+
+- `capabilities.list` now shows a host session every method it can call, including the agent-role ones it passes as host (`agents.chat`, `agents.start`, `infer`, `runs.list` and the rest). A bound agent's list and an unbound session's list are unchanged: an unbound session is shown `operator` and `operator_only` methods only, whether or not a host token is installed.
+
+- CarHost's Lattice screen is now People. It lists each person once across all of your orgs, with their orgs as tags and a filter when you're in more than one. Each row says only what's true between you: connected, waiting on a reply, not connected (with Connect…), not reachable, or not on CAR yet. Account ids and fingerprints moved under Verify identity on each row. Everything the Lattice screen had, such as connections, invite codes, nearby CARs and attestation notes, is under Connections on the same screen. Saved Tools pins and links to the old screen open People.
+
+- Credential refusal rows stay bounded: each outside credential's refusal file is trimmed to its newest 500 rows once it passes 256 KiB, so a client that keeps sending refused frames cannot grow it without limit (Fixes #3436).
+- A signed-in dashboard session reports `caller_role: "dashboard"` in `capabilities.list` (it said `operator`); a `runs.subscribe` stream picks up a key stored after it started within a few seconds, without resubscribing; and a dashboard session reads `host.approvals`, `memory.query` and `a2ui.surfaces` replies with stored keys scrubbed, as it already read run history (Fixes #3675, Fixes #3676).
+- A host approval a person resolves now records who resolved it and how the decision arrived (`resolver: { principal, transport }` on the row, stamped by the daemon), and is appended to a private `host-approval-resolutions.jsonl` that outlives the 24-hour in-memory row and a restart; `permission.approve` and `permission.reject` record `conn:<id>@host` instead of a bare connection id (Fixes #3398).
+- `car audit export` writes one JSON record of what each agent did and what was approved, by whom and when: the per-client event journals, the `permission.approve` and `permission.reject` decisions, the host approvals with their resolvers, and the policy denials, with run content redacted. It names the earliest record it could read (finished session journals are deleted after 30 days) and each journal's hash-chain status, and works with the daemon down. The same document comes from the new host-only `audit.export` RPC, which refuses an agent-bound session and a daemon with no host token (Fixes #3399).
+
+- The published CLI reference now documents `car board-hook` and `car codex`, which every release since they were added has shipped without.
+
+- Groundwork for pair conversations between colleagues (#4405): CAR has a client for Parslee's conversation store, signed with the device certificate like the relay. Nothing uses it yet, so nothing changes for people or agents in this release.
+
+- Collaboration sealing now follows the spec's answers of 2026-11-12:
+  - An agent registration lives as long as the issuer's `exp` allows, inside the delegation window, rather than being refused after 24 hours.
+  - For sealed content, a revocation list is fresh exactly while `iat` ≤ now < `exp`. A list dated after the reader's clock no longer counts as fresh.
+  - `ReaderContext` takes the org's account directory (`directory`: account to `AccountKind::Person` or `AccountKind::Agent { owner }`), and step 7 decides person or agent from it alone. The following writers now read as unverified: a listed agent with no registration (`registration_missing`), a listed agent whose registration names another owner (`registration_owner`), a listed person carrying a registration (`registration_kind`), and a writer the directory does not list (`not_in_directory`); an unlisted writer is never taken to be a person.
+  - New golden vectors cover these cases, and show that a revoked issuer key or credential refuses content the same way a revoked device does.
+
+- Groundwork for sealed collaborations (#4405): CAR implements the content envelope, per-device key copies, key_id and the inner signature from the collaboration sealing spec (docs/proposals/collaboration-sealing.md), with known-answer vectors in car-a2a/tests/fixtures/car-collab/golden.json. Nothing uses it yet, so nothing changes for people or agents in this release.
+
+- `car doctor` now reports how much disk the coder state under the CAR home uses, kept worktrees included, as a size and never a cleanup verdict. If part of it cannot be read, the total is shown as a floor and names what could not be read.
+
+- `gate_flow` now blocks a flow report that is unsafe but names no violation, which is how an evaluator/optimizer boundary with an invalid role assignment reports "nothing was checked"; it used to allow it. A tool listed twice under the same boundary role is now accepted instead of refused as if it held two roles.
+
+- `car run-task` compacts its history from the same measured inputs as the assistant: the tool definitions each request carries and the provider-reported input size of the last call, so a long headless run no longer overruns the model window before compaction starts. Governance benchmark grading now finds a forbidden file whose name has capitals, refuses shell and `edit_file` writes to the credential file as well as `write_file`, and fails the destructive-cleanup task when its artifacts are deleted.
+
+- A restarted daemon now renews its Parslee device certificates without anyone signing in again, so colleagues keep reaching this CAR over the Lattice. At each `car auth login` (CLI and `auth.complete`) CAR registers a fresh per-machine **device key** for that login: an Ed25519 key in `<state root>/login-keys/<account id>.key` (0600, never the OS secret store), registered with the bearer the sign-in just obtained at `POST api/v1/me/device-keys`. The key it replaces is revoked. An unarmed daemon trades a signed assertion from that key for a narrow renewal token through the `jwt-bearer` grant. It uses that token only to renew a certificate Parslee already issued to this device, and never for sync or anything else. If the grant refuses the key (`invalid_grant`), the login waits for the next sign-in rather than retrying. That covers an expired key (30 days idle, 180 days old), a revoked one, or clock skew. A revoke that fails at sign-in or sign-out is recorded, ids only, and retried at that login's next sign-in. Renewal works only for a device and key that Parslee certified in that org within the last 30 days. The first certificate in each org still comes from an interactive sign-in. When renewal is refused for that reason, the org waits for the next sign-in instead of retrying, and `peers.cert_status` gives the reason. It never reads the Keychain to do so, so the demand-driven credential rule still holds. A login with no key behaves as before, and armed passes are unchanged. `car auth logout`, `auth.logout` and `auth.remove_account` revoke the login's key (best effort, under the existing sign-out budget) and delete its file whatever Parslee answers. A failed registration is reported and never fails the sign-in. Until the Parslee authority supports device keys, registration answers 404 and is skipped quietly.
+
+- `car lattice knock --member` without `--device` or `--fingerprint` now reads the org directory fresh and offers the connection to every unexpired device of that colleague. The first device to accept wins, and the other offers are withdrawn on both sides. Before, the knock went to the device with the newest certificate from a cached directory, which could be a machine that was switched off. A message refused across owners now names the cause, such as a personal node that an org session cannot reach, after the usual `peer is outside this work context` prefix. With no device certificate yet, `car lattice directory` says so and gives the command that issues one, instead of pointing at org enroll codes.
+
+- The isolation probe's baseline expects the host-token doors shut on macOS as on Linux, since unwalled Mac agents now start inside the host-token profile, so `hostile_probe_agent_baseline` passes on macOS again. Fixes #4362.
+- `scripts/lib/refresh-changed-sources.sh` cleans every real target triple in the shared target, one-hyphen ones such as `wasm32-wasip1` included, so another checkout's cross-target artifacts are never reused. Fixes #4349.
+
+- Mail listings no longer pair one message's Message-ID, subject or sender with another message's row when a message is moved or deleted while the listing runs. Mail.app's property lists are read again until the row ids hold still, and rows are matched by id; a mailbox that keeps changing returns its rows without those fields rather than with another message's.
+
+- New `car lattice org` key-holder commands, so an org's trust root has more
+  than one holder and needs no seed file or hand-run tool: `create --org <org>`
+  starts an org's org scope with your login-derived granter key (an Owner or
+  Admin; refused when the org already has org scope on this CAR),
+  `granter-key --org <org>` prints your login-derived granter key for another
+  key holder, `add-granter` / `remove-granter --org <org> <key>` let a current
+  key holder change the set (never to empty) and print the new enrollment code,
+  and `grant --org <org> [--confirm <account>:<fingerprint>...] [--epoch N]
+  [--rekey]` hands the org key to the members you confirm by the org-key
+  fingerprint they read you, every member whose CAR you attested, and
+  yourself; a fingerprint that does not match refuses the grant. The first four need no
+  running daemon; `grant` is the new host-only daemon method
+  `lattice.org.grant`. None of them prints the passphrase or a seed.
+  `docs/ORG_SCOPE_TURN_ON_RUNBOOK.md` now walks through these commands.
+- `car lattice org status` and `enroll-code` now open sync and the
+  configured orgs first when org scope is configured (`lattice.org.status`
+  `open: true`), so a member who just joined sees the org and their
+  `org_key_fingerprint` instead of "not enabled". Host apps' polls do not
+  send it and open nothing.
+
+- A second device of the same owner no longer needs an enrollment code to get
+  org scope. A device that holds org scope announces its granter sets on the
+  owner's personal oplog, which is end-to-end encrypted under the sync
+  passphrase. On `sync.pump`, each of the owner's other devices adopts an org
+  it has no scope for, provided every announcing device agrees and the
+  signed-in login belongs to that org. Adoption never replaces a configured or
+  adopted entry. When devices disagree, nothing is adopted, and
+  `lattice.org.status` lists the fingerprints under
+  `from_own_devices.conflicts`. An adopted org opens at the next daemon start
+  (`restart_required`). It is kept in `<journal dir>/sync/org-scope-adopted.json`
+  and merged into `PARSLEE_SYNC_ORG_SCOPE` for orgs that value does not name.
+  A member's first device still joins with `car lattice org join`. Device
+  certificates play no part in this.
+
+- Org-scope sync now opens each configured org as the signed-in login that
+  belongs to it, not only the login present when the daemon started. An org
+  held by a second login (`car auth login --add`) opens under that login's own
+  relay bearer, passphrase-derived org keys and login-derived granter key, and
+  `lattice.org.*` with `org` acts as that login. An org that no held login
+  belongs to (or that several other logins belong to) now stays closed on its
+  own, reported in `lattice.org.status` and `sync.pump` `org_error`, where it
+  used to stop org scope for every org and fall back to the local journal.
+  Signing a login out closes the orgs it serves until a login serves them
+  again. Org scope announced on a second login's personal oplog is adopted by
+  that login's other devices.
+
+- `runAgent` / `run_agent` now refuse a resume whose `priorMessages` / `prior_messages` exceed 15 MiB, with an error naming the limit, before sending anything. Before, a resume past the daemon's 16 MiB WebSocket frame dropped the connection and the run ended without an outcome.
+
+- A Claude Code or Codex session started plainly with the CAR plugin is now a
+  full collaboration session, not only one started with `car claude` /
+  `car codex`. `car peer-inbox-hook` and `car board-hook` find the session they
+  run in by walking up to the nearest enrolled assistant process (both routes
+  record its pid in `<CAR_HOME>/run/<id>.pid`), so the inbox nudge reads that
+  session's pending count — which its collaboration server now keeps in
+  `run/<id>.pending` — and the board briefing leaves out the session's own
+  edits. `car session-release` removes the pending file too.
+- Every coding-assistant session now joins its project on the Lattice by
+  itself once attached, so another owner's `agents:<project>` share includes it
+  without the model calling `lattice_join`. The project is the name of the
+  session's repository's main checkout, so a session in a linked worktree or a
+  subdirectory joins the same project as one at the root; outside a repository
+  it is the directory's name. `car codex` names its project by the same rule
+  (before, the directory's own name, so a session in a worktree-pool slot
+  joined `slot-N`). Supervised CAR agents join nothing by themselves.
+
+- `car policy-check-hook` has an opt-in strict mode for unattended agents: with `CAR_POLICY_HOOK_STRICT=1` a call it cannot check, or one in a directory no `.car/policies/` covers, is denied with the reason. `CAR_POLICY_HOOK_ROOT=<dir>` pins where rules are read from. The default stays open and now notes on stderr when no CAR policy applies.
+
+- A hard link to a protected file is now caught however deep inside a protected folder the file sits; the check used to stop four folders down.
+
+- The CAR docs bundled in the Python wheel (ASSISTANT.md and MCP.md) now name the version they describe, 0.62.0, instead of 0.61.2.
+
+- `registerAgentBasics(root)` / `register_agent_basics(root=...)` / `agents.register_basics { root }` can now keep the daemon's built-in `write_file` and `edit_file` inside an absolute folder: a write that resolves outside it, through `..` or a symlink, is refused naming the root, and writes inside it work. With no root the tools behave as before, and the binding docs now say what that is: they run as the daemon user on the daemon host, follow symlinks, and are admitted at the session's default tier with no prompt.
+
+- On macOS, `scripts/cargo-shared-target.sh` now marks the Cargo target directory `.metadata_never_index` before each build, so Spotlight stops indexing build churn (it had held `mds` above 100% CPU and slowed Mail search).
+
+- A Claude or Codex session's pending-message count no longer goes back to an older org-inbox count when a background poll answers after a drain that started later. Moving a scheduled task onto the run recorder during reconcile now changes the stored task record under its lock, so a run that fired meanwhile keeps its record.
+
+- `submitProposal` / `submit_proposal` now take the same per-runtime lock as `executeProposal` / `execute_proposal`, so mixing the two on one runtime no longer lets one call's tool requests reach the other's handler. On Node, a `submitProposal` after an `executeProposal` also reinstalls its tool bridge, which the earlier call had removed.
+
+- `car-runtime` fetches its native artifacts once when several processes use it for the first time together, such as a worker pool or a test runner. Each download goes to a file of its own and is renamed into place only when complete and executable, so no process fails over another's download or loads a half-written `car-server`. The other processes wait for the one install, and a lock left by an exited process is taken over. Fixes #4296.
+- The integration-test guard that keeps a test's `ServerState` off the developer's real CAR state reads test files as Rust tokens. A renamed import (`use ... ServerState as State`), a `type` alias, a line break after `ServerState::`, a call inside a macro and the `<ServerState>::` form are all caught, and a constructor named in a comment or a string is not. Fixes #4309.
+- Fixtures that model a chat a host started now say `host_started: true`, as production records it, and the proxied-chat fixture is checked against the arrival check `agents.invoke_external` applies. Fixes #2457.
+- car-server-core's integration test suites leave nothing in `$TMPDIR`. A journal a daemon task writes after its test ends, the run store's index beside it, the suites' own CAR homes and what a daemon's child processes write to a temporary directory now live under a scratch root removed when the test binary exits. Fixes #3062.
+
+- The worktree hook's sh fallback now refuses hook input whose closing bracket does not match its opener (an object closed by `]`), as the Rust hook does, instead of reading it as valid.
+
+- In a repo that turns the worktree pool on, an agent's own `git worktree add` (through Claude Code's Bash tool) is now logged to the pool's `direct-add.log` by default. With `direct_add = "refuse"` in `.car/worktree-pool.toml` it is refused with a pointer to `car worktree acquire`. `CAR_WORKTREE_DIRECT_ADD=off` turns the check off. Repos with the pool off are unchanged.
+
+See the [release notes][v0.63.0].
+
 ## [v0.62.0] — 2026-11-11
 
 ### Changes
@@ -1996,6 +2151,7 @@ Windows x64 binaries and wheel; `car`, `car-server`, `car-memgine-eval` ship as 
 ## [v0.3.0] — 2026-04-19
 First public release. Full Python / Node.js binding parity, macOS + Linux binaries and wheels. See the [release notes][v0.3.0].
 
+[v0.63.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.63.0
 [v0.62.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.62.0
 [v0.61.2]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.61.2
 [v0.60.0]: https://github.com/Parslee-ai/car-releases/releases/tag/v0.60.0
