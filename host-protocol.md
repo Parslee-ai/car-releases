@@ -85,6 +85,18 @@ see every agent's records.
 - `host.set_status`: update agent status and task text.
 - `host.notify`: append and broadcast a host event.
 - `host.request_approval`: create an approval request for the host UI.
+  Optional `present: false` keeps the row answerable without opening or parking
+  a phone question. Rows carry `presented:false` through replies, lists,
+  subscription snapshots and the full-row `approval.requested` / `approval.resolved`
+  events. CarHost apps retain them for manual answers without notification,
+  sound, banner, new-request activity or attention-badge counts. Ordinary rows
+  carry `presented:true`; absence on older rows/payloads means true.
+  `only_if_floor_clear: true` atomically returns
+  `{refused:true,reason:"floor_busy"}` while another question is current,
+  creating no row; refusal is durably recorded and emits
+  `approval.request_refused {agent_id,method,at,reason}`. Both controls are
+  advertised in this method's `capabilities.list` `features` entry. Omitted
+  fields retain existing behavior. Full contract: [host methods](websocket-protocol/host.md).
 - `host.resolve_approval`: resolve a pending approval request. A row that is
   no longer pending is refused (`-32003`, `error.data.reason:
   "already_resolved"`), never reported as resolved.

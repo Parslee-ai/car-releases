@@ -7,7 +7,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 **Not indexed, on purpose:** the separate "## Notification methods (server → client)" section (`host.event`, `voice.event`, `coder.event`, `coder.discuss.event`, `browser.signin_needed`/`resolved`) documents push-notification *payload shapes*, not additional namespaced RPC methods — read it directly in the full doc. Six headings documented **inside** "## Method reference" itself are excluded for the same reason — they are server-initiated pushes, not client-callable requests: `browser.view.event`, `models.pull_progress`, `models.upgrade_available`, `models.suggestion_available`, `runs.trace.event`, and `coder.session_changed` (documented a second time, briefly, in the separate Notification methods section above). The "a2a (in-core dispatcher)" subsection's 9-11 A2A v1.0 methods are also excluded: they're documented as a table of `PascalCase` / `slash/form` name pairs with no per-method heading to anchor to, and the source doc doesn't say which form is the literal wire `method` string.
 
-**91 namespaces, 557 methods.**
+**92 namespaces, 560 methods.**
 
 ## a2a (7)
 
@@ -52,8 +52,9 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`agent.browser.input`](websocket-protocol/browser.md#agentbrowserinput-agentbrowsercontrol-agentbrowsercapture-agentbrowserhost_connected-daemon--agent-reverse-calls) — params are one of { op: "navigate", url } · { op:...
 - [`agent.chat`](websocket-protocol/agents.md#agentchat-daemon--agent-reverse-call--agentchatevent) — For attached supervised agents, agents.chat...
 
-## agent_permissions (11)
+## agent_permissions (12)
 
+- [`agent_permissions.apply_standing`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — No host key. Params { agent_id, tool, mode }....
 - [`agent_permissions.evaluate`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — Params { agent_id, tier }.
 - [`agent_permissions.evaluate_tool`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — Host-management-only and capability-gated.
 - [`agent_permissions.get`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — Params {}. Returns the raw policy { default:...
@@ -100,6 +101,10 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 ## assistants (1)
 
 - [`assistants.invoke`](websocket-protocol/assistants.md#assistantsinvoke) — Daemon-owned invocation of a built-in ready-to-use...
+
+## audit (1)
+
+- [`audit.export`](websocket-protocol/audit.md#auditexport) — Authorization: the host-management session only.
 
 ## automation (4)
 
@@ -349,7 +354,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`host.notify`](websocket-protocol/host.md#hostnotify) — Native hosts may honor payload.target_device_id to...
 - [`host.register_agent`](websocket-protocol/host.md#hostregister_agent)
 - [`host.register_device`](websocket-protocol/host.md#hostregister_device) — Ownership follows the registering WebSocket session.
-- [`host.request_approval`](websocket-protocol/host.md#hostrequest_approval) — subscribed is literal: whether the requesting...
+- [`host.request_approval`](websocket-protocol/host.md#hostrequest_approval) — present defaults to true.
 - [`host.resolve_approval`](websocket-protocol/host.md#hostresolve_approval) — Errors (-32003, with a stable error.data.reason):
 - [`host.set_status`](websocket-protocol/host.md#hostset_status) — Broadcasts an agent.status_changed event to...
 - [`host.subscribe`](websocket-protocol/host.md#hostsubscribe) — Registers the connection to receive host.event...
@@ -376,7 +381,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 - [`keychain.status`](websocket-protocol/keychain.md#keychainstatus)
 
-## lattice (36)
+## lattice (37)
 
 - [`lattice.claim`](websocket-protocol/lattice.md#latticeclaim) — Exclusive: the holder check and the insert happen...
 - [`lattice.claims`](websocket-protocol/lattice.md#latticeclaims)
@@ -403,6 +408,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`lattice.leave`](websocket-protocol/lattice.md#latticeleave) — Without params, drops the caller's profile and...
 - [`lattice.nodes`](websocket-protocol/lattice.md#latticenodes) — Lists live nodes — an agent profile whose...
 - [`lattice.org.attest`](websocket-protocol/lattice.md#latticeorgattest) — Granters only — an operator whose login-derived...
+- [`lattice.org.grant`](websocket-protocol/lattice.md#latticeorggrant) — Granters only, host-only.
 - [`lattice.org.policy`](websocket-protocol/lattice.md#latticeorgpolicy) — Granters only. Publishes the org's Lattice policy,...
 - [`lattice.org.revoke`](websocket-protocol/lattice.md#latticeorgrevoke) — Granters only. Voids every attestation of account...
 - [`lattice.org.rule.add`](websocket-protocol/lattice.md#latticeorgruleadd) — Accepts, in advance, offers from attested...

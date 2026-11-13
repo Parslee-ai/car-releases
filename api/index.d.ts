@@ -695,6 +695,9 @@ export class CarRuntime {
   /** Generated daemon wrapper for `agent/getAuthenticatedExtendedCard` (operator). */
   agentGetAuthenticatedExtendedCard(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `agent_permissions.apply_standing` (operator). */
+  agentPermissionsApplyStanding(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `agent_permissions.evaluate` (operator). */
   agentPermissionsEvaluate(paramsJson: string): Promise<string>;
 
@@ -1812,9 +1815,15 @@ export class CarRuntime {
    * manifests, worker specs, `declagents.json`, `tasks/`, `messaging.json`)
    * by any spelling that resolves to one, and do
    * not create a new non-ASCII name in CAR's state, run, token or secrets
-   * folder. The user's own files stay reachable.
+   * folder. The user's own files stay reachable. The tools run as the
+   * daemon user, follow symlinks, and are admitted at the session's default
+   * tier with no prompt. `root`, an absolute folder, keeps `write_file` and
+   * `edit_file` inside it: a target that resolves outside it, through a
+   * symlink or `..` included, is refused naming the root. With no root,
+   * writes reach any path the daemon user can. `bindSandbox` /
+   * `bindSubstrate` confine the tools further.
    */
-  registerAgentBasics(): Promise<void>;
+  registerAgentBasics(root?: string | undefined | null): Promise<void>;
 
   /**
    * Start an agent run on the daemon (agent run tracing). Brackets the
@@ -2146,7 +2155,7 @@ export class CarRuntime {
   hostDevices(): Promise<string>;
   /** `host.notify` — emit a user-facing host notification. */
   hostNotify(requestJson: string): Promise<string>;
-  /** `host.request_approval` — request approval for a gated action. */
+  /** `host.request_approval` — request approval; JSON accepts present and only_if_floor_clear. */
   hostRequestApproval(requestJson: string): Promise<string>;
   /** `host.resolve_approval` — resolve one pending host approval. */
   hostResolveApproval(requestJson: string): Promise<string>;
@@ -4372,6 +4381,9 @@ export class HostClient {
   /** Generated host wrapper for `assistant.identity.set`. */
   assistantIdentitySet(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `audit.export`. */
+  auditExport(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `auth.accounts`. */
   authAccounts(paramsJson: string): Promise<string>;
 
@@ -4536,6 +4548,9 @@ export class HostClient {
 
   /** Generated host wrapper for `lattice.org.attest`. */
   latticeOrgAttest(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `lattice.org.grant`. */
+  latticeOrgGrant(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `lattice.org.policy`. */
   latticeOrgPolicy(paramsJson: string): Promise<string>;

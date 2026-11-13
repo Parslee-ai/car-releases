@@ -24,9 +24,10 @@ The dispatcher follows standard JSON-RPC classification: an `unknown method: ...
 Runtime discovery for clients that cannot read files or run `car capabilities`.
 
 - **Params:** `{}`.
-- **Returns:** `{ caller_role, count, methods: [{ method, role }] }`, sorted by method through the generated capability table. Each role is one of `agent`, `owner`, `operator`, `operator_only`, or `host` and is the same derived role published in the generated capability manifest (`car capabilities --json`, car.parslee.ai/capabilities.json). `operator_only` means an unbound operator client or host may call the method, but a supervised agent may not.
+- **Returns:** `{ caller_role, count, methods: [{ method, role, features?: string[] }] }`, sorted by method through the generated capability table. Each role is one of `agent`, `owner`, `operator`, `operator_only`, or `host` and is the same derived role published in the generated capability manifest (`car capabilities --json`, car.parslee.ai/capabilities.json). `operator_only` means an unbound operator client or host may call the method, but a supervised agent may not.
+- **Optional controls:** a method may advertise supported additive request fields in `features`. `host.request_approval` lists `present` and `only_if_floor_clear`; clients must check that entry before depending on those controls. Methods with no advertised controls omit `features`.
 - **Host role unavailable (car#3404, then "Host authority fails closed"):** when the daemon has no host token installed (started with `--no-auth`, its host-token write failed at startup, or an embedder built the server state without one), no session can be the host, so every host-management method, and every other host gate, refuses every session. The one exception is `host.resolve_approval`, which still admits an operator session holding the daemon token until it moves to the host role (car#3701). The result then adds `single_principal_mode: "host role unavailable: no host token is installed, so host-management methods refuse; cause: <cause>"`, where the cause is `the daemon was started with --no-auth`, `writing the host token failed: <error>`, or, for an embedder, that nothing installed one. Test for the key's presence; the cause text varies. The field is absent when a host token is installed. `caller_role` and the listed methods are computed exactly as without it.
-- **Filtering:** an agent-scoped session receives `agent`, resource-conditional `owner`, and ungated `operator` rows, but never `operator_only` or `host`; an unbound daemon session receives `operator` and `operator_only`; a host-management session receives `host`, `owner`, `operator_only`, and `operator`. Ownership remains checked against the concrete resource when an owner method is called.
+- **Filtering:** each session receives the methods it can call. An agent-scoped session receives `agent`, resource-conditional `owner`, and ungated `operator` rows, but never `operator_only` or `host`. A host-management session receives every row, `agent` rows included: they are checked against the caller's own agent or host authority, which a host passes (`agents.chat`, `agents.start`, `infer`, `runs.list` and the rest). An unbound session receives `operator` and `operator_only` rows only, whether or not a host token is installed. The listing is conservative: an own-agent-or-host method such as `agents.start` refuses an unbound session, while a few `agent` rows (`infer`, `goal.status`) admit one but are not listed (car#4353). Ownership remains checked against the concrete resource when an owner method is called.
 
 The package form is `daemonCall("capabilities.list", "{}")` / `daemon_call("capabilities.list", "{}")`: the second argument is a JSON string even though the wire params are an object. The generated typed forms are `capabilitiesList("{}")` and `capabilities_list("{}")`.
 
@@ -891,6 +892,13 @@ per-session ownership on every mutation:
   session"`. `host.register_agent` also refuses to overwrite an
   agent owned by a different session — unregister-from-owner
   first.
+- **Approval presentation.** `HostApprovalRequest.presented` is an explicit
+  boolean on rows in replies, lists, subscription snapshots, durable records,
+  and full-row `approval.requested` / `approval.resolved` payloads. False keeps
+  the row listed and answerable but suppresses CarHost notifications, sounds,
+  banners, new-request activity and attention counts on iOS, Android and macOS.
+  Ordinary rows carry true; absence in older payloads means true. See
+  [host.request_approval](websocket-protocol/host.md#hostrequest_approval).
 - **Approvals.** `HostApprovalRequest` carries an optional
   `client_id` field:
   - `Some(x)` — the approval was raised by session `x` via
@@ -1272,6 +1280,7 @@ behavior. This section is long — for a compact map of every method with deep l
 - [feedback](websocket-protocol/feedback.md#feedback) <!-- ws-protocol:include -->
 - [host](websocket-protocol/host.md#host) <!-- ws-protocol:include -->
 - [a2ui](websocket-protocol/a2ui.md#a2ui) <!-- ws-protocol:include -->
+- [audit](websocket-protocol/audit.md#audit) <!-- ws-protocol:include -->
 - [a2a (in-core dispatcher — releases#28)](websocket-protocol/a2a.md#a2a-in-core-dispatcher--releases28) <!-- ws-protocol:include -->
 - [mail](websocket-protocol/mail.md#mail) <!-- ws-protocol:include -->
 - [messages](websocket-protocol/messages.md#messages) <!-- ws-protocol:include -->
@@ -1957,6 +1966,7 @@ headings added later are reachable from the namespace files and
 - <a id="latticeorgattest"></a>[`lattice.org.attest`](websocket-protocol/lattice.md#latticeorgattest)
 - <a id="latticeorgrevoke"></a>[`lattice.org.revoke`](websocket-protocol/lattice.md#latticeorgrevoke)
 - <a id="latticeorgpolicy"></a>[`lattice.org.policy`](websocket-protocol/lattice.md#latticeorgpolicy)
+- <a id="latticeorggrant"></a>[`lattice.org.grant`](websocket-protocol/lattice.md#latticeorggrant)
 - <a id="latticeorgrules"></a>[`lattice.org.rules`](websocket-protocol/lattice.md#latticeorgrules)
 - <a id="latticeorgruleadd"></a>[`lattice.org.rule.add`](websocket-protocol/lattice.md#latticeorgruleadd)
 - <a id="latticeorgruleremove"></a>[`lattice.org.rule.remove`](websocket-protocol/lattice.md#latticeorgruleremove)

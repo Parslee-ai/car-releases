@@ -110,8 +110,45 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   intended for another linked device.
 
 #### `host.request_approval`
-- **Params**: `CreateHostApprovalRequest` — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean, deadline?: number, a2ui?: { components: object[], dataModel?: object } }`
-- **Returns**: `HostApproval & { subscribed: boolean, answerable: boolean }`
+- **Params**: `HostRequestApprovalParams` (the flattened `CreateHostApprovalRequest` plus presentation controls) — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean, deadline?: number, a2ui?: { components: object[], dataModel?: object }, present?: boolean, only_if_floor_clear?: boolean }`
+- **Returns**: `HostApproval & { subscribed: boolean, answerable: boolean }` on acceptance, or `{ refused: true, reason: "floor_busy" }` for a busy-floor refusal.
+- `present` defaults to `true`. Set `false` to open an approval row without
+  opening, presenting, or parking a phone question. The pending row still
+  lists in `host.approvals` and the standup/dashboard can resolve it through
+  `host.resolve_approval` with one of its `options` (for example `ask`, `leave`,
+  `skip`). Existing ownership and `answerable` rules still apply; use
+  `system_level: true` for a row the owner answers. The presentation choice
+  survives restart until the row is settled or pruned.
+- Every accepted row carries `presented: boolean`: `false` for `present:false`,
+  `true` otherwise. It travels in the request reply, `host.approvals`, the
+  `host.subscribe.approvals` snapshot, durable approval records, and full-row
+  `approval.requested` and `approval.resolved` event payloads (including
+  auto-cancellation). These are the events that announce an approval row;
+  `approval.resolve_requested`, `approval.self_resolved`, `approval.withdrawn`
+  and refusal events describe lifecycle actions, not new rows.
+  CarHost on iOS, Android and macOS keeps hidden rows in its approvals view
+  and lets the owner answer them, but skips notifications, sounds, banners and
+  new-request activity announcements. Attention badges/counts exclude hidden
+  rows; list membership and empty states still include them. Android has no
+  separate approval badge. Old stored rows and payloads from older daemons
+  without `presented` mean `true`; durable hidden ids from the initial
+  `present:false` implementation are migrated to `presented:false` on restart.
+- `only_if_floor_clear` defaults to `false`. Set `true` to atomically refuse
+  while an owner question is current, including a prior approval awaiting its
+  next mirror tick. Refusal creates no approval row or queued topic, returns
+  `floor_busy` in this call, and is saved in the owner-floor journal and an
+  `approval.request_refused` host event. It can never deliver later. A clear
+  floor admits and opens an eligible system-level question under the same lock;
+  session-owned and `ws.method:` rows retain their existing transport exclusion. Each transport
+  retains its existing once-per-presentation delivery reservation. Physical
+  delivery still requires an enabled, paired transport. With `present: false`,
+  the busy check still applies, but acceptance only opens the row.
+  The guarded reconciliation also opens topics for older eligible pending rows
+  on a daemon with no messaging transport; those rows keep the floor busy
+  until settled or expired, although no transport sends them.
+- `capabilities.list` advertises `present` and `only_if_floor_clear` in the
+  `features` array of this method's own entry. Check that entry before sending
+  these fields to an older daemon, which could ignore unknown fields.
 - `subscribed` is literal: whether the requesting session is subscribed to host
   events (the same meaning as `host.subscribe`'s `subscribed`). An unsubscribed
   session receives neither `approval.resolve_requested` nor
@@ -203,6 +240,24 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 - **Params**: `ResolveHostApprovalRequest` — `{ approval_id: string, resolution: string }`
 - **Returns**: the `HostApproval` row, resolved with the canonical option text
   (see the single-option rule below).
+  The resolved row carries `resolver: { principal, transport }`, stamped by the
+  daemon from the session or transport that resolved it and never from the
+  request (car#3398). `principal` is `conn:<client id>` for a WebSocket client,
+  `agent:<id>` for an agent-bound session, `dashboard:<client id>` for the
+  signed-in browser, or a messaging transport's own name; `transport` is `ws`,
+  `host`, `dashboard`, `agent`, or the messaging transport (`imessage`,
+  `slack-transport`). A plain WebSocket client stays a connection id: the
+  daemon cannot tell CarHost from `car-host approve` or iOS when each holds the
+  host token, so all three read `conn:<id>` with transport `host`. Identity
+  only: the text of a message that carried a messaging decision is never
+  recorded. Each resolution is also appended to the owner-private
+  `host-approval-resolutions.jsonl` beside the peer-message journal (action
+  text redacted and bounded, `details` never written, and never trimmed:
+  approval records are kept), so a decision is still readable after the 24-hour
+  in-memory row is gone and after a restart. It is not `approvals.jsonl`, the
+  standing-authority store: a host approval never becomes a standing grant.
+  `permission.approve` and `permission.reject` record their reviewer in the
+  same form, `conn:<client id>@host`.
   `status: "pending"` means the request was forwarded to the owning session,
   whose own resolve settles the row and broadcasts `approval.resolved`.
 - **Errors** (`-32003`, with a stable `error.data.reason`):

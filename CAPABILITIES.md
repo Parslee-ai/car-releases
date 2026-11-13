@@ -341,6 +341,8 @@ Hidden clap commands are excluded.
 | `car approvals reset-tool` | Remove one exact agent/tool approval override |
 | `car approvals set-observer` | Grant (`on`) or withdraw (`off`) one agent's watcher view. An agent sees only its own approvals and host events unless it holds this. It applies on macOS and Windows; on Linux a walled agent cannot call those methods at all, so for a walled agent the grant changes nothing there. While a watcher is granted, a daemon or `car` older than this release reading the same state treats agent-permissions.json as damaged (it asks before every gated call); withdraw the grant before downgrading |
 | `car approvals set-tool` | Set an approval mode for one exact agent and exact tool. `always_allow` requires that agent to be attached with an eligible live callback |
+| `car audit` | Export the owner's record of what each agent did and who approved it |
+| `car audit export` | Export what each agent did and what was approved, by whom and when, as one JSON document. Joins the per-client event journals, the permission approvals and rejections in approvals.jsonl, the host approvals with their resolvers, and the policy denials. Run content is redacted. States the earliest record it holds and each journal's hash chain status; it does not switch hash chaining on. Works with the daemon down |
 | `car auth` | Parslee account authentication for CAR cloud-backed features |
 | `car auth accounts` | List all stored Parslee logins (active marked) |
 | `car auth default-org` | Show or set the default organization: the org new work uses when nothing more specific (an explicit choice, the repository, the agent) names one. Separate from the active login, and cleared — never moved to another login — when its login is removed or its membership ends |
@@ -479,10 +481,15 @@ Hidden clap commands are excluded.
 | `car lattice knocks` | CARs discovered on your network, and knocks waiting in both directions |
 | `car lattice nodes` | List live nodes — agents, coding sessions, and people |
 | `car lattice org` | Org-attested connections: status, admin attestation and policy, and your standing auto-accept rules |
+| `car lattice org add-granter` | As a key holder of `--org`: add another admin's granter key. Prints the new enrollment code; every member joins with it again. Works without a running daemon |
 | `car lattice org attest` | As an org admin: vouch that an announced CAR belongs to the colleague who announced it. Check its fingerprint with them first |
+| `car lattice org create` | As an Owner or Admin of `--org`: start its org scope on this CAR, with your login-derived granter key (or the `--granter` keys) as its key holders. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store and prints the enrollment code and fingerprint; restart the daemon afterwards. Refuses an org that already has org scope here. Works without a running daemon |
 | `car lattice org enroll-code` | Print your org's enrollment code and its fingerprint. Give the code to a new member, and read them the fingerprint another way than the code |
+| `car lattice org grant` | As a key holder of `--org`: hand the org key to each member you `--confirm`, every member whose CAR you attested, and yourself. Restart each member's daemon afterwards |
+| `car lattice org granter-key` | Print your login-derived granter key for `--org`, to give to one of its key holders so they can add you (`add-granter`). Works without a running daemon |
 | `car lattice org join` | Join your org on this machine: trust the granter keys in an enrollment code, checked against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store; restart the daemon afterwards. Works without a running daemon |
 | `car lattice org policy` | As an org admin: publish the org's Lattice policy floor. It can only narrow what members may do. Replaces the previous policy whole |
+| `car lattice org remove-granter` | As a key holder of `--org`: remove a granter key. Refuses to remove the last one. Works without a running daemon |
 | `car lattice org revoke` | As an org admin: withdraw every attestation of a member. Their org-verified connections end at each colleague's next refresh |
 | `car lattice org rule-add` | Accept, in advance, colleagues' offers for one project with a fixed share list. Your choice only; no admin can set one for you |
 | `car lattice org rule-remove` | Remove a standing rule. Connections it accepted stay |
@@ -652,6 +659,7 @@ Hidden clap commands are excluded.
 | `calendar_delete_event` | Delete an event from the current Mac user's local Calendar.app through EventKit. Use the stable event_id returned by calendar_events. This changes on-device calendar data and requires approval unless the session has full access; success echoes event_id. |
 | `calendar_events` | Read events from the current Mac user's local Calendar.app through EventKit. This is the private on-device path: it does not use Parslee or require a Microsoft 365 connection. Pass an RFC3339 range; results include stable event and calendar ids for later updates or deletion. After answering a guided schedule check, end with a concrete offer to add or move an event; do not make the change until the user accepts the approval-gated action. |
 | `calendar_update_event` | Update an event in the current Mac user's local Calendar.app through EventKit. Use the stable event_id returned by calendar_events or calendar_create_event. This changes on-device calendar data and requires approval unless the session has full access. |
+| `car_release_status` | CAR's own release status, read from CAR's release sources: the installed version, the latest public release (tag and final release URL), and whether an update is currently offered through the in-app update feed. Call it for any question about which CAR version is installed or latest, or whether an update is available, and state only what it returns, naming each source it read. |
 | `classify_image` | Identify what an image depicts — returns ranked content labels with confidence (e.g. "golden retriever", "airliner", "beach"). Give a path to an image under the working directory. Use this to check what a generated or downloaded image actually shows. |
 | `delegate` | Hand one self-contained sub-task to a fresh sub-agent that shares your model, permissions, and working directory but starts with an EMPTY transcript: it sees only the goal you write, not this conversation. Use it to keep a long exploration or a noisy batch of tool output out of your own context. It runs to completion before this call returns and you receive ONLY its final written answer, so put everything it needs in `goal` and ask it to report exactly what you need back. It cannot delegate further. |
 | `edit_file` | Make a targeted edit to an existing file by replacing `old_text` with `new_text`. Prefer this over write_file for changing part of a file — it never risks clobbering the rest. `old_text` and `new_text` must be the EXACT raw file text: do NOT include the line-number prefixes that read_file displays (the `%6d\t` before each line are display-only — copy only the text after the tab). By default `old_text` must match EXACTLY ONE place in the file; if it matches several, add surrounding lines to make it unique, or set `replace_all: true` to replace every occurrence. You must read the file (read_file) earlier in this session before editing it, and re-read it if it changed on disk since — the runtime rejects an edit to a file you have not read (or that is stale). A paged read is sufficient only for one unique targeted replacement; replace_all requires every line of the current file read, in one read or in pages. |
@@ -676,6 +684,7 @@ Hidden clap commands are excluded.
 | `mail_message_body` | Read one local Mail.app message body by the stable id returned from mail_search. The backend truncates oversized bodies and reports whether truncation occurred. |
 | `mail_search` | Read newest message rows from one local Mail.app mailbox, optionally limited by account and received time. Results are newest-first, header-only, and include CAR's stable id for mail_message_body plus the RFC 5322 message_id when Mail exposes it. This is local Mail.app; use m365_task for the connected Parslee cloud path. After answering a guided reply check, end with a concrete offer to prepare one reply as an approval-gated Mail.app draft. |
 | `mail_send` | Send a message through the current Mac user's local Mail.app. This sends externally and requires chat approval unless the session has full access. Returns the sent message id. |
+| `model_catalog` | Look up CAR's model catalog: the models CAR knows about, with whether each is available here. Call it whenever the user names a model or asks which models exist, before saying a model can be used or picked. Pass the name the user gave as `query`; if no row matches, tell the user plainly that the model is not in CAR's model catalog. |
 | `notes_find` | Find notes in the current Mac user's local Notes.app by words in their title or text. Returns rows with each note's stable id, name, folder and modification time, but no body; pass the id to notes_read. Read-only. |
 | `notes_read` | Read one note's body from the current Mac user's local Notes.app by the id notes_find returns. The body is the HTML exactly as Notes stores it, so after writing a note, read it back here (not with run_applescript, which needs approval) and check it: a `<li><br></li>` is an empty list item, not content. Read-only. |
 | `notify_linked_device` | Send a short CAR notification to a linked consumer device that advertises notifications.deliver, such as the user's iPhone. This only delivers title/body notification text through the CAR host event channel; it does not access contacts, location, photos, microphone, files, or arbitrary phone actions. |
@@ -750,7 +759,7 @@ Hidden clap commands are excluded.
 
 ## Daemon JSON-RPC dispatch methods
 
-602 string-literal dispatch methods across 97 namespaces; 0 are not referenced by `docs/websocket-protocol.md`.
+605 string-literal dispatch methods across 98 namespaces; 0 are not referenced by `docs/websocket-protocol.md`.
 
 Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCase aliases are grouped under `root`. Roles are freshly derived from the daemon handler's authorization call sites: `host` for host-management authority, `owner` for per-resource ownership, `agent` for a bound agent identity, `operator_only` for an operator or host but not a supervised agent, and `operator` for methods without a caller-role guard. They describe an auth-enabled deployment because host gates are conditional on a configured host token.
 
@@ -807,6 +816,7 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 
 | Method | Caller role | Documented |
 |---|---|---|
+| `agent_permissions.apply_standing` | `operator` | yes |
 | `agent_permissions.evaluate` | `operator` | yes |
 | `agent_permissions.evaluate_tool` | `host` | yes |
 | `agent_permissions.get` | `operator` | yes |
@@ -859,6 +869,12 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | Method | Caller role | Documented |
 |---|---|---|
 | `assistants.invoke` | `operator` | yes |
+
+### `audit`
+
+| Method | Caller role | Documented |
+|---|---|---|
+| `audit.export` | `host` | yes |
 
 ### `auth`
 
@@ -1258,6 +1274,7 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `lattice.leave` | `owner` | yes |
 | `lattice.nodes` | `owner` | yes |
 | `lattice.org.attest` | `host` | yes |
+| `lattice.org.grant` | `host` | yes |
 | `lattice.org.policy` | `host` | yes |
 | `lattice.org.revoke` | `host` | yes |
 | `lattice.org.rule.add` | `host` | yes |

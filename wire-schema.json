@@ -9,6 +9,7 @@
       "rpc.a2a.peers.remove.params",
       "rpc.accounts.bench.params",
       "rpc.assistants.invoke.params",
+      "rpc.audit.export.params",
       "rpc.brief.curate_fact.params",
       "rpc.browser.run.params",
       "rpc.builder.build.params",
@@ -214,6 +215,7 @@
         "a2a.peers.remove",
         "accounts.bench",
         "assistants.invoke",
+        "audit.export",
         "brief.curate_fact",
         "browser.run",
         "builder.build",
@@ -319,7 +321,6 @@
         "agents.health",
         "agents.list",
         "agents.message.pending",
-        "agents.register_basics",
         "assistant.identity.get",
         "auth.authority_hint",
         "auth.default_context.clear",
@@ -410,7 +411,7 @@
         "voice.tts_stream.list",
         "workflow.list_paused"
       ],
-      "total": 603,
+      "total": 606,
       "uncovered": {
         "typed_without_schema": {
           "a2a.send": "A2aSendParams",
@@ -456,6 +457,7 @@
           "a2ui/unsubscribe",
           "accounts.open",
           "agent/getAuthenticatedExtendedCard",
+          "agent_permissions.apply_standing",
           "agent_permissions.evaluate",
           "agent_permissions.evaluate_tool",
           "agent_permissions.get",
@@ -478,6 +480,7 @@
           "agents.message",
           "agents.message.approve",
           "agents.peers",
+          "agents.register_basics",
           "agents.remove",
           "agents.restart",
           "agents.session_brief",
@@ -645,6 +648,7 @@
           "lattice.leave",
           "lattice.nodes",
           "lattice.org.attest",
+          "lattice.org.grant",
           "lattice.org.policy",
           "lattice.org.revoke",
           "lattice.org.rule.add",
@@ -850,7 +854,7 @@
         "tools.stream.subscribe",
         "tools.unregister"
       ],
-      "total": 603,
+      "total": 606,
       "uncovered": [
         "CancelTask",
         "CreateTaskPushNotificationConfig",
@@ -887,6 +891,7 @@
         "accounts.usage",
         "admission.status",
         "agent/getAuthenticatedExtendedCard",
+        "agent_permissions.apply_standing",
         "agent_permissions.evaluate",
         "agent_permissions.evaluate_tool",
         "agent_permissions.get",
@@ -924,6 +929,7 @@
         "assistant.identity.get",
         "assistant.identity.set",
         "assistants.invoke",
+        "audit.export",
         "auth.accounts",
         "auth.authority_hint",
         "auth.complete",
@@ -1150,6 +1156,7 @@
         "lattice.leave",
         "lattice.nodes",
         "lattice.org.attest",
+        "lattice.org.grant",
         "lattice.org.policy",
         "lattice.org.revoke",
         "lattice.org.rule.add",
@@ -2391,6 +2398,32 @@
       "title": "AssistantInvokeParams",
       "type": "object"
     },
+    "rpc.audit.export.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`audit.export` params. Times are RFC 3339; `until` is exclusive.",
+      "properties": {
+        "agent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "since": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "AuditExportParams",
+      "type": "object"
+    },
     "rpc.brief.curate_fact.params": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
@@ -2487,6 +2520,13 @@
           "additionalProperties": false,
           "description": "One source-derived method row in `capabilities.list`.",
           "properties": {
+            "features": {
+              "description": "Optional additive controls supported by this method.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "method": {
               "type": "string"
             },
@@ -2502,14 +2542,25 @@
         },
         "CapabilityRole": {
           "description": "The closed caller roles emitted by `capabilities.list`.",
-          "enum": [
-            "agent",
-            "owner",
-            "operator",
-            "operator_only",
-            "host"
-          ],
-          "type": "string"
+          "oneOf": [
+            {
+              "enum": [
+                "agent",
+                "owner",
+                "operator",
+                "operator_only",
+                "host"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A browser session signed in through the dashboard's one-time link (car#3675). Only ever a caller's own role; no method is listed under it.",
+              "enum": [
+                "dashboard"
+              ],
+              "type": "string"
+            }
+          ]
         }
       },
       "description": "The `capabilities.list` result.",
@@ -3059,7 +3110,7 @@
     },
     "rpc.host.request_approval.params": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "Request to create an approval prompt in the host surface.",
+      "description": "WebSocket approval creation controls, flattened over the internal request. Internal producers keep the existing creation type and presentation defaults.",
       "properties": {
         "a2ui": {
           "description": "The approval as an A2UI component tree, `{ components: [...], dataModel?: {...} }`. `host.request_approval` refuses the request unless `car_a2ui::approval_surface` accepts it (display components only, a `root`, 64 KiB), and stores the checked surface on the row. `details` is still required context for text channels, which cannot draw it."
@@ -3084,11 +3135,22 @@
           ]
         },
         "details": {},
+        "only_if_floor_clear": {
+          "description": "Refuse a busy owner floor instead of queuing a question.",
+          "type": "boolean"
+        },
         "options": {
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "present": {
+          "description": "Omitted means present, preserving existing callers.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "system_level": {
           "description": "When `true`, the approval is created as system-level: it has no `client_id` owner and any authenticated session may resolve it. This is the right mode for agent-requested approvals where \"the user\" (via CarHost or `car-host approve`) is the resolver, not the requesting agent itself; a supervised agent that tries to resolve its own system-level row is refused (#3453). The previous default (always session-owned by the requester) locked the approval to the agent's WS connection, which broke as soon as the agent reconnected — the new session got a fresh client_id and could no longer resolve its own pending approval, AND CarHost (a different session) couldn't either.\n\nDefaults to `false` for backward compatibility: existing callers that don't set this field keep the strict per-session ownership semantics.",
@@ -3098,7 +3160,7 @@
       "required": [
         "action"
       ],
-      "title": "CreateHostApprovalRequest",
+      "title": "HostRequestApprovalParams",
       "type": "object"
     },
     "rpc.host.resolve_approval.params": {
@@ -3169,6 +3231,23 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
+        "ApprovalResolver": {
+          "additionalProperties": false,
+          "description": "Who resolved a host approval, to the level the connection identifies them (car#3398). `principal` is the server-stamped identity (`conn:<client id>` for a plain WebSocket client, `agent:<id>` for an agent-bound session, `dashboard:<client id>` for the signed-in browser, or the transport's own name for a messaging reply). `transport` is how the decision arrived: `ws`, `host`, `dashboard`, `agent`, or a messaging transport such as `imessage`. It records identity only, never the text of a message that carried the decision. A bare WebSocket client stays a connection id: the daemon cannot tell CarHost from `car-host approve` or iOS when all hold the host token.",
+          "properties": {
+            "principal": {
+              "type": "string"
+            },
+            "transport": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "principal",
+            "transport"
+          ],
+          "type": "object"
+        },
         "BrowserSignInSnapshot": {
           "additionalProperties": false,
           "description": "One browser wait returned by `host.subscribe.pending_signins`.",
@@ -3346,6 +3425,10 @@
               },
               "type": "array"
             },
+            "presented": {
+              "description": "Whether hosts may announce this row. Hidden rows remain listed and answerable, but do not trigger notifications, sounds, banners or badges. Rows written before this field existed retain ordinary presentation.",
+              "type": "boolean"
+            },
             "resolution": {
               "type": [
                 "string",
@@ -3359,12 +3442,24 @@
                 "null"
               ]
             },
+            "resolver": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ApprovalResolver"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Who resolved the approval, stamped by the daemon from the session or transport that resolved it, never from anything the caller sent (car#3398). Absent while the approval is pending and on a row resolved before the daemon recorded resolvers. An existing client ignores it."
+            },
             "status": {
               "$ref": "#/definitions/HostApprovalStatus"
             }
           },
           "required": [
             "id",
+            "presented",
             "action",
             "details",
             "options",
@@ -8299,6 +8394,23 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
+        "ApprovalResolver": {
+          "additionalProperties": false,
+          "description": "Who resolved a host approval, to the level the connection identifies them (car#3398). `principal` is the server-stamped identity (`conn:<client id>` for a plain WebSocket client, `agent:<id>` for an agent-bound session, `dashboard:<client id>` for the signed-in browser, or the transport's own name for a messaging reply). `transport` is how the decision arrived: `ws`, `host`, `dashboard`, `agent`, or a messaging transport such as `imessage`. It records identity only, never the text of a message that carried the decision. A bare WebSocket client stays a connection id: the daemon cannot tell CarHost from `car-host approve` or iOS when all hold the host token.",
+          "properties": {
+            "principal": {
+              "type": "string"
+            },
+            "transport": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "principal",
+            "transport"
+          ],
+          "type": "object"
+        },
         "HostApprovalStatus": {
           "enum": [
             "pending",
@@ -8349,6 +8461,10 @@
           },
           "type": "array"
         },
+        "presented": {
+          "description": "Whether hosts may announce this row. Hidden rows remain listed and answerable, but do not trigger notifications, sounds, banners or badges. Rows written before this field existed retain ordinary presentation.",
+          "type": "boolean"
+        },
         "resolution": {
           "type": [
             "string",
@@ -8362,12 +8478,24 @@
             "null"
           ]
         },
+        "resolver": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ApprovalResolver"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Who resolved the approval, stamped by the daemon from the session or transport that resolved it, never from anything the caller sent (car#3398). Absent while the approval is pending and on a row resolved before the daemon recorded resolvers. An existing client ignores it."
+        },
         "status": {
           "$ref": "#/definitions/HostApprovalStatus"
         }
       },
       "required": [
         "id",
+        "presented",
         "action",
         "details",
         "options",

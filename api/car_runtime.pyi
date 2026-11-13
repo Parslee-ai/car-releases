@@ -638,6 +638,9 @@ class CarRuntime:
     def agent_get_authenticated_extended_card(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `agent/getAuthenticatedExtendedCard` (operator).
 
+    def agent_permissions_apply_standing(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `agent_permissions.apply_standing` (operator).
+
     def agent_permissions_evaluate(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `agent_permissions.evaluate` (operator).
 
@@ -1538,7 +1541,7 @@ class CarRuntime:
 
     # --- Agent basics --------------------------------------------------
 
-    def register_agent_basics(self) -> None:
+    def register_agent_basics(self, root: Optional[str] = None) -> None:
         """Register CAR's built-in agent utility tools.
 
         Adds: read_file, write_file, edit_file, list_dir, find_files,
@@ -1550,8 +1553,13 @@ class CarRuntime:
         configuration (``agents.json``, agent manifests, worker specs,
         ``declagents.json``, ``tasks/``, ``messaging.json``) by any spelling that resolves to one, and do not create a new
         non-ASCII name in CAR's state, run, token or secrets folder. The
-        user's own files stay reachable. Mutating tools go through the normal
-        approval flow.
+        user's own files stay reachable. The tools run as the daemon user,
+        follow symlinks, and are admitted at the session's default tier with
+        no prompt. ``root``, an absolute folder, keeps ``write_file`` and
+        ``edit_file`` inside it: a target that resolves outside it, through a
+        symlink or ``..`` included, is refused naming the root. With no root,
+        writes reach any path the daemon user can. ``bind_sandbox`` and
+        ``bind_substrate`` confine the tools further.
         """
 
     # --- Agent run tracing (U1) ---------------------------------------
@@ -1857,7 +1865,7 @@ class CarRuntime:
         """``host.notify`` — emit a user-facing host notification."""
 
     def host_request_approval(self, request_json: str) -> str:
-        """``host.request_approval`` — request approval for a gated action."""
+        """``host.request_approval`` — request approval; JSON accepts present and only_if_floor_clear."""
 
     def host_resolve_approval(self, request_json: str) -> str:
         """``host.resolve_approval`` — resolve one pending host approval."""
@@ -4303,6 +4311,9 @@ class HostClient:
     def assistant_identity_set(self, params_json: str) -> str: ...
     # Generated host wrapper for `assistant.identity.set`.
 
+    def audit_export(self, params_json: str) -> str: ...
+    # Generated host wrapper for `audit.export`.
+
     def auth_accounts(self, params_json: str) -> str: ...
     # Generated host wrapper for `auth.accounts`.
 
@@ -4467,6 +4478,9 @@ class HostClient:
 
     def lattice_org_attest(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.org.attest`.
+
+    def lattice_org_grant(self, params_json: str) -> str: ...
+    # Generated host wrapper for `lattice.org.grant`.
 
     def lattice_org_policy(self, params_json: str) -> str: ...
     # Generated host wrapper for `lattice.org.policy`.

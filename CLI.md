@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.62.0 (2026-11-12). Every subcommand the installed binary reports is
+> 0.63.0 (2026-11-13). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 88 top-level commands, 190 nested subcommands
+> 89 top-level commands, 191 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 88 subcommands spanning several different jobs:
+`car` is one binary with 89 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -196,6 +196,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car coder-overlays`](#car-coder-overlays) | Show the approved harness overlays — system-prompt and tool-description text applied through `evolution.run` — that every native coder session starts with, or clear them. Nothing removes an applied overlay on its own; `--clear` is how one is taken out of force. Reads the local coder state directory; no daemon needed |
 | [`car keys`](#car-keys) | Store cloud-provider API keys in CAR's secret store, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then the secret store |
 | [`car heal`](#car-heal) | Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges |
+| [`car audit`](#car-audit) | Export the owner's record of what each agent did and who approved it |
 | [`car ledger`](#car-ledger) | Review and grade the owner's decision ledger |
 | [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
@@ -1227,6 +1228,44 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+### car audit
+
+```text
+Export the owner's record of what each agent did and who approved it
+
+Usage: car audit <COMMAND>
+
+Commands:
+  export  Export what each agent did and what was approved, by whom and when, as one JSON document.
+  Joins the per-client event journals, the permission approvals and rejections in approvals.jsonl,
+  the host approvals with their resolvers, and the policy denials. Run content is redacted. States
+  the earliest record it holds and each journal's hash chain status; it does not switch hash
+  chaining on. Works with the daemon down
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car audit export
+
+```text
+Export what each agent did and what was approved, by whom and when, as one JSON document. Joins the
+per-client event journals, the permission approvals and rejections in approvals.jsonl, the host
+approvals with their resolvers, and the policy denials. Run content is redacted. States the earliest
+record it holds and each journal's hash chain status; it does not switch hash chaining on. Works
+with the daemon down
+
+Usage: car audit export [OPTIONS]
+
+Options:
+      --since <SINCE>    Only records at or after this RFC 3339 time
+      --until <UNTIL>    Only records before this RFC 3339 time
+      --agent <AGENT>    Only records that name this agent
+      --output <OUTPUT>  Write the export to this new file (owner-only) instead of printing it
+  -h, --help             Print help
 ```
 
 ### car ledger
@@ -3855,9 +3894,16 @@ Arguments:
   <MODE>   One of: always_allow | require_approval | deny
 
 Options:
-  -y, --yes   Don't ask. CAR's local host key is then not used, so the daemon refuses the change;
-  use the CAR app, or run it in your terminal and answer yes
-  -h, --help  Print help
+  -y, --yes       Don't ask. CAR's local host key is then not used, so the daemon refuses the
+  change; use the CAR app, or run it in your terminal and answer yes
+      --as-host   Present the host key of the CAR home `CAR_HOME` names, without asking: for a
+      program that started its own daemon in its own CAR home. Refused without `CAR_HOME`, for this
+      user's own CAR home, and in a process CAR launched as a supervised agent
+      --standing  Also let this exact override (agent, tool, mode and, for always_allow, the tool's
+      schema) be applied again later with no terminal: an unattended `car approvals set-tool` of the
+      same override then applies it instead of being refused. A later change or reset of this agent
+      and tool by a person ends it
+  -h, --help      Print help
 ```
 
 #### car approvals evaluate-tool
@@ -4272,24 +4318,37 @@ Org-attested connections: status, admin attestation and policy, and your standin
 Usage: car lattice org [OPTIONS] <COMMAND>
 
 Commands:
-  status       Whether org connections are on, this CAR's fingerprint and attestation, and (for an
-  org admin) colleagues' CARs awaiting one
-  attest       As an org admin: vouch that an announced CAR belongs to the colleague who announced
-  it. Check its fingerprint with them first
-  revoke       As an org admin: withdraw every attestation of a member. Their org-verified
+  status          Whether org connections are on, this CAR's fingerprint and attestation, and (for
+  an org admin) colleagues' CARs awaiting one
+  attest          As an org admin: vouch that an announced CAR belongs to the colleague who
+  announced it. Check its fingerprint with them first
+  revoke          As an org admin: withdraw every attestation of a member. Their org-verified
   connections end at each colleague's next refresh
-  policy       As an org admin: publish the org's Lattice policy floor. It can only narrow what
+  policy          As an org admin: publish the org's Lattice policy floor. It can only narrow what
   members may do. Replaces the previous policy whole
-  rules        Your standing auto-accept rules
-  rule-add     Accept, in advance, colleagues' offers for one project with a fixed share list. Your
-  choice only; no admin can set one for you
-  rule-remove  Remove a standing rule. Connections it accepted stay
-  enroll-code  Print your org's enrollment code and its fingerprint. Give the code to a new member,
-  and read them the fingerprint another way than the code
-  join         Join your org on this machine: trust the granter keys in an enrollment code, checked
-  against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store;
-  restart the daemon afterwards. Works without a running daemon
-  help         Print this message or the help of the given subcommand(s)
+  rules           Your standing auto-accept rules
+  rule-add        Accept, in advance, colleagues' offers for one project with a fixed share list.
+  Your choice only; no admin can set one for you
+  rule-remove     Remove a standing rule. Connections it accepted stay
+  enroll-code     Print your org's enrollment code and its fingerprint. Give the code to a new
+  member, and read them the fingerprint another way than the code
+  join            Join your org on this machine: trust the granter keys in an enrollment code,
+  checked against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to the secret
+  store; restart the daemon afterwards. Works without a running daemon
+  create          As an Owner or Admin of `--org`: start its org scope on this CAR, with your
+  login-derived granter key (or the `--granter` keys) as its key holders. Writes
+  PARSLEE_SYNC_ORG_SCOPE to the secret store and prints the enrollment code and fingerprint; restart
+  the daemon afterwards. Refuses an org that already has org scope here. Works without a running
+  daemon
+  granter-key     Print your login-derived granter key for `--org`, to give to one of its key
+  holders so they can add you (`add-granter`). Works without a running daemon
+  add-granter     As a key holder of `--org`: add another admin's granter key. Prints the new
+  enrollment code; every member joins with it again. Works without a running daemon
+  remove-granter  As a key holder of `--org`: remove a granter key. Refuses to remove the last one.
+  Works without a running daemon
+  grant           As a key holder of `--org`: hand the org key to each member you `--confirm`, every
+  member whose CAR you attested, and yourself. Restart each member's daemon afterwards
+  help            Print this message or the help of the given subcommand(s)
 
 Options:
       --org <ORG>  Which org, when this CAR serves several. Required for an admin or rule change

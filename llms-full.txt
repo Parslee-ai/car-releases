@@ -10,7 +10,7 @@ readers to a sign-in page. This bundle intentionally excludes
 CLAUDE.md, the private repo's root README.md, and individual crate
 READMEs — see the header comment in scripts/build-llms-full.sh for why.
 
-SIZE: 2420 KB, roughly 605K tokens at ~4 chars/token — this bundle is LARGE. If your context budget is
+SIZE: 2446 KB, roughly 611K tokens at ~4 chars/token — this bundle is LARGE. If your context budget is
 tight, read llms.txt instead (a few KB) and fetch only the documents it
 names; every one of them is published individually.
 
@@ -124,17 +124,17 @@ Source: release-mirror/CLI.md
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.62.0 (2026-11-12). Every subcommand the installed binary reports is
+> 0.63.0 (2026-11-13). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 88 top-level commands, 190 nested subcommands
+> 89 top-level commands, 191 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 88 subcommands spanning several different jobs:
+`car` is one binary with 89 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -317,6 +317,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car coder-overlays`](#car-coder-overlays) | Show the approved harness overlays — system-prompt and tool-description text applied through `evolution.run` — that every native coder session starts with, or clear them. Nothing removes an applied overlay on its own; `--clear` is how one is taken out of force. Reads the local coder state directory; no daemon needed |
 | [`car keys`](#car-keys) | Store cloud-provider API keys in CAR's secret store, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then the secret store |
 | [`car heal`](#car-heal) | Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges |
+| [`car audit`](#car-audit) | Export the owner's record of what each agent did and who approved it |
 | [`car ledger`](#car-ledger) | Review and grade the owner's decision ledger |
 | [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
@@ -1348,6 +1349,44 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+### car audit
+
+```text
+Export the owner's record of what each agent did and who approved it
+
+Usage: car audit <COMMAND>
+
+Commands:
+  export  Export what each agent did and what was approved, by whom and when, as one JSON document.
+  Joins the per-client event journals, the permission approvals and rejections in approvals.jsonl,
+  the host approvals with their resolvers, and the policy denials. Run content is redacted. States
+  the earliest record it holds and each journal's hash chain status; it does not switch hash
+  chaining on. Works with the daemon down
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car audit export
+
+```text
+Export what each agent did and what was approved, by whom and when, as one JSON document. Joins the
+per-client event journals, the permission approvals and rejections in approvals.jsonl, the host
+approvals with their resolvers, and the policy denials. Run content is redacted. States the earliest
+record it holds and each journal's hash chain status; it does not switch hash chaining on. Works
+with the daemon down
+
+Usage: car audit export [OPTIONS]
+
+Options:
+      --since <SINCE>    Only records at or after this RFC 3339 time
+      --until <UNTIL>    Only records before this RFC 3339 time
+      --agent <AGENT>    Only records that name this agent
+      --output <OUTPUT>  Write the export to this new file (owner-only) instead of printing it
+  -h, --help             Print help
 ```
 
 ### car ledger
@@ -3976,9 +4015,16 @@ Arguments:
   <MODE>   One of: always_allow | require_approval | deny
 
 Options:
-  -y, --yes   Don't ask. CAR's local host key is then not used, so the daemon refuses the change;
-  use the CAR app, or run it in your terminal and answer yes
-  -h, --help  Print help
+  -y, --yes       Don't ask. CAR's local host key is then not used, so the daemon refuses the
+  change; use the CAR app, or run it in your terminal and answer yes
+      --as-host   Present the host key of the CAR home `CAR_HOME` names, without asking: for a
+      program that started its own daemon in its own CAR home. Refused without `CAR_HOME`, for this
+      user's own CAR home, and in a process CAR launched as a supervised agent
+      --standing  Also let this exact override (agent, tool, mode and, for always_allow, the tool's
+      schema) be applied again later with no terminal: an unattended `car approvals set-tool` of the
+      same override then applies it instead of being refused. A later change or reset of this agent
+      and tool by a person ends it
+  -h, --help      Print help
 ```
 
 #### car approvals evaluate-tool
@@ -4393,24 +4439,37 @@ Org-attested connections: status, admin attestation and policy, and your standin
 Usage: car lattice org [OPTIONS] <COMMAND>
 
 Commands:
-  status       Whether org connections are on, this CAR's fingerprint and attestation, and (for an
-  org admin) colleagues' CARs awaiting one
-  attest       As an org admin: vouch that an announced CAR belongs to the colleague who announced
-  it. Check its fingerprint with them first
-  revoke       As an org admin: withdraw every attestation of a member. Their org-verified
+  status          Whether org connections are on, this CAR's fingerprint and attestation, and (for
+  an org admin) colleagues' CARs awaiting one
+  attest          As an org admin: vouch that an announced CAR belongs to the colleague who
+  announced it. Check its fingerprint with them first
+  revoke          As an org admin: withdraw every attestation of a member. Their org-verified
   connections end at each colleague's next refresh
-  policy       As an org admin: publish the org's Lattice policy floor. It can only narrow what
+  policy          As an org admin: publish the org's Lattice policy floor. It can only narrow what
   members may do. Replaces the previous policy whole
-  rules        Your standing auto-accept rules
-  rule-add     Accept, in advance, colleagues' offers for one project with a fixed share list. Your
-  choice only; no admin can set one for you
-  rule-remove  Remove a standing rule. Connections it accepted stay
-  enroll-code  Print your org's enrollment code and its fingerprint. Give the code to a new member,
-  and read them the fingerprint another way than the code
-  join         Join your org on this machine: trust the granter keys in an enrollment code, checked
-  against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store;
-  restart the daemon afterwards. Works without a running daemon
-  help         Print this message or the help of the given subcommand(s)
+  rules           Your standing auto-accept rules
+  rule-add        Accept, in advance, colleagues' offers for one project with a fixed share list.
+  Your choice only; no admin can set one for you
+  rule-remove     Remove a standing rule. Connections it accepted stay
+  enroll-code     Print your org's enrollment code and its fingerprint. Give the code to a new
+  member, and read them the fingerprint another way than the code
+  join            Join your org on this machine: trust the granter keys in an enrollment code,
+  checked against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to the secret
+  store; restart the daemon afterwards. Works without a running daemon
+  create          As an Owner or Admin of `--org`: start its org scope on this CAR, with your
+  login-derived granter key (or the `--granter` keys) as its key holders. Writes
+  PARSLEE_SYNC_ORG_SCOPE to the secret store and prints the enrollment code and fingerprint; restart
+  the daemon afterwards. Refuses an org that already has org scope here. Works without a running
+  daemon
+  granter-key     Print your login-derived granter key for `--org`, to give to one of its key
+  holders so they can add you (`add-granter`). Works without a running daemon
+  add-granter     As a key holder of `--org`: add another admin's granter key. Prints the new
+  enrollment code; every member joins with it again. Works without a running daemon
+  remove-granter  As a key holder of `--org`: remove a granter key. Refuses to remove the last one.
+  Works without a running daemon
+  grant           As a key holder of `--org`: hand the org key to each member you `--confirm`, every
+  member whose CAR you attested, and yourself. Restart each member's daemon afterwards
+  help            Print this message or the help of the given subcommand(s)
 
 Options:
       --org <ORG>  Which org, when this CAR serves several. Required for an admin or rule change
@@ -5852,7 +5911,7 @@ Source: release-mirror/ASSISTANT.md
 
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.62.0**. Check yours with `car --version`; if it
+> Describes CAR **0.63.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -6378,7 +6437,7 @@ Source: release-mirror/MCP.md
 
 # CAR as an MCP server
 
-> Describes CAR **0.62.0**. Check yours with `car --version`; if it
+> Describes CAR **0.63.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 Wire CAR's graph memory, skill storage, static plan verification, and policy
@@ -8059,6 +8118,8 @@ Hidden clap commands are excluded.
 | `car approvals reset-tool` | Remove one exact agent/tool approval override |
 | `car approvals set-observer` | Grant (`on`) or withdraw (`off`) one agent's watcher view. An agent sees only its own approvals and host events unless it holds this. It applies on macOS and Windows; on Linux a walled agent cannot call those methods at all, so for a walled agent the grant changes nothing there. While a watcher is granted, a daemon or `car` older than this release reading the same state treats agent-permissions.json as damaged (it asks before every gated call); withdraw the grant before downgrading |
 | `car approvals set-tool` | Set an approval mode for one exact agent and exact tool. `always_allow` requires that agent to be attached with an eligible live callback |
+| `car audit` | Export the owner's record of what each agent did and who approved it |
+| `car audit export` | Export what each agent did and what was approved, by whom and when, as one JSON document. Joins the per-client event journals, the permission approvals and rejections in approvals.jsonl, the host approvals with their resolvers, and the policy denials. Run content is redacted. States the earliest record it holds and each journal's hash chain status; it does not switch hash chaining on. Works with the daemon down |
 | `car auth` | Parslee account authentication for CAR cloud-backed features |
 | `car auth accounts` | List all stored Parslee logins (active marked) |
 | `car auth default-org` | Show or set the default organization: the org new work uses when nothing more specific (an explicit choice, the repository, the agent) names one. Separate from the active login, and cleared — never moved to another login — when its login is removed or its membership ends |
@@ -8197,10 +8258,15 @@ Hidden clap commands are excluded.
 | `car lattice knocks` | CARs discovered on your network, and knocks waiting in both directions |
 | `car lattice nodes` | List live nodes — agents, coding sessions, and people |
 | `car lattice org` | Org-attested connections: status, admin attestation and policy, and your standing auto-accept rules |
+| `car lattice org add-granter` | As a key holder of `--org`: add another admin's granter key. Prints the new enrollment code; every member joins with it again. Works without a running daemon |
 | `car lattice org attest` | As an org admin: vouch that an announced CAR belongs to the colleague who announced it. Check its fingerprint with them first |
+| `car lattice org create` | As an Owner or Admin of `--org`: start its org scope on this CAR, with your login-derived granter key (or the `--granter` keys) as its key holders. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store and prints the enrollment code and fingerprint; restart the daemon afterwards. Refuses an org that already has org scope here. Works without a running daemon |
 | `car lattice org enroll-code` | Print your org's enrollment code and its fingerprint. Give the code to a new member, and read them the fingerprint another way than the code |
+| `car lattice org grant` | As a key holder of `--org`: hand the org key to each member you `--confirm`, every member whose CAR you attested, and yourself. Restart each member's daemon afterwards |
+| `car lattice org granter-key` | Print your login-derived granter key for `--org`, to give to one of its key holders so they can add you (`add-granter`). Works without a running daemon |
 | `car lattice org join` | Join your org on this machine: trust the granter keys in an enrollment code, checked against the fingerprint an admin read to you. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store; restart the daemon afterwards. Works without a running daemon |
 | `car lattice org policy` | As an org admin: publish the org's Lattice policy floor. It can only narrow what members may do. Replaces the previous policy whole |
+| `car lattice org remove-granter` | As a key holder of `--org`: remove a granter key. Refuses to remove the last one. Works without a running daemon |
 | `car lattice org revoke` | As an org admin: withdraw every attestation of a member. Their org-verified connections end at each colleague's next refresh |
 | `car lattice org rule-add` | Accept, in advance, colleagues' offers for one project with a fixed share list. Your choice only; no admin can set one for you |
 | `car lattice org rule-remove` | Remove a standing rule. Connections it accepted stay |
@@ -8370,6 +8436,7 @@ Hidden clap commands are excluded.
 | `calendar_delete_event` | Delete an event from the current Mac user's local Calendar.app through EventKit. Use the stable event_id returned by calendar_events. This changes on-device calendar data and requires approval unless the session has full access; success echoes event_id. |
 | `calendar_events` | Read events from the current Mac user's local Calendar.app through EventKit. This is the private on-device path: it does not use Parslee or require a Microsoft 365 connection. Pass an RFC3339 range; results include stable event and calendar ids for later updates or deletion. After answering a guided schedule check, end with a concrete offer to add or move an event; do not make the change until the user accepts the approval-gated action. |
 | `calendar_update_event` | Update an event in the current Mac user's local Calendar.app through EventKit. Use the stable event_id returned by calendar_events or calendar_create_event. This changes on-device calendar data and requires approval unless the session has full access. |
+| `car_release_status` | CAR's own release status, read from CAR's release sources: the installed version, the latest public release (tag and final release URL), and whether an update is currently offered through the in-app update feed. Call it for any question about which CAR version is installed or latest, or whether an update is available, and state only what it returns, naming each source it read. |
 | `classify_image` | Identify what an image depicts — returns ranked content labels with confidence (e.g. "golden retriever", "airliner", "beach"). Give a path to an image under the working directory. Use this to check what a generated or downloaded image actually shows. |
 | `delegate` | Hand one self-contained sub-task to a fresh sub-agent that shares your model, permissions, and working directory but starts with an EMPTY transcript: it sees only the goal you write, not this conversation. Use it to keep a long exploration or a noisy batch of tool output out of your own context. It runs to completion before this call returns and you receive ONLY its final written answer, so put everything it needs in `goal` and ask it to report exactly what you need back. It cannot delegate further. |
 | `edit_file` | Make a targeted edit to an existing file by replacing `old_text` with `new_text`. Prefer this over write_file for changing part of a file — it never risks clobbering the rest. `old_text` and `new_text` must be the EXACT raw file text: do NOT include the line-number prefixes that read_file displays (the `%6d\t` before each line are display-only — copy only the text after the tab). By default `old_text` must match EXACTLY ONE place in the file; if it matches several, add surrounding lines to make it unique, or set `replace_all: true` to replace every occurrence. You must read the file (read_file) earlier in this session before editing it, and re-read it if it changed on disk since — the runtime rejects an edit to a file you have not read (or that is stale). A paged read is sufficient only for one unique targeted replacement; replace_all requires every line of the current file read, in one read or in pages. |
@@ -8394,6 +8461,7 @@ Hidden clap commands are excluded.
 | `mail_message_body` | Read one local Mail.app message body by the stable id returned from mail_search. The backend truncates oversized bodies and reports whether truncation occurred. |
 | `mail_search` | Read newest message rows from one local Mail.app mailbox, optionally limited by account and received time. Results are newest-first, header-only, and include CAR's stable id for mail_message_body plus the RFC 5322 message_id when Mail exposes it. This is local Mail.app; use m365_task for the connected Parslee cloud path. After answering a guided reply check, end with a concrete offer to prepare one reply as an approval-gated Mail.app draft. |
 | `mail_send` | Send a message through the current Mac user's local Mail.app. This sends externally and requires chat approval unless the session has full access. Returns the sent message id. |
+| `model_catalog` | Look up CAR's model catalog: the models CAR knows about, with whether each is available here. Call it whenever the user names a model or asks which models exist, before saying a model can be used or picked. Pass the name the user gave as `query`; if no row matches, tell the user plainly that the model is not in CAR's model catalog. |
 | `notes_find` | Find notes in the current Mac user's local Notes.app by words in their title or text. Returns rows with each note's stable id, name, folder and modification time, but no body; pass the id to notes_read. Read-only. |
 | `notes_read` | Read one note's body from the current Mac user's local Notes.app by the id notes_find returns. The body is the HTML exactly as Notes stores it, so after writing a note, read it back here (not with run_applescript, which needs approval) and check it: a `<li><br></li>` is an empty list item, not content. Read-only. |
 | `notify_linked_device` | Send a short CAR notification to a linked consumer device that advertises notifications.deliver, such as the user's iPhone. This only delivers title/body notification text through the CAR host event channel; it does not access contacts, location, photos, microphone, files, or arbitrary phone actions. |
@@ -8468,7 +8536,7 @@ Hidden clap commands are excluded.
 
 ## Daemon JSON-RPC dispatch methods
 
-602 string-literal dispatch methods across 97 namespaces; 0 are not referenced by `docs/websocket-protocol.md`.
+605 string-literal dispatch methods across 98 namespaces; 0 are not referenced by `docs/websocket-protocol.md`.
 
 Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCase aliases are grouped under `root`. Roles are freshly derived from the daemon handler's authorization call sites: `host` for host-management authority, `owner` for per-resource ownership, `agent` for a bound agent identity, `operator_only` for an operator or host but not a supervised agent, and `operator` for methods without a caller-role guard. They describe an auth-enabled deployment because host gates are conditional on a configured host token.
 
@@ -8525,6 +8593,7 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 
 | Method | Caller role | Documented |
 |---|---|---|
+| `agent_permissions.apply_standing` | `operator` | yes |
 | `agent_permissions.evaluate` | `operator` | yes |
 | `agent_permissions.evaluate_tool` | `host` | yes |
 | `agent_permissions.get` | `operator` | yes |
@@ -8577,6 +8646,12 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | Method | Caller role | Documented |
 |---|---|---|
 | `assistants.invoke` | `operator` | yes |
+
+### `audit`
+
+| Method | Caller role | Documented |
+|---|---|---|
+| `audit.export` | `host` | yes |
 
 ### `auth`
 
@@ -8976,6 +9051,7 @@ Namespaces are the prefix before the first `.` or `/`; unqualified and PascalCas
 | `lattice.leave` | `owner` | yes |
 | `lattice.nodes` | `owner` | yes |
 | `lattice.org.attest` | `host` | yes |
+| `lattice.org.grant` | `host` | yes |
 | `lattice.org.policy` | `host` | yes |
 | `lattice.org.revoke` | `host` | yes |
 | `lattice.org.rule.add` | `host` | yes |
@@ -9785,7 +9861,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 **Not indexed, on purpose:** the separate "## Notification methods (server → client)" section (`host.event`, `voice.event`, `coder.event`, `coder.discuss.event`, `browser.signin_needed`/`resolved`) documents push-notification *payload shapes*, not additional namespaced RPC methods — read it directly in the full doc. Six headings documented **inside** "## Method reference" itself are excluded for the same reason — they are server-initiated pushes, not client-callable requests: `browser.view.event`, `models.pull_progress`, `models.upgrade_available`, `models.suggestion_available`, `runs.trace.event`, and `coder.session_changed` (documented a second time, briefly, in the separate Notification methods section above). The "a2a (in-core dispatcher)" subsection's 9-11 A2A v1.0 methods are also excluded: they're documented as a table of `PascalCase` / `slash/form` name pairs with no per-method heading to anchor to, and the source doc doesn't say which form is the literal wire `method` string.
 
-**91 namespaces, 557 methods.**
+**92 namespaces, 560 methods.**
 
 ## a2a (7)
 
@@ -9830,8 +9906,9 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`agent.browser.input`](websocket-protocol/browser.md#agentbrowserinput-agentbrowsercontrol-agentbrowsercapture-agentbrowserhost_connected-daemon--agent-reverse-calls) — params are one of { op: "navigate", url } · { op:...
 - [`agent.chat`](websocket-protocol/agents.md#agentchat-daemon--agent-reverse-call--agentchatevent) — For attached supervised agents, agents.chat...
 
-## agent_permissions (11)
+## agent_permissions (12)
 
+- [`agent_permissions.apply_standing`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — No host key. Params { agent_id, tool, mode }....
 - [`agent_permissions.evaluate`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — Params { agent_id, tier }.
 - [`agent_permissions.evaluate_tool`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — Host-management-only and capability-gated.
 - [`agent_permissions.get`](websocket-protocol/top-level.md#agent_permissions--per-agent-approval-policy-ws-only) — Params {}. Returns the raw policy { default:...
@@ -9878,6 +9955,10 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 ## assistants (1)
 
 - [`assistants.invoke`](websocket-protocol/assistants.md#assistantsinvoke) — Daemon-owned invocation of a built-in ready-to-use...
+
+## audit (1)
+
+- [`audit.export`](websocket-protocol/audit.md#auditexport) — Authorization: the host-management session only.
 
 ## automation (4)
 
@@ -10127,7 +10208,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`host.notify`](websocket-protocol/host.md#hostnotify) — Native hosts may honor payload.target_device_id to...
 - [`host.register_agent`](websocket-protocol/host.md#hostregister_agent)
 - [`host.register_device`](websocket-protocol/host.md#hostregister_device) — Ownership follows the registering WebSocket session.
-- [`host.request_approval`](websocket-protocol/host.md#hostrequest_approval) — subscribed is literal: whether the requesting...
+- [`host.request_approval`](websocket-protocol/host.md#hostrequest_approval) — present defaults to true.
 - [`host.resolve_approval`](websocket-protocol/host.md#hostresolve_approval) — Errors (-32003, with a stable error.data.reason):
 - [`host.set_status`](websocket-protocol/host.md#hostset_status) — Broadcasts an agent.status_changed event to...
 - [`host.subscribe`](websocket-protocol/host.md#hostsubscribe) — Registers the connection to receive host.event...
@@ -10154,7 +10235,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 - [`keychain.status`](websocket-protocol/keychain.md#keychainstatus)
 
-## lattice (36)
+## lattice (37)
 
 - [`lattice.claim`](websocket-protocol/lattice.md#latticeclaim) — Exclusive: the holder check and the insert happen...
 - [`lattice.claims`](websocket-protocol/lattice.md#latticeclaims)
@@ -10181,6 +10262,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`lattice.leave`](websocket-protocol/lattice.md#latticeleave) — Without params, drops the caller's profile and...
 - [`lattice.nodes`](websocket-protocol/lattice.md#latticenodes) — Lists live nodes — an agent profile whose...
 - [`lattice.org.attest`](websocket-protocol/lattice.md#latticeorgattest) — Granters only — an operator whose login-derived...
+- [`lattice.org.grant`](websocket-protocol/lattice.md#latticeorggrant) — Granters only, host-only.
 - [`lattice.org.policy`](websocket-protocol/lattice.md#latticeorgpolicy) — Granters only. Publishes the org's Lattice policy,...
 - [`lattice.org.revoke`](websocket-protocol/lattice.md#latticeorgrevoke) — Granters only. Voids every attestation of account...
 - [`lattice.org.rule.add`](websocket-protocol/lattice.md#latticeorgruleadd) — Accepts, in advance, offers from attested...
@@ -10648,9 +10730,10 @@ The dispatcher follows standard JSON-RPC classification: an `unknown method: ...
 Runtime discovery for clients that cannot read files or run `car capabilities`.
 
 - **Params:** `{}`.
-- **Returns:** `{ caller_role, count, methods: [{ method, role }] }`, sorted by method through the generated capability table. Each role is one of `agent`, `owner`, `operator`, `operator_only`, or `host` and is the same derived role published in the generated capability manifest (`car capabilities --json`, car.parslee.ai/capabilities.json). `operator_only` means an unbound operator client or host may call the method, but a supervised agent may not.
+- **Returns:** `{ caller_role, count, methods: [{ method, role, features?: string[] }] }`, sorted by method through the generated capability table. Each role is one of `agent`, `owner`, `operator`, `operator_only`, or `host` and is the same derived role published in the generated capability manifest (`car capabilities --json`, car.parslee.ai/capabilities.json). `operator_only` means an unbound operator client or host may call the method, but a supervised agent may not.
+- **Optional controls:** a method may advertise supported additive request fields in `features`. `host.request_approval` lists `present` and `only_if_floor_clear`; clients must check that entry before depending on those controls. Methods with no advertised controls omit `features`.
 - **Host role unavailable (car#3404, then "Host authority fails closed"):** when the daemon has no host token installed (started with `--no-auth`, its host-token write failed at startup, or an embedder built the server state without one), no session can be the host, so every host-management method, and every other host gate, refuses every session. The one exception is `host.resolve_approval`, which still admits an operator session holding the daemon token until it moves to the host role (car#3701). The result then adds `single_principal_mode: "host role unavailable: no host token is installed, so host-management methods refuse; cause: <cause>"`, where the cause is `the daemon was started with --no-auth`, `writing the host token failed: <error>`, or, for an embedder, that nothing installed one. Test for the key's presence; the cause text varies. The field is absent when a host token is installed. `caller_role` and the listed methods are computed exactly as without it.
-- **Filtering:** an agent-scoped session receives `agent`, resource-conditional `owner`, and ungated `operator` rows, but never `operator_only` or `host`; an unbound daemon session receives `operator` and `operator_only`; a host-management session receives `host`, `owner`, `operator_only`, and `operator`. Ownership remains checked against the concrete resource when an owner method is called.
+- **Filtering:** each session receives the methods it can call. An agent-scoped session receives `agent`, resource-conditional `owner`, and ungated `operator` rows, but never `operator_only` or `host`. A host-management session receives every row, `agent` rows included: they are checked against the caller's own agent or host authority, which a host passes (`agents.chat`, `agents.start`, `infer`, `runs.list` and the rest). An unbound session receives `operator` and `operator_only` rows only, whether or not a host token is installed. The listing is conservative: an own-agent-or-host method such as `agents.start` refuses an unbound session, while a few `agent` rows (`infer`, `goal.status`) admit one but are not listed (car#4353). Ownership remains checked against the concrete resource when an owner method is called.
 
 The package form is `daemonCall("capabilities.list", "{}")` / `daemon_call("capabilities.list", "{}")`: the second argument is a JSON string even though the wire params are an object. The generated typed forms are `capabilitiesList("{}")` and `capabilities_list("{}")`.
 
@@ -11515,6 +11598,13 @@ per-session ownership on every mutation:
   session"`. `host.register_agent` also refuses to overwrite an
   agent owned by a different session — unregister-from-owner
   first.
+- **Approval presentation.** `HostApprovalRequest.presented` is an explicit
+  boolean on rows in replies, lists, subscription snapshots, durable records,
+  and full-row `approval.requested` / `approval.resolved` payloads. False keeps
+  the row listed and answerable but suppresses CarHost notifications, sounds,
+  banners, new-request activity and attention counts on iOS, Android and macOS.
+  Ordinary rows carry true; absence in older payloads means true. See
+  [host.request_approval](#hostrequest_approval).
 - **Approvals.** `HostApprovalRequest` carries an optional
   `client_id` field:
   - `Some(x)` — the approval was raised by session `x` via
@@ -12832,8 +12922,45 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   intended for another linked device.
 
 #### `host.request_approval`
-- **Params**: `CreateHostApprovalRequest` — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean, deadline?: number, a2ui?: { components: object[], dataModel?: object } }`
-- **Returns**: `HostApproval & { subscribed: boolean, answerable: boolean }`
+- **Params**: `HostRequestApprovalParams` (the flattened `CreateHostApprovalRequest` plus presentation controls) — `{ agent_id?: string, action: string, details?: object, options?: string[], system_level?: boolean, deadline?: number, a2ui?: { components: object[], dataModel?: object }, present?: boolean, only_if_floor_clear?: boolean }`
+- **Returns**: `HostApproval & { subscribed: boolean, answerable: boolean }` on acceptance, or `{ refused: true, reason: "floor_busy" }` for a busy-floor refusal.
+- `present` defaults to `true`. Set `false` to open an approval row without
+  opening, presenting, or parking a phone question. The pending row still
+  lists in `host.approvals` and the standup/dashboard can resolve it through
+  `host.resolve_approval` with one of its `options` (for example `ask`, `leave`,
+  `skip`). Existing ownership and `answerable` rules still apply; use
+  `system_level: true` for a row the owner answers. The presentation choice
+  survives restart until the row is settled or pruned.
+- Every accepted row carries `presented: boolean`: `false` for `present:false`,
+  `true` otherwise. It travels in the request reply, `host.approvals`, the
+  `host.subscribe.approvals` snapshot, durable approval records, and full-row
+  `approval.requested` and `approval.resolved` event payloads (including
+  auto-cancellation). These are the events that announce an approval row;
+  `approval.resolve_requested`, `approval.self_resolved`, `approval.withdrawn`
+  and refusal events describe lifecycle actions, not new rows.
+  CarHost on iOS, Android and macOS keeps hidden rows in its approvals view
+  and lets the owner answer them, but skips notifications, sounds, banners and
+  new-request activity announcements. Attention badges/counts exclude hidden
+  rows; list membership and empty states still include them. Android has no
+  separate approval badge. Old stored rows and payloads from older daemons
+  without `presented` mean `true`; durable hidden ids from the initial
+  `present:false` implementation are migrated to `presented:false` on restart.
+- `only_if_floor_clear` defaults to `false`. Set `true` to atomically refuse
+  while an owner question is current, including a prior approval awaiting its
+  next mirror tick. Refusal creates no approval row or queued topic, returns
+  `floor_busy` in this call, and is saved in the owner-floor journal and an
+  `approval.request_refused` host event. It can never deliver later. A clear
+  floor admits and opens an eligible system-level question under the same lock;
+  session-owned and `ws.method:` rows retain their existing transport exclusion. Each transport
+  retains its existing once-per-presentation delivery reservation. Physical
+  delivery still requires an enabled, paired transport. With `present: false`,
+  the busy check still applies, but acceptance only opens the row.
+  The guarded reconciliation also opens topics for older eligible pending rows
+  on a daemon with no messaging transport; those rows keep the floor busy
+  until settled or expired, although no transport sends them.
+- `capabilities.list` advertises `present` and `only_if_floor_clear` in the
+  `features` array of this method's own entry. Check that entry before sending
+  these fields to an older daemon, which could ignore unknown fields.
 - `subscribed` is literal: whether the requesting session is subscribed to host
   events (the same meaning as `host.subscribe`'s `subscribed`). An unsubscribed
   session receives neither `approval.resolve_requested` nor
@@ -12925,6 +13052,24 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 - **Params**: `ResolveHostApprovalRequest` — `{ approval_id: string, resolution: string }`
 - **Returns**: the `HostApproval` row, resolved with the canonical option text
   (see the single-option rule below).
+  The resolved row carries `resolver: { principal, transport }`, stamped by the
+  daemon from the session or transport that resolved it and never from the
+  request (car#3398). `principal` is `conn:<client id>` for a WebSocket client,
+  `agent:<id>` for an agent-bound session, `dashboard:<client id>` for the
+  signed-in browser, or a messaging transport's own name; `transport` is `ws`,
+  `host`, `dashboard`, `agent`, or the messaging transport (`imessage`,
+  `slack-transport`). A plain WebSocket client stays a connection id: the
+  daemon cannot tell CarHost from `car-host approve` or iOS when each holds the
+  host token, so all three read `conn:<id>` with transport `host`. Identity
+  only: the text of a message that carried a messaging decision is never
+  recorded. Each resolution is also appended to the owner-private
+  `host-approval-resolutions.jsonl` beside the peer-message journal (action
+  text redacted and bounded, `details` never written, and never trimmed:
+  approval records are kept), so a decision is still readable after the 24-hour
+  in-memory row is gone and after a restart. It is not `approvals.jsonl`, the
+  standing-authority store: a host approval never becomes a standing grant.
+  `permission.approve` and `permission.reject` record their reviewer in the
+  same form, `conn:<client id>@host`.
   `status: "pending"` means the request was forwarded to the owning session,
   whose own resolve settles the row and broadcasts `approval.resolved`.
 - **Errors** (`-32003`, with a stable `error.data.reason`):
@@ -13163,6 +13308,66 @@ Validation errors (`UnsupportedCatalog`, `UnsupportedComponent`,
 `LimitExceeded`) propagate to the caller of `a2ui.apply` and **do
 not** broadcast a half-applied envelope.
 
+### audit
+
+The owner's exportable record of what each agent did and who approved it
+(car#3399). One export joins the per-client event journals, the
+`permission.approve` and `permission.reject` decisions in `approvals.jsonl`,
+the host approvals with their resolvers (the daemon-stamped
+`resolver: { principal, transport }` of [host](#host), kept in
+`host-approval-resolutions.jsonl`), and the policy denials.
+
+The same document comes from two entry points that never fall back to each
+other: `car audit export`, which reads the files directly and works with the
+daemon down, and `audit.export`, which reads them through a running daemon.
+
+#### `audit.export`
+- **Params**: `{ since?: string, until?: string, agent?: string }`. The times
+  are RFC 3339; `since` is inclusive and `until` exclusive.
+- **Returns**: `{ generated_at, range: { since, until, agent }, sources,
+  journals: [{ path, events_read, chain: { status } }], actions, denials,
+  approvals, host_approvals, notes }`.
+  - `actions`: the proposals, action transitions and policy violations in the
+    per-client journals, with run content redacted. `denials`: the rejected
+    actions and policy violations only, with the kind, the subject and the
+    reason, and no parameters or output.
+  - `approvals`: every `permission.*` decision in append order (the ledger keeps
+    only the last per fingerprint), each with its `resolver`, time,
+    `fingerprint` and the `actions_admitted` it matched. `host_approvals`: the
+    host approvals with their `resolver` (`principal`, `transport`).
+  - `sources` reports, for `journals`, `approvals` and `host_approvals` each on
+    its own: `earliest_record` (the oldest record that source could read, or
+    null with `holds_no_records: true`), `range_starts_before_earliest_record`
+    (true also for a source that holds nothing when `since` is set, because all
+    of it may have been deleted), `rows_read`, `rows_skipped` (a journal
+    file that could not be read counts as one skipped) and `read_error` (why a
+    file or journals directory that exists could not be read at all, so it is
+    never reported as empty). Each
+    source has its own earliest record because approval records are kept
+    while a finished session journal is deleted after 30 days or past 1,024
+    files; one time over all of them would hide a gap in the action history.
+    `rows_skipped` counts a torn or malformed line that was read past, so it is
+    never dropped without a word.
+  - `chain.status` is `verified`, `broken` (with the loader's reason),
+    `not_chained` or `unreadable`. The export never switches hash chaining on.
+    - With `agent`, only what belongs to that agent is returned. An event's agent
+    is read from the run CAR stamped on it (`run_id`): the run's file sits
+    under its agent's folder in `runs/`. An event whose run file is gone (run
+    retention) cannot be attributed, so it is counted in
+    `sources.journals.events_unattributed` and left out, never silently. A
+    permission decision names no agent and is kept only when it matches the
+    fingerprint of an exported action, gate decision or denial. The gate
+    decisions (`admission_gate_decision`, `approval_recorded`,
+    `permission_decision`) are exported with the actions.
+  - A plain WebSocket client is a connection id: the daemon cannot tell CarHost
+    from `car-host` or iOS when each holds the host token.
+- **Authorization**: the host-management session only. A session bound to an
+  agent is refused, and a daemon with no host token installed refuses every
+  caller with the single-principal notice (a host gate there would admit every
+  authenticated client). A dashboard session is refused.
+- Errors: `audit.export takes { since?, until?, agent? }` for params of another
+  shape, and `audit.export `since` is not an RFC 3339 time` for a time that does
+  not parse.
 ### a2a (in-core dispatcher — releases#28)
 
 The 11 A2A v1.0 JSON-RPC methods (and their v0.3 slash aliases)
@@ -15552,7 +15757,7 @@ to the same bound-identity rule as `lease.*` below.
 - **Params**: `{}`
 - **Returns**: `{ pushed, push_deduped, folded, acked: Hlc | null, state_hash }`; with org-scope sync on, `{ user: <that>, orgs: { <org>: { result } | { error } } }`, plus `org` (the result) or `org_error` when exactly one org is configured — the single-org shape from before.
 - With org-scope sync on, each configured org's delivery subsystem is pumped on its own; one org's failure never hides the personal result or another org's. An org whose subsystem failed to open is retried first.
-- One reconciliation round against the relay: push journal-durable own ops → pull → verify → fold → ack. Returns `FrontierTruncated` (as an error) when the relay has GC'd past this device's frontier — call `sync.rebase` and pump again. FFI: `syncPump` / `sync_pump`. With the Parslee backend and more than one signed-in login (`car auth login --add`), the reply also carries `accounts: { <account_id>: <pump result | {error} | {error, setup_failed: true}> }` — one personal subsystem per login other than the one present at daemon start, pumped best-effort so one login's relay failure never hides another's. They exist only to carry this host's A2A endpoint to each login's other devices and read theirs back for `parslee` peer discovery and peer trust (fleet work keeps one shared budget for all of them); knowledge, transcripts, config and leases stay on the primary subsystem. `auth.remove_account` and `auth.logout` drop the affected login's subsystem and rebuild trust before replying. Every login's key is derived from the same `PARSLEE_SYNC_PASSPHRASE`; a device that used a different one simply does not appear. `setup_failed` marks a login whose subsystem could not be opened (a locked keychain, a full disk, the relay down); it is retried at most every five minutes. The login list is otherwise re-read when the credential-authority generation changes, and at most every five minutes when it has not — the hint is best-effort, and a sign-in change whose hint could not be published looks unchanged — so a login removed outside the daemon stops being trusted even then: on the first `sync.pump` once five minutes have passed since the last unprompted (fallback) listing attempt, provided that listing succeeds (a failed listing drops other logins' trust at once, and the next fallback listing waits another five minutes). A listing prompted by a generation change or a `setup_failed` retry does not reset that clock unless it fails, and a generation change can prompt an earlier listing; a prompted listing that fails restarts that five-minute clock, so a failing credential store is not re-read on every pump — though a pending `setup_failed` retry runs on its own five-minute clock and can still prompt a listing, and a newer nonzero generation still lists at once. Absent with one login, so that reply is unchanged.
+- One reconciliation round against the relay: push journal-durable own ops → pull → verify → fold → ack. Returns `FrontierTruncated` (as an error) when the relay has GC'd past this device's frontier — call `sync.rebase` and pump again. FFI: `syncPump` / `sync_pump`. With the Parslee backend and more than one signed-in login (`car auth login --add`), the reply also carries `accounts: { <account_id>: <pump result | {error} | {error, setup_failed: true}> }` — one personal subsystem per login other than the one present at daemon start, pumped best-effort so one login's relay failure never hides another's. They exist only to carry this host's A2A endpoint to each login's other devices and read theirs back for `parslee` peer discovery and peer trust (fleet work keeps one shared budget for all of them); knowledge, transcripts, config and leases stay on the primary subsystem. `auth.remove_account` and `auth.logout` drop the affected login's subsystem and rebuild trust before replying. Every login's key is derived from the same `PARSLEE_SYNC_PASSPHRASE`; a device that used a different one simply does not appear. `setup_failed` marks a login whose subsystem could not be opened (a locked keychain, a full disk, the relay down); it is retried at most every five minutes. The login list is otherwise re-read when the credential-authority generation changes, and at most every five minutes when it has not — the hint is best-effort, and a sign-in change whose hint could not be published looks unchanged — so a login removed outside the daemon stops being trusted even then: on the first `sync.pump` once five minutes have passed since the last unprompted (fallback) listing attempt, provided that listing succeeds (a failed listing drops other logins' trust at once, and the next fallback listing waits another five minutes). A listing prompted by a generation change or a `setup_failed` retry does not reset that clock unless it fails, and a generation change can prompt an earlier listing; a prompted listing that fails restarts that five-minute clock, so a failing credential store is not re-read on every pump — though a pending `setup_failed` retry runs on its own five-minute clock and can still prompt a listing, and a newer nonzero generation still lists at once. Absent with one login, so that reply is unchanged. After the pull, the pump also runs one pass of org scope from the owner's other devices (see `lattice.org.status` `from_own_devices`): it announces this device's granter sets when they changed and adopts what the owner's other devices agree on. The reply carries `org_scope_from_devices` (the same shape, with `added` naming orgs adopted on this pump) only when something is adopted, in conflict, or the pass failed (`{error}`); a failed pass never fails the pump.
 
 #### `sync.checkpoint`
 - **Params**: `{}`
@@ -17151,7 +17356,9 @@ before connecting, and
 `agents.start` / `stop` / `restart` go out under the agent's own identity.
 CarHost, the Windows tray (whose dashboard sends `agents.start` / `stop` /
 `restart`, and whose setup wizard sends `agent_permissions.set_default`, on its
-own host-authenticated connection), `car claude`, CAR's boot-time
+own host-authenticated connection), `car claude`, `car codex`, `car
+session-enroll` (which the plugin's collaboration server runs for a session
+started plainly), CAR's boot-time
 registration of Parslee Core, and the SDKs are unchanged. Like every host-only
 action, this does not stop a program running as you that reads CAR's local host
 key.
@@ -17192,10 +17399,11 @@ refused ("Host authority fails closed").
 > Single-daemon deployments are unaffected.
 
 #### `agents.register_basics`
-- **Params**: `null`
+- **Params**: `null`, `{}`, or `{ "root": "<absolute folder>" }`
 - **Returns**: `null`
 - Registers CAR's built-in agent utility tools (`read_file`, `write_file`, `edit_file`, `list_dir`, `find_files`, `grep_files`, `calculate`) on this client's session and runs them in the daemon: a later `proposal.submit` calling `calculate` executes there instead of being sent back to the client as `tools.execute`. Mirrors `Runtime::register_agent_basics`. Idempotent. The file tools act on the daemon host (its working directory), so a supervised-agent session is refused with `agents.register_basics is not available to supervised agents`; such an agent registers its own tools with `tools.register`. A session already bound with `session.bindSubstrate` or `session.bindSandbox` keeps that environment.
 - **CAR's own files are refused.** On the daemon host, a built-in file tool whose path resolves to one of CAR's credential files (the `run/` copies of `auth-token` and `host-token`, `env`, anything under `secrets/` and this host's peer identity key `peer-identity.key` under the state root, `CAR_HOME` else `~/.car`; and the platform copies of `auth-token` and `host-token` in the per-platform token folder, which is `<CAR_HOME>/ai.parslee.car` when `CAR_HOME` is set and otherwise `~/Library/Application Support/ai.parslee.car` on macOS, `$XDG_RUNTIME_DIR/ai.parslee.car` or `~/.config/ai.parslee.car` on Linux, and `%LOCALAPPDATA%\ai.parslee.car` on Windows) or authority files (the approval journal the daemon records to, `approvals.jsonl` under the state root unless the embedder configured another, and `agent-permissions.json` under the state root), or the host configuration a daemon-token client must not rewrite: the supervised-agent manifest `agents.json` and each agent's `agents/<id>/manifest.toml`, each worker's `workers/<handle>/spec.toml`, the declared-agents registry `declagents.json` (or `CAR_DECLAGENTS_PATH`), the scheduled-task store `tasks/`, and the messaging configuration `messaging.json`, fails with `file access refused: CAR's daemon credential files … are never reachable through the daemon's agent file tools` (or `file access refused: CAR's authority and host configuration files … are never reachable through the daemon's agent file tools`). The message names the class of file, never its contents. When the supervisor runs on a configured manifest (`--agents-manifest` / `CAR_AGENTS_MANIFEST`), or the daemon only observes a manifest another daemon owns, or the approval ledger on a configured journal, those files, and the `agents/<id>/manifest.toml` and the `workers/<handle>/spec.toml` files beside that manifest, are the ones refused, in addition to the state-root defaults. This holds on every session, including one that never called `agents.register_basics` but registered a tool named `read_file` whose callback answers "unknown tool" (the engine falls through to its built-in). The check is on what the path resolves to: a relative spelling, `..`, a symlink (dangling ones included, since writing through one creates its target), a hard link (macOS and Linux, where the file's identity is compared), a write that would create a new file under `secrets/`, and a not-yet-existing name the volume folds to a protected one (`RUN/HOST-TOKEN`, `approvalſ.jsonl`) are refused the same way. `grep_files` over a folder that holds one of these files still runs and leaves that file out of its matches; `list_dir` and `find_files` refuse only a protected target, since they return names and not contents. A human approval of the call does not lift the refusal. A new name containing non-ASCII characters directly in the state root, `run/`, the platform token folder or `secrets/` is also refused, with `file access refused: the daemon's agent file tools do not create a new non-ASCII name in CAR's state, run, token or secrets folder, because it cannot be told apart from CAR's own files`; an existing file with such a name, an ASCII new name there, and a non-ASCII name anywhere else are unaffected. What this does not protect: the user's own files, which stay readable and writable through these tools by a daemon-token client. Every other path behaves as before.
+- **Params and confinement.** Params are `null`/`{}`, or `{ "root": "<absolute folder>" }`. With no root, the tools run as the daemon user on the daemon host, follow symlinks, and are admitted at the session's default tier with no prompt; a write reaches any path the daemon user can, except the protected files above. With a `root`, `write_file` and `edit_file` refuse a target that resolves outside it, through a symlink or `..` included, with `write_file refused: '<path>' resolves outside the basics root <root>`; reads are unaffected, and a dangling link inside the root is refused, since writing through it creates its target. The check runs before the write: another process that swaps a folder or link under the root between the two can still redirect it (the same limit as the protected-file guard), so a root confines what the agent's own tools reach, not other writers. A relative or non-string `root` is refused. `session.bindSandbox` and `session.bindSubstrate` confine the tools further (car#3406).
 
 #### `agents.list`
 - **Params**: `{}`
@@ -17456,7 +17664,7 @@ refused ("Host authority fails closed").
   - Without `session_id`, removes all standing goals the caller may clear and returns `{ cleared: number }`: every goal for the host or an unbound client, only its own for a supervised agent. A supervised agent clearing another caller's goal by `session_id` is refused (see `goal.set` ownership).
 
 #### `agent.chat` (daemon → agent reverse-call) + `agent.chat.event`
-- For attached supervised agents, `agents.chat` reverse-calls **`agent.chat`** on the target agent's WS connection — resolved via `attached_agents`, so the agent must have `session.auth`'d **with its `agent_id`** (`{ session_id, prompt, turn_id, model?, attachments?, goal?, context?, cwd? }`). The optional `model` is forwarded unchanged from the host request. The agent **acks** `{ accepted: true }` immediately, then streams its reply as **`agent.chat.event`** notifications `{ session_id, turn_id?, kind, delta? }` (`kind: "inference_started" | "inference_retry" | "model_served" | "token" | "tool_call" | "tool_result" | "todos" | "approval_pending" | "approval_resolved" | "goal_evaluated" | "receipt_report" | "done" | "error" | "auth_required"`), which the daemon rewrites to `agents.chat.event` for the host. `turn_id` is the daemon's id for the turn; an agent that echoes it on every frame (`car do --serve` does) has its frames matched to that turn: a frame naming another turn's id (a turn the host's next `agents.chat` on the same `session_id` replaced, or one that has ended) is dropped, so a replaced turn's late terminal cannot end its successor. Its approval frames are the exception: the replaced turn keeps running, so a card it raises after it was replaced reaches the host, which can answer it, and the turn's `approval_resolved` for that card reaches the host too; a card it raised before was closed with its route, and its late `approval_resolved` is consumed against the carried card, as described under `agents.chat.approve`. A host may receive frames before the `agents.chat` reply that carries `turn_id`, so it should use `turn_id` to correlate frames with a turn, never as a gate. A frame without `turn_id` is matched by `session_id` alone, as before. `inference_started { model, attempt, turn, waiting_ms? }` arrives before CAR awaits a model call, and again every 60 s while the call is still awaited, with `waiting_ms` saying how long, so a host's idle watchdog keeps seeing a slow call; and `inference_retry { model, attempt, reason, backoff_ms }` arrives before remote retry backoff. `model_served` carries `{ model_id, local_last_resort, substituted_from?, substitution_reason? }` before each completed turn's content, so a host can identify the actual serving model, mark an on-device last-resort turn, and say which model it replaced and why. `tool_result` carries the bounded/redacted observation shape documented above. `goal_evaluated` is emitted by goal-driven agents after each verifier pass as `{ iteration, met, grounded, reason }`; `receipt_report` carries bounded per-tool receipts, desktop actions when present, and the software completion matrix. `auth_required { reason, message }` replaces the `done`/`error` frame when the turn could not reach Parslee inference because of the account: it follows `receipt_report`, nothing follows it, and on the goal path the loop returns before the verifier runs, so no `goal_evaluated` is emitted for that iteration. `agents.chat.cancel` proxies to `agent.chat.cancel` (a request to the bundled assistant, whose `dispatched` answer it relays; a notification to any other agent), with params `{ session_id, turn_id? }`: `turn_id` names the daemon's id for the turn being stopped whenever its route had one. An agent that retains its ordering entry stops that turn and every older turn of the session, never a newer one the host started after it; with no `turn_id` it stops every turn of the session. An agent says it does so by acknowledging `agent.chat` with `{ accepted: true, stops_by_turn_id: true }`, recorded for its connection from that first acknowledgement; `car do --serve` and the Python chat bridge declare it (the Node bridge does not: a JavaScript handler may still be running an older turn when a newer one starts, and its Stop would reach both). An agent whose gate ends every approval it parks with its own `approval_resolved` says so with `approval_frames: true` in the same acknowledgement, recorded for that turn's route; `car do --serve` declares it. On such a route a decision forwarded through `agents.chat.approve` leaves the mirrored ledger row to that frame, and a route that ends (a Stop, a replaced turn, a failed send, a disconnect) before the frame for a decision that was already forwarded closes the row `unknown`: the gate may have settled it either way. A decision forwarded before the turn's acknowledgement waits for it (up to the acknowledgement timeout) to learn which rule applies, and a route that ends before that acknowledgement closes its row `unknown` too. Without the declaration rows close as described under `agents.chat.approve`; `agents.chat.approve` reverse-*requests* `agent.chat.approve` (resolving an `approval_pending` gate so the turn resumes). In-daemon declarative agents skip the reverse call and stream `token`/`goal_evaluated`/terminal frames directly; cancel flips a local run flag and halts at the next model/tool/goal-check boundary; inline `agents.chat.goal` and image attachments are rejected for them because their own manifest `goal` and scratch-worktree runner own completion.
+- For attached supervised agents, `agents.chat` reverse-calls **`agent.chat`** on the target agent's WS connection — resolved via `attached_agents`, so the agent must have `session.auth`'d **with its `agent_id`** (`{ session_id, prompt, turn_id, model?, attachments?, goal?, context?, cwd? }`). The optional `model` is forwarded unchanged from the host request. The agent **acks** `{ accepted: true }` immediately, then streams its reply as **`agent.chat.event`** notifications `{ session_id, turn_id?, kind, delta? }` (`kind: "inference_started" | "inference_retry" | "model_served" | "token" | "tool_call" | "tool_result" | "todos" | "approval_pending" | "approval_resolved" | "goal_evaluated" | "receipt_report" | "done" | "error" | "auth_required"`), which the daemon rewrites to `agents.chat.event` for the host. `turn_id` is the daemon's id for the turn; an agent that echoes it on every frame (`car do --serve` does) has its frames matched to that turn: a frame naming another turn's id (a turn the host's next `agents.chat` on the same `session_id` replaced, or one that has ended) is dropped, so a replaced turn's late terminal cannot end its successor. Its approval frames are the exception: the replaced turn keeps running, so a card it raises after it was replaced reaches the host, which can answer it, and the turn's `approval_resolved` for that card reaches the host too; a card it raised before was closed with its route, and its late `approval_resolved` is consumed against the carried card, as described under `agents.chat.approve`. A host may receive frames before the `agents.chat` reply that carries `turn_id`, so it should use `turn_id` to correlate frames with a turn, never as a gate. A frame without `turn_id` is matched by `session_id` alone, as before. `inference_started { model, attempt, turn, waiting_ms? }` arrives before CAR awaits a model call, and again every 60 s while the call is still awaited, with `waiting_ms` saying how long, so a host's idle watchdog keeps seeing a slow call; and `inference_retry { model, attempt, reason, backoff_ms }` arrives before remote retry backoff. `model_served` carries `{ model_id, local_last_resort, substituted_from?, substitution_reason? }` before each completed turn's content, so a host can identify the actual serving model, mark an on-device last-resort turn, and say which model it replaced and why. `tool_result` carries the bounded/redacted observation shape documented above. `goal_evaluated` is emitted by goal-driven agents after each verifier pass as `{ iteration, met, grounded, reason }`; `receipt_report` carries bounded per-tool receipts, desktop actions when present, and the software completion matrix. `auth_required { reason, message }` replaces the `done`/`error` frame when the turn could not reach Parslee inference because of the account: it follows `receipt_report`, nothing follows it, and on the goal path the loop returns before the verifier runs, so no `goal_evaluated` is emitted for that iteration. `agents.chat.cancel` proxies to `agent.chat.cancel` (a request to the bundled assistant, whose `dispatched` answer it relays; a notification to any other agent), with params `{ session_id, turn_id? }`: `turn_id` names the daemon's id for the turn being stopped whenever its route had one. An agent that retains its ordering entry stops that turn and every older turn of the session, never a newer one the host started after it; with no `turn_id` it stops every turn of the session. An agent says it does so by acknowledging `agent.chat` with `{ accepted: true, stops_by_turn_id: true }`, recorded for its connection from that first acknowledgement; `car do --serve` and the Python chat bridge declare it (the Node bridge does not: a JavaScript handler may still be running an older turn when a newer one starts, and its Stop would reach both). An agent whose gate ends every approval it parks with its own `approval_resolved` says so with `approval_frames: true` in the same acknowledgement, recorded for that turn's route; `car do --serve` declares it. On such a route a decision forwarded through `agents.chat.approve` leaves the mirrored ledger row to that frame, and a route that ends (a Stop, a replaced turn, a failed send, a disconnect) before the frame for a decision that was already forwarded closes the row `unknown`: the gate may have settled it either way. A decision forwarded before the turn's acknowledgement waits for it (up to the acknowledgement timeout) to learn which rule applies, and a route that ends before that acknowledgement closes its row `unknown` too. Without the declaration rows close as described under `agents.chat.approve`; `agents.chat.approve` reverse-*requests* `agent.chat.approve` (resolving an `approval_pending` gate so the turn resumes). In-daemon declarative agents skip the reverse call and stream `token`/`goal_evaluated`/terminal frames directly; cancel flips a local run flag and halts at the next model/tool/goal-check boundary; inline `agents.chat.goal` is rejected for them because their own manifest `goal` owns completion. Image attachments go with the run's first model request, as Chat sends them; nothing is written into the agent's working folder.
 - **Bounded Stop history:** Bundled receivers retain up to 1,024 named ordering entries across sessions: per built-in assistant service, per Node process-wide chat queue, and per Python client queue. An absent, unseen or evicted identity uses the legacy session-wide Stop and can affect newer current turns. A bridge drops only that runtime owner's queued session turns and permits its own cancellation handler to receive that Stop; it does not itself terminate arbitrary handler code. See `agent.chat.cancel` in `docs/host-protocol.md`.
 - **FFI (agent side):** `registerChatHandler(handlerFn)` / `register_chat_handler(handler)` installs the handler (stored-callback pattern; the per-`CarRuntime` bridge acks and fires it with the params JSON). `CarRuntime.chatEvent(sessionId, kind, delta?)` / `chat_event(...)` emits each `agent.chat.event`; `chatTurnEvent(sessionId, turnId, kind, delta?)` / `chat_turn_event(session_id, turn_id, kind, delta=None)` emits it naming the turn. The params JSON the handler receives carries the turn's `turn_id`; pass it to `chatTurnEvent` / `chat_turn_event` so the frames are matched to that turn. **The handler may call any runtime method and should run the turn inline** — in Python it is dispatched on a dedicated CAR-owned OS thread, never a tokio worker, so `infer_tracked`, `submit_proposal`, `state_set`, and `chat_event` all work from inside it. Before car#905 the Python bridge dispatched on a runtime worker and every one of those raised `PanicException: Cannot start a runtime from within a runtime`; because that is a `BaseException` and `chat_event` hit the same wall, the accepted turn was stranded with the host receiving zero frames. Any `threading.Thread` offload written to work around that is now unnecessary. NAPI was never affected (async `ThreadsafeFunction` dispatch). The same contract covers the `tools.execute`, `tools.cancel`, and `voice.event` callbacks. A `--serve` agent **attaches automatically**: the binding sends `agent_id` on `session.auth` when `CAR_AGENT_ID` + `CAR_AGENT_TOKEN` are set (the supervisor injects them). The bundled `create-car-agent` harness wires all of this in `--serve`, keeping an ephemeral per-`session_id` message thread and running the standard propose→verify→execute loop per turn.
 - Bundled `car do` / `car do --serve` assistant loops run proactive memory before every model turn. The hidden pass maintains compact execution-state memory from the runtime event log, selects at most one relevant remembered fact/procedural warning, and injects it as a `## Proactive Memory` context block. This uses the same assistant memory bank as `remember` / `recall`, but does not require the model to call `recall`; maintenance/intervention decisions are journaled as `proactive_memory_maintained` and `proactive_memory_intervention`. Memory derived from a chat's own runtime events (a failed tool call, a retry, a capped turn) is kept to that chat: it is never injected into another chat, and within its chat it is injected at most once per turn (a goal turn's iterations and a delegated sub-task included) rather than on every model call of the turn. The assistant's `recall` answers only from remembered facts, never from this derived memory.
@@ -20175,6 +20383,13 @@ returns it with `resumed: true` and attaches the caller, so a client that
 already reopens by id after a disconnect needs no other change. Passing a
 `model` different from the live discussion's is refused; close it first.
 
+**Quitting `car board` detaches; it does not close** (the owner's decision on
+car#2153, restated for car#4293). CarHost or another terminal may be in the same
+discussion with a reply running, so `q` and Ctrl-C leave it open, and `x` is
+the way to close one on purpose. The cost: when nothing else is attached, a
+reply that is still running keeps going, and spending, until it ends, and the
+discussion itself stays open until the detached TTL below closes it.
+
 A discussion **no connection is attached to** is closed once its turn has
 ended and it has had no activity for the **detached TTL (1 hour)**, through the
 same terminal close as `coder.discuss.close`. The TTL starts when the last
@@ -20762,8 +20977,9 @@ Clients that require this exact override surface must include `permissions.agent
 - **How remembered answers are enforced.** An approval answer can be remembered for one thing: a web search (`web_search`) by the built-in assistant (`car do --serve`, Parslee Core). The gate is handed the tool's name and nothing from the call. A search sends its query only to the search provider: to its two fixed addresses through a client that never follows a redirect, and on macOS, when CAR's browser is already running, to its result page in a background tab that refuses every request to another origin (a search never starts the browser); a query the provider answers with a redirect (its shortcut syntax, such as `!w rust`) returns no results and a note, and the addresses in the results are not fetched. An `http_request` is never remembered, in any shape: it names its own address and follows same-origin redirects. Nothing else is remembered either, and no saved grant of any kind is read for it: `shell`, `run_applescript`, `run_powershell`, file writes and edits, `remember`, the generators, the mail and calendar tools, `m365_task`, the browser tools, `list_voices`, and any tool outside the catalog map. Whether such a call asks is the tier policy's decision, as before. Before the assistant raises `approval_pending` for a call its standing policy gates, it reads the file once. A standing refusal of the tool's kind refuses it outright. Otherwise, when the tool is `web_search`: an exact `require_approval` override for it makes it ask with plain approve/deny; a conversation, agent or all-agents `browse_web` grant runs it without asking; with none it asks and offers the four choices. A grant counts only when its kind is `browse_web`, it carries `"source": "approval_answer"` and it is not `"pending"`. A record of any other kind (from an earlier build), a record an earlier daemon wrote without a source, and a staged answer not yet activated are ignored and left out of `list_grants`; `revoke_grant` still removes one. The store refuses to write a grant of any other kind. **Checked again at use.** A search a saved answer approved is decided again just before it is dispatched. After the Deny check and the refusal check every approved call gets, the saved answers are consulted once more. That consult is one snapshot covering the answer, a saved refusal, an exact `require_approval` and a Deny (tier or exact; it looks the Deny up under the built-in catalog's tier for `web_search`, full access): with the answer revoked, an exact `require_approval` set, or the file damaged or gone, it asks; a refusal or a Deny refuses it. When the search runs without a new card, that consult is the last read before it is dispatched: a change published before it is honoured, and one that lands after it applies to the next call. When it asks and the person approves, the Deny and refusal checks run again after the card and are the last reads. The person's answer to that card replaces the saved answer's approval in the durable action record. After a restart the resume step makes the same consult for a saved-answer approval it finds, and follows a record that holds a card's answer (a denied action is not run). After a restart the resume step finds each interrupted call's record under the `turn_<n>_call_<k>` id the loop gave it: a call already dispatched is reported indeterminate and is not replayed, and a call approved before the restart is replayed once, after the same consult and re-checks. A retry is a new call and is decided as one (it asks unless a saved answer covers it). An answer is saved in two writes: a revoke that lands before the first finds nothing to remove, and the answer is saved afterwards and stays listed in `list_grants` until it is removed; a revoke that lands between the two removes the staged record, and nothing is saved. **Refusals.** A saved refusal binds a tool by the kind the catalog gives it, and by its exact name when the refusal names one. What a command, a request or a task's text would do is not read: a `delete` refusal refuses `calendar_delete_event`, not a `shell` command that deletes. A conversation-scoped refusal sends a call it covers to the gate even under an Always-allow tier. A refusal is never lifted by a grant. Nothing in the product writes or removes one; it is there only if the file was edited to hold it. **Goal checks.** A goal's check command never runs on a saved answer. A Deny or a saved `run_commands` refusal refuses it whether or not `shell` is gated, checked before it asks and again once its card is approved. When `shell` is gated it asks each time with plain approve/deny; when it is not, it runs without a card, and an exact `require_approval` on `shell` does not make it ask. **The file.** Each read gives the policy, the refusals and the grants from the same bytes; one call can take several reads. A file that is unparseable, unreadable, of another version, carries an unknown field or is a symbolic link is damaged: nothing runs on a tier allow, every gated call asks with plain approve/deny, an unattended call (a goal check, a replay) is refused, denials that can be read still bind, and no write replaces it or goes through it. A file that goes missing under a running process (`car doctor --repair` renames an unparseable one aside) lifts nothing: the policy and refusals that process last read still bind, and no remembered answer is read, offered or saved until a valid file is back. A process that starts with no file uses the defaults and may remember a web search. A tool outside the settled catalog map never runs on a tier allow. The standing policy decides first and any Deny in it is absolute: an exact per-tool `deny` override (`agent_permissions.set_tool`) or a tier Deny refuses, and an exact `require_approval` override raises an auto-allowing tier; an exact `always_allow` override is bound to a reverse-callback schema and does not widen the assistant's in-process tools. Governed production runs never consult a remembered answer and never offer the four choices, but every Deny — exact, tier (including the full-access tier) and standing refusal — still binds them, a replay after restart and a goal check included, and an exact `require_approval` override always asks there, read-only diagnostics included. The host approval ledger's mirrored row (`host.resolve_approval`, the Approvals list, notifications) keeps approve/deny and answers one call only; the four choices are offered on the inline chat card. Only the live connection of the agent bound to a chat session may send `agent.chat.event` frames for it; the daemon decides that against the route it forwards on, so a frame from any other connection, a superseded connection of the same agent included, is dropped, and so is a frame for a session that has no route yet.
 - **`agent_permissions.list_grants`** — **Host-management-only.** Params `{}`. Returns the versioned grant file. While older Settings clients still use the risk-tier controls, the response may also contain their `legacy_policy`; those writes use this file's same cross-process lock and preserve every grant and refusal. A failed-closed read returns empty `grants` and `standing_refusals` plus `store_issue` naming why no authority was loaded.
 - **`agent_permissions.revoke_grant`** — **Host-management-only.** Params `{ kind, level, conversation_id?, agent_id? }`. `conversation` requires only `conversation_id`, `agent` requires only `agent_id`, and `all_agents` requires neither. Returns the updated versioned file plus `removed`, the number of records removed: usually 0 or 1, and more when the scope held more than one record (a staged answer beside an active one, or a record an earlier build left). The next web search reads that file and sees the revocation. A search already approved on the revoked answer but not yet run asks instead when the revoke lands before that search's last read (see "Checked again at use" above); a revoke that lands after it applies to the next search.
-- **`agent_permissions.set_tool`** — **Host-management-only and capability-gated.** Params `{ agent_id, tool, mode: "always_allow"|"require_approval"|"deny" }`. Sets one literal pair; a managed agent cannot self-grant. For `always_allow`, the named agent must currently be attached with the exact eligible `newsroom.publish` callback profile described above. The server records its schema digest; callers must not supply `schema_digest`.
-- **`agent_permissions.reset_tool`** — **Host-management-only.** Params `{ agent_id, tool }`. Removes one literal pair.
+- **`agent_permissions.set_tool`** — **Host-management-only and capability-gated.** Params `{ agent_id, tool, mode: "always_allow"|"require_approval"|"deny" }`. Sets one literal pair; a managed agent cannot self-grant. For `always_allow`, the named agent must currently be attached with the exact eligible `newsroom.publish` callback profile described above. The server records its schema digest; callers must not supply `schema_digest`. With `standing: true` it also records a standing authorization for exactly this agent, tool and mode (and, for `always_allow`, that schema digest), which `agent_permissions.apply_standing` can apply again with no host key; the result then carries `standing_authorization_id`. Any later `set_tool` or `reset_tool` of the same agent and tool, by a person, replaces or ends it, so an unattended re-apply never undoes a person's change.
+- **`agent_permissions.reset_tool`** — **Host-management-only.** Params `{ agent_id, tool }`. Removes one literal pair. It also ends that pair's standing authorization.
+- **`agent_permissions.apply_standing`** — **No host key.** Params `{ agent_id, tool, mode }`. Applies again the override a person set with `set_tool` `standing: true`, for a caller with no terminal (a scheduled job, `car approvals set-tool` run unattended). Refused, with the reason, when no standing authorization covers this agent and tool, when it is for another mode, or, for `always_allow`, when the named agent is not attached with the callback or its schema digest differs from the one authorized (a person must set it again). The authorization is the whole control: without one, nobody, an agent asking for itself included, changes an approval this way. A walled agent cannot call it at all. Returns `{ agent_id, tool, mode, schema_digest, authorization_source: "standing_authorization", authorization_id }`; each apply is recorded on the authorization by its id (`standing-approval-changes.json` beside the grants file, the last 20 kept) and in the daemon log.
 - **`agent_permissions.set_observer`** — **Host-management-only.** Params `{ agent_id, enabled: boolean }`. Grants (`true`) or withdraws (`false`) one agent's watcher view: `host.approvals`, `host.events` and `host.subscribe` show an agent-bound session only its own records unless it holds this grant, and every agent's records when it does (#3419). It applies on macOS and Windows; on Linux a walled agent cannot call those three methods at all, so for a walled agent the grant changes nothing there (CAR's own assistant runs unwalled on Linux and is scoped like any agent-bound session). `host.agents` stays own-row either way. Off for every agent until granted; the agent id is a literal, with no matching. A managed agent cannot grant itself, and on a daemon with a host token neither can an unbound daemon-token client. Returns `{ agent_id, enabled, changed }`, where `changed` is false when the agent already had that setting. The grant is stored in `agent-permissions.json` beside the tier and tool overrides, keyed by agent id like them, so it outlives a daemon restart and the agent's removal and re-adding under the same id. A grant or withdrawal through this method applies at once to that agent's open `host.subscribe` stream; a change made by another process applies to an open stream only when it subscribes again. **Downgrade:** while any watcher is granted, a daemon, `car` CLI or embedded runtime older than this release reading the same state root treats `agent-permissions.json` as damaged (it carries an unknown field): nothing runs on a tier allow and every gated call asks, an unattended call (a goal check, a replay) is refused, and no write goes through, so no answer is saved and permission changes are refused. Upgrading again, or withdrawing the grant from this release, restores it. CLI: `car approvals set-observer <agent> on|off`; CarHost: Settings → Agent Permissions, per agent.
 - **`agent_permissions.evaluate_tool`** — **Host-management-only and capability-gated.** Params `{ agent_id, tool, tier }`. Returns the exact override when present, otherwise the tier posture, plus `has_tool_override`, `active`, `schema_bound`, `schema_digest_present`, the stored non-secret `schema_digest` when present, and `authorization_source`. For `always_allow`, `active` is true only while the exact authenticated agent callback is attached with the matching current schema.
 
@@ -21217,8 +21433,8 @@ This is collaboration among participants that already exist, not orchestration: 
 - **Returns**: `{ self, need, terms, count, matches: [node row + { matched, covers_need, score }] }`. `terms` is the need as the matcher read it, so a caller can see why nothing matched.
 
 #### `lattice.inbox`
-- **Params**: `{ ack?: [string], consume?: boolean, limit?: integer, org?: string }`.
-  - `ack` marks those message ids read. `consume: true` also marks every returned message read in the same call; a session that hands messages straight to its model uses it, so the next session does not see them again.
+- **Params**: `{ ack?: [string | { id: string, from: string }], consume?: boolean, limit?: integer, org?: string }`.
+  - `ack` marks those messages read. Ids are chosen by senders, so `{ id, from }` names one sender's message; a bare id is refused, and nothing is marked read, when more than one sender's unread message has it. `consume: true` also marks every returned message read in the same call; a session that hands messages straight to its model uses it, so the next session does not see them again.
   - `limit` is 1–200 (default 50). `org` is for the operator's host client only; a bound session always reads its own organization's inbox.
 - Reads this person's **organization inbox**: messages that colleagues sent to `inbox:<org>`, or to a session of that org here that had exited, while nothing was running to take them. Refused for a personal caller (the inbox belongs to an organization) and for an org this CAR holds no login for.
 - **Returns**: `{ acked, unread, messages: [{ id, org, from, body, kind, in_reply_to, sent_at_ms, stored_at_ms, connection, cross_owner, no_reply }] }`, oldest first. `unread` counts what is left after this call. `from` is the sender's address as this CAR derived it from the signing key (`<node>@<car>`); reply to it with `agents.message`. Bodies are inert text from outside this owner's trust domain when `cross_owner` is true.
@@ -21374,13 +21590,14 @@ An offer this CAR refuses without asking its owner (it expired, the org's policy
 
 **Org-attested connections.** Colleagues in one organization connect without exchanging fingerprints, and still consent to every connection. Design: `docs/proposals/org-attested-lattice-connections.md`. Requires org-scope sync (`PARSLEE_SYNC_ORG_SCOPE=<orgId>:<granter_hex>[,...]`, one entry per org separated by `;`), which is itself gated on the org-key cryptographer audit; with it off, every method below except `lattice.org.status` and the standing-rule methods refuses, and nothing about other connections changes.
 
-- **Several orgs.** Every configured org must be one the signed-in login belongs to (its token's `memberships` claim, or its active organization when the token has no such claim); naming an org twice is an error. Each org has its own delivery subsystem (journal `sync/org-<org>`), its own key provider holding only that org's `K_org`, its own view, standing rules, and processed-mail record. Orgs open lazily and one at a time after the personal subsystem: on the first `sync.knowledge` or `sync.pump`, a write for that org, or the Lattice refresher's next tick (every 15 s). Until then that org's `lattice.org.status` entry says "not opened yet" and a colleague's `car/latticeOrgInvite` for it is refused. A write for an org whose open is in flight waits for it (up to 30 s). One org failing to open — including an unreachable org-key directory — leaves the others and personal sync working; its writes are refused, and the open is retried on `sync.pump` and by the Lattice refresher. An org not granted `K_org` yet opens but cannot encrypt or decrypt its ops. With exactly one org configured, a failed open now degrades to personal-only sync with `org_error` on `sync.pump`, where before the whole sync open failed. Granter seeds are per org: `PARSLEE_ORG_GRANTER_SEEDS=<orgId>:<seed_hex>[;...]`; the legacy `PARSLEE_ORG_GRANTER_SEED` applies to every configured org whose granter set holds its key. The methods below take an optional `org`, required for an admin or rule change when several orgs are configured. Every trust decision names its org: a peer's `org` on `car/latticeOrgInvite` / `car/latticeOrgAccept` is checked against that org's attestations only, with no fallback to another org; mail read from an org's stream is acted on only for a sender that org attests; and a connection is ended only by its own org's revocation or expiry, never re-homed. One connection per peer key across all orgs. An older peer that sends no `org` on an offer is refused when more than one org attests it; on an accept, the org of the offer it names is used, and must attest it. A connection is held to its own org's policy; in a pass where its org is configured but has no folded view it is held to the most restrictive floor, an expired attestation ends it either way, and a connection whose org is no longer configured ends (`ended.by: "org"`, "no longer served"). An org whose stream has not been folded yet counts as refusing invite-code connections: they are refused between the sync open and each org's first fold, and for as long as any configured org stays unfolded (for example, one that cannot open) — fail-closed. Removing the LAST configured org does not end its connections: with no org configured the refresher stops before enforcement, so they stay until an org is configured again or they are disconnected. The legacy `lattice/org_rules.json` and `org_mail_seen.json` belong to the single configured org, or, with several, to the one org whose sync journal existed before the org set was configured (the org a single-org daemon served) — never to whichever org happens to be active. The owner is recorded in `lattice/org_legacy_owner` and kept. With zero or several such orgs the legacy rules are unowned: they accept nothing, `lattice.org.status` lists them as `unowned_legacy_rules`, and `lattice.org.rule.remove {id}` removes one (`unowned_legacy: true`) once it is re-added for an org. The decision — an org, or unowned (`!unowned` in the marker) — is made once, the first time an org set is known, and kept across restarts and config changes. If it cannot be written down, `lattice.org.status` says so in `legacy_owner_unrecorded` and, for this run, the files are treated as unowned (fail closed). Rules and mail-seen records the owning org had under `lattice/org/<org>/` are merged into the legacy files when it becomes the owner. To decide again (for example, after cleaning up the config), stop the daemon and delete `lattice/org_legacy_owner`. A standing-rule write opens sync first only when `PARSLEE_SYNC_ORG_SCOPE` is set, so the org set is known before the rule is filed (if sync cannot open, the write is refused); without org scope it does not, and rules work as before. Other orgs' files are under `lattice/org/<org>/`.  The same daemon key appears in the endpoint record of every org it is in, which links those identities for anyone who reads more than one org stream.
+- **Several orgs, several logins.** Each configured org opens as the signed-in login that belongs to it: the login present at daemon start when it does (its token's `memberships` claim, or its active organization when the token has no such claim), else the one other login held here (`car auth login --add`) whose own token names the org. That login's account is the org's `account` in `lattice.org.status`; its own relay bearer, its passphrase-derived org keys, and its login-derived granter key are what the org uses, so one login never acts for another's org. This CAR's endpoint in such an org names its device id in that login's personal oplog, and is announced once that login's personal subsystem is open (`sync.pump` opens it). An org that no held login belongs to, or that more than one other login belongs to, stays closed on its own, with the reason in `lattice.org.status` and `sync.pump` `org_error`/`orgs`; it never stops personal sync or another org. Signing a login out or removing it closes the orgs it serves (their writes refused) until a later `sync.pump` finds a login that serves them; an open that raced a sign-in change is discarded and retried. Naming an org twice is an error. Each org has its own delivery subsystem (journal `sync/org-<org>`, whichever login serves it), its own key provider holding only that org's `K_org`, its own view, standing rules, and processed-mail record. Orgs open lazily and one at a time after the personal subsystem: on the first `sync.knowledge` or `sync.pump`, a write for that org, or the Lattice refresher's next tick (every 15 s). Until then that org's `lattice.org.status` entry says "not opened yet" and a colleague's `car/latticeOrgInvite` for it is refused. A write for an org whose open is in flight waits for it (up to 30 s). One org failing to open — including an unreachable org-key directory — leaves the others and personal sync working; its writes are refused, and the open is retried on `sync.pump` and by the Lattice refresher. An org not granted `K_org` yet opens but cannot encrypt or decrypt its ops. With exactly one org configured, a failed open now degrades to personal-only sync with `org_error` on `sync.pump`, where before the whole sync open failed. Granter seeds are per org: `PARSLEE_ORG_GRANTER_SEEDS=<orgId>:<seed_hex>[;...]`; the legacy `PARSLEE_ORG_GRANTER_SEED` applies to every configured org whose granter set holds its key. The methods below take an optional `org`, required for an admin or rule change when several orgs are configured. Every trust decision names its org: a peer's `org` on `car/latticeOrgInvite` / `car/latticeOrgAccept` is checked against that org's attestations only, with no fallback to another org; mail read from an org's stream is acted on only for a sender that org attests; and a connection is ended only by its own org's revocation or expiry, never re-homed. One connection per peer key across all orgs. An older peer that sends no `org` on an offer is refused when more than one org attests it; on an accept, the org of the offer it names is used, and must attest it. A connection is held to its own org's policy; in a pass where its org is configured but has no folded view it is held to the most restrictive floor, an expired attestation ends it either way, and a connection whose org is no longer configured ends (`ended.by: "org"`, "no longer served"). An org whose stream has not been folded yet counts as refusing invite-code connections: they are refused between the sync open and each org's first fold, and for as long as any configured org stays unfolded (for example, one that cannot open) — fail-closed. Removing the LAST configured org does not end its connections: with no org configured the refresher stops before enforcement, so they stay until an org is configured again or they are disconnected. The legacy `lattice/org_rules.json` and `org_mail_seen.json` belong to the single configured org, or, with several, to the one org whose sync journal existed before the org set was configured (the org a single-org daemon served) — never to whichever org happens to be active. The owner is recorded in `lattice/org_legacy_owner` and kept. With zero or several such orgs the legacy rules are unowned: they accept nothing, `lattice.org.status` lists them as `unowned_legacy_rules`, and `lattice.org.rule.remove {id}` removes one (`unowned_legacy: true`) once it is re-added for an org. The decision — an org, or unowned (`!unowned` in the marker) — is made once, the first time an org set is known, and kept across restarts and config changes. If it cannot be written down, `lattice.org.status` says so in `legacy_owner_unrecorded` and, for this run, the files are treated as unowned (fail closed). Rules and mail-seen records the owning org had under `lattice/org/<org>/` are merged into the legacy files when it becomes the owner. To decide again (for example, after cleaning up the config), stop the daemon and delete `lattice/org_legacy_owner`. A standing-rule write opens sync first only when `PARSLEE_SYNC_ORG_SCOPE` is set, so the org set is known before the rule is filed (if sync cannot open, the write is refused); without org scope it does not, and rules work as before. Other orgs' files are under `lattice/org/<org>/`.  The same daemon key appears in the endpoint record of every org it is in, which links those identities for anyone who reads more than one org stream.
 
 - **Identity is attested, once per device.** Each daemon announces its CAR (account, device, peer URL, peer key; signed by that key) on the org-scoped sync stream. An org admin — an operator whose login-derived signing key is one of the granter keys in `PARSLEE_SYNC_ORG_SCOPE` — attests an announced CAR with `lattice.org.attest`, after checking its fingerprint with the member. The attestation is a record signed by that granter key; any member can write to the org stream, so a record that is not signed by a trusted granter is ignored, and one member cannot claim to be another. Attestations expire (1–366 days, default 90).
 - **Consent is per connection.** An attested colleague's key may call only `car/latticeOrgInvite` and `car/latticeOrgAccept` (and the ordinary invite-code handshake) until a connection exists. Accepting takes this owner's own share list, or a standing rule this owner wrote (`lattice.org.rule.add`). Nothing an admin publishes creates, accepts, or widens a connection.
 - **Exit.** An org-verified connection ends (`ended.by: "org"`) when the attestation it was verified with expires, or when a revocation issued at or after that attestation arrives — decided from evidence kept on the connection, so a daemon that has not fetched the org stream yet does not end anything. A revocation reaches each colleague at their next refresh (15 s cadence; the org stream is reconciled at most once a minute unless this daemon just published).
 - **Policy floor.** A granter publishes `lattice.org.policy`; it can only narrow: refuse invite-code connections (`allow_outside_org: false`), refuse sharing `human:` nodes, cap the share list, allow-list projects, and end connections after `max_connection_secs`.
 - **Org relay.** When a colleague's CAR cannot be reached directly (no route to its announced peer URL), the org handshake, peer messages, disconnect notices, and listings travel as signed **mail** on the org sync stream instead, and each daemon's Lattice refresher processes mail addressed to it with the same handlers the direct path uses — a relayed message is admitted by the receiving broker exactly as a direct one (shares, sealing, standing, audit). Mail is signed by the sender's CAR key and acted on only from an attested colleague's key; bodies, listings, share lists, and disconnect reasons are sealed with the connection key, so other members see only who mailed whom and when. An org **offer** is not sealed (no connection key exists yet): its purpose and project are visible to org members. Mail is processed once (`<state root>/lattice/org_mail_seen.json`) and ignored after a day. A relayed result says so: `lattice.connect.invite` and `lattice.connect.accept` return `relayed: true` (an accept then waits in `awaiting_their_confirm` until the inviter's answer arrives the same way), `agents.message` / `peer_message` return `outcome: "relayed"`, and a disconnect counts the other CAR as told once the notice is mailed. Relayed traffic moves at the refresher's org-stream cadence (at most once a minute when idle, at once after this daemon mails), and mail is not deleted from the org stream.
+- **Key holders.** An org's trust root is its granter set, and it should hold at least two keys so the org never depends on one person. The CLI manages it without a running daemon, acting as the one signed-in login that is a member of `--org`: `car lattice org create --org <org> [--granter <hex>...]` (an Owner or Admin; refused when the org already has org scope on this CAR, in the secret store, the environment or adopted) writes `PARSLEE_SYNC_ORG_SCOPE` with that login's login-derived granter key (derived from `PARSLEE_SYNC_PASSPHRASE`, so every device of that person with the same login and passphrase holds it) and prints the enrollment code and fingerprint; `car lattice org granter-key --org <org>` prints this operator's login-derived granter key and its fingerprint for another key holder; `car lattice org add-granter|remove-granter --org <org> <hex>` lets a current key holder change the set (never to empty) and prints the new code, which every member then `join`s. No command prints the passphrase or a seed. A changed set reaches members only through a new code: nothing on the org stream announces it.
 - **Not covered.** Attestation is only as good as the admin's fingerprint check and the org stream's integrity, which rests on the org key. The pubkey-table-poisoning path to that key is closed on the granter's side by confirmed-key pins (`org_key_pins` below, and the `org_granter` tool's `ORG_GRANTER_PINS`); backend publish authorization is still needed to stop a member's key being overwritten at all.
 
 #### `lattice.directory`
@@ -21394,9 +21611,9 @@ An offer this CAR refuses without asking its owner (it expired, the org's policy
 - **Returns**: `send`: `{ action, org, id, expires_at_ms, to: { account, device, peer_fingerprint } }`, where `id` is the relay item id (`rk_…`). `pull`: `{ action, org, probes: [{ id, verified, text, at_ms, from: { account, device, peer_fingerprint } }], acked, ack_error, left_queued }`; a probe whose sender did not verify has `verified: false` and an `error` in place of `text`, and `from` carries only `peer_fingerprint`. The sender's certificate is verified at pull time, not at the probe's `at_ms`. `ack_error` is null, or the relay error when the acknowledgement failed: the opened probes are still returned, `acked` is 0, and they come back on the next pull. With no fresh revocation list, `pull` does not pull at all (`relay.dormant_reason: revocation_stale`) and `send` sends nothing; a list that goes stale during a pass leaves the affected probes queued rather than refusing them. A relay refusal is an error whose message ends in its code in brackets: `[feature_off]`, `[not_same_org]` (the recipient is not reachable through Parslee: not in this org, signed out, or certificate lapsed), `[recipient_full]`, `[rate_limited]`, `[payload_too_large]`, `[unauthorized]`, `[invalid_request]`, `[relay_unavailable]`, `[http]` or `[local]`.
 
 #### `lattice.org.status`
-- **Params**: `{ org?: string }`.
+- **Params**: `{ org?: string, open?: boolean }`. `open: true` (what `car lattice org status` and `enroll-code` send) first opens sync and any configured org that is not open yet, when org scope is configured, so a person who just joined sees the org and their `org_key_fingerprint`; without it nothing is opened, which is how host apps poll it.
 - Whether org connections are on, and this CAR's place in each org. With `org`, that org's fields. Otherwise `orgs` lists every configured org (a configured org that is not open appears as `{ enabled: false, org, reason }`); with exactly one configured its fields are also at the top level, as before, and with several `enabled` says whether any org is open. Every shape — several orgs, one org, or one org named with `org` — also carries `unowned_legacy_rules` (present only when non-empty: standing rules from before several orgs that no org can be shown to own) and `legacy_owner_unrecorded` (present only when that decision could not be written down).
-- **Returns**: `{ enabled: false, reason }` when org scope is off; otherwise `{ enabled: true, org, account, granter, our_fingerprint, org_key_fingerprint, org_key_pins, attested, attested_until_ms, members, policy, rejected_records, pending, rules }`. `our_fingerprint` is what to tell the admin attesting this CAR. `org_key_fingerprint` identifies this member's X25519 org-key pubkey, which a granter confirms before wrapping `K_org` for it. `enrollment` is `{ code, fingerprint }`: the org enrollment code a new member installs with `car lattice org join <code> --fingerprint <fingerprint>` (it writes `PARSLEE_SYNC_ORG_SCOPE` to CAR's secret store, with no file, after checking the fingerprint, which an admin reads to the member another way than the code; restart the daemon afterwards), or `null`. `org_key_pins` (granters only, else empty) maps each attested member's account to the org-key pubkey their signed announcement carries — confirmed by the fingerprint check made when attesting, and in the shape the `org_granter` tool's `ORG_GRANTER_PINS` file takes. `pending` (granters only) lists announced CARs with no attestation as `{ endpoint, account, device, announced_at_ms }` — without a fingerprint, which the admin must hear from the member. `rejected_records` counts org records that failed verification.
+- **Returns**: `{ enabled: false, reason }` when org scope is off; otherwise `{ enabled: true, org, account, granter, our_fingerprint, org_key_fingerprint, org_key_pins, attested, attested_until_ms, members, policy, rejected_records, pending, rules }`. `our_fingerprint` is what to tell the admin attesting this CAR. `org_key_fingerprint` identifies this member's X25519 org-key pubkey, which a granter confirms before wrapping `K_org` for it. `enrollment` is `{ code, fingerprint }`: the org enrollment code a new member installs with `car lattice org join <code> --fingerprint <fingerprint>` (it writes `PARSLEE_SYNC_ORG_SCOPE` to CAR's secret store, with no file, after checking the fingerprint, which an admin reads to the member another way than the code; restart the daemon afterwards), or `null`. `org_key_pins` (granters only, else empty) maps each attested member's account to the org-key pubkey their signed announcement carries — confirmed by the fingerprint check made when attesting, and what `lattice.org.grant` wraps `K_org` for. `pending` (granters only) lists announced CARs with no attestation as `{ endpoint, account, device, announced_at_ms }` — without a fingerprint, which the admin must hear from the member. `rejected_records` counts org records that failed verification. Every shape, org scope on or off, also carries `from_own_devices` when this CAR adopted org scope from its owner's other devices or they disagree: `{ adopted: { <org>: { fingerprint, from_devices, adopted_at_ms, restart_required } }, added: [], conflicts: { <org>: { devices: { <device>: <fingerprint> }, held? } } }`. A device with org scope announces its granter sets on the owner's personal oplog (`Registry { kind: "org_granters" }`); on `sync.pump` each of the owner's devices adopts an org it has no scope for, when every announcing device agrees and the login whose personal oplog carried the announcement belongs to the org. A device announces on the login-at-start's oplog every set it holds, and on each other held login's oplog the sets of the orgs that login serves here, so an org served by a second login is adopted by that login's other devices. It never replaces a configured or adopted entry, and a disagreement adopts nothing; `held` is the fingerprint this CAR already has when the disagreement is with it. An adopted org opens at the next daemon start (`restart_required` until then). Adopted scope is kept in `<journal dir>/sync/org-scope-adopted.json` (owner-only), merged into `PARSLEE_SYNC_ORG_SCOPE` for orgs that value does not name; a damaged file fails the org open rather than narrowing the scope.
 
 #### `lattice.org.attest`
 - **Params**: `{ endpoint: string, fingerprint: string, display_name?: string, expires_days?: integer, org?: string }`. Without `org` on a several-org CAR, the one org the endpoint was announced in.
@@ -21413,6 +21630,11 @@ An offer this CAR refuses without asking its owner (it expired, the org's policy
 - Granters only. Publishes the org's Lattice policy, replacing the previous one whole; an omitted field takes its default (`true`, `true`, no cap, any project, no limit). The newest policy wins.
 - **Returns**: `{ policy, org, record_id, issued_ms }`.
 
+#### `lattice.org.grant`
+- **Params**: `{ org?: string, epoch?: integer, rekey?: boolean, confirm?: string[] }`.
+- Granters only, host-only. Hands the org key `K_org` to the org's confirmed members: mints a fresh `K_org` for `epoch` (default 1), wraps it for each member named in `confirm` (`"<account>:<fingerprint>"`, the `org_key_fingerprint` the member read out another way, checked against the key the org-key directory publishes now; one that does not match, or a member that has published no key, refuses the whole grant), every member in `org_key_pins` (each member whose CAR this granter attested), and this granter itself, and publishes the wraps through this login's own org-key directory. A member with no pin, or whose published org-key pubkey differs from its pin (possible directory poisoning), is skipped. Refused when `epoch` already has grants unless `rekey` is true: a fresh key there replaces every member's and orphans what was written under the old one, so a later round for new members uses the next epoch. `K_org` leaves the daemon only inside the wraps. Members, and this CAR, use it once their daemon next opens the org: restart them. A member cannot be attested before it holds `K_org` (its endpoint is an org op), so the first grant names members with `confirm`. CLI `car lattice org grant [--confirm <account>:<fingerprint>...] [--epoch N] [--rekey]`.
+- **Returns**: `{ org, epoch, granted: [account], skipped: [{ account, reason }], not_published: [account], next }`. `not_published` lists pinned members that have published no org-key pubkey yet.
+
 #### `lattice.org.rules`
 - **Params**: `{ org?: string }`.
 - **Returns**: `{ count, rules: [{ id, project, share, from, created_at_ms }] }` — this operator's standing auto-accept rules for the org. With several orgs and no `org`, every org's, each rule also naming its `org`. A rule accepts offers only from colleagues its own org attests.
@@ -21427,7 +21649,7 @@ An offer this CAR refuses without asking its owner (it expired, the org's policy
 - Withdraws a rule. Connections it already accepted stay.
 - **Returns**: `{ removed: true }`.
 
-**Parslee device certificates** (design: `docs/proposals/parslee-device-certificates.md`). For each held login and each org it holds, the daemon keeps a Parslee-issued certificate binding this CAR's peer key to `(account, device, org)`, refreshed every 6 h, stored as plain files under `<state root>/peer-certs/` (certificates are public). It reads credentials for that only after a sign-in change, an explicit `peers.cert_status { refresh: true }` (CarHost sends one when its Lattice screen appears; launch and reconnect never do), or a requested Lattice operation; boot reads none, and even then only for an issuance or renewal that is due. An issuer's revocation lists must never reset `seq`: after losing its counter, or rotating its signing key, it continues from the highest `seq` it ever published + 1 — a CAR never accepts a list that does not move past the newest one it holds, even when that list's signer is no longer delegated. A list refused only because its `seq` advanced faster than time allows still has its revoked keys applied at once; the issuer is then reported `degraded` until a list the CAR can accept arrives. `GET <authority>/.well-known/car-trust.json` answering 404 means the feature is off there. A peer presents its certificate and the delegation that signed it as the request header `x-car-peer-cert: <certificate>~<delegation>`, next to the signed `x-car-peer-*` headers; it is bound to the request by a separate header, `x-car-peer-cert-sig` (the same key's signature over the request's signed string plus the chain's hash), so it cannot be swapped on path, while the ordinary signature is unchanged and CARs that predate certificates still accept the request. A certificate that verifies against the roots pinned in this build, with a revocation list no older than an hour, for an org one of this CAR's logins also holds, earns that key **org contact** standing only — the two org handshake methods and the connection handshake, never a Lattice method, never device trust. It is refused outright when it names one of this CAR's own accounts, or when an org admin attested the same key to a different account in the same org (event `lattice.cert_attestation_conflict` with `{ org, account, peer_fingerprint }`); a refusal also withdraws any standing the key had. Such a conflict is sticky: the key earns no org standing from any source — certificate or attestation — until the owner clears it with `peers.cert_conflict_clear`. A later attestation is checked against the keys already admitted, so the key need not present its certificate again to be caught. One key may carry certificates under several accounts (a CAR is certified under every login it holds), so that alone is not a conflict. The first certified key for `(org, account, device)` is pinned (`<state root>/lattice/cert_pins.json`); a different key for a pinned device gets no certificate standing — it is an unverified first contact that needs consent — and is announced as `lattice.cert_key_rotation`. A connection verified by a certificate has `verified_by: "cert:<org>:<account>"`, is held to that org's Lattice policy, may use only that org's relay, and ends on a revocation (by key, credential or issuer key), when this CAR no longer holds the org, when the org's granters revoke the member, when the build no longer pins a usable root, or 24 h after the newest certificate seen from the peer expired. Relay mail from a certificate-verified colleague is accepted only on an active connection. While the org's policy is not folded, the most restrictive policy of the orgs this CAR serves applies; with no org scope configured at all, a built-in floor applies instead (people may be shared, at most 8 shared nodes, no new connections outside the org). The certificate reaches a peer on the agent card (`car_device_cert`) only when that peer's own signed card request presented a certificate for an org this CAR holds, and then only for that org. Builds ship with no pinned roots until Parslee's are provisioned; until then nothing verifies and none of this applies.
+**Parslee device certificates** (design: `docs/proposals/parslee-device-certificates.md`). For each held login and each org it holds, the daemon keeps a Parslee-issued certificate binding this CAR's peer key to `(account, device, org)`, refreshed every 6 h, stored as plain files under `<state root>/peer-certs/` (certificates are public). It reads credentials for that only after a sign-in change, an explicit `peers.cert_status { refresh: true }` (CarHost sends one when its Lattice screen appears; launch and reconnect never do), or a requested Lattice operation; boot reads none, and even then only for an issuance or renewal that is due. A login whose sign-in registered a device key (`<state root>/login-keys/`, a file, never the OS secret store) is also issued and renewed without that: the daemon trades an assertion signed by the key for the login's token through the `jwt-bearer` grant, so a restarted daemon keeps its certificates current while reading no credential; signing out or removing the login revokes the key and deletes the file. An issuer's revocation lists must never reset `seq`: after losing its counter, or rotating its signing key, it continues from the highest `seq` it ever published + 1 — a CAR never accepts a list that does not move past the newest one it holds, even when that list's signer is no longer delegated. A list refused only because its `seq` advanced faster than time allows still has its revoked keys applied at once; the issuer is then reported `degraded` until a list the CAR can accept arrives. `GET <authority>/.well-known/car-trust.json` answering 404 means the feature is off there. A peer presents its certificate and the delegation that signed it as the request header `x-car-peer-cert: <certificate>~<delegation>`, next to the signed `x-car-peer-*` headers; it is bound to the request by a separate header, `x-car-peer-cert-sig` (the same key's signature over the request's signed string plus the chain's hash), so it cannot be swapped on path, while the ordinary signature is unchanged and CARs that predate certificates still accept the request. A certificate that verifies against the roots pinned in this build, with a revocation list no older than an hour, for an org one of this CAR's logins also holds, earns that key **org contact** standing only — the two org handshake methods and the connection handshake, never a Lattice method, never device trust. It is refused outright when it names one of this CAR's own accounts, or when an org admin attested the same key to a different account in the same org (event `lattice.cert_attestation_conflict` with `{ org, account, peer_fingerprint }`); a refusal also withdraws any standing the key had. Such a conflict is sticky: the key earns no org standing from any source — certificate or attestation — until the owner clears it with `peers.cert_conflict_clear`. A later attestation is checked against the keys already admitted, so the key need not present its certificate again to be caught. One key may carry certificates under several accounts (a CAR is certified under every login it holds), so that alone is not a conflict. The first certified key for `(org, account, device)` is pinned (`<state root>/lattice/cert_pins.json`); a different key for a pinned device gets no certificate standing — it is an unverified first contact that needs consent — and is announced as `lattice.cert_key_rotation`. A connection verified by a certificate has `verified_by: "cert:<org>:<account>"`, is held to that org's Lattice policy, may use only that org's relay, and ends on a revocation (by key, credential or issuer key), when this CAR no longer holds the org, when the org's granters revoke the member, when the build no longer pins a usable root, or 24 h after the newest certificate seen from the peer expired. Relay mail from a certificate-verified colleague is accepted only on an active connection. While the org's policy is not folded, the most restrictive policy of the orgs this CAR serves applies; with no org scope configured at all, a built-in floor applies instead (people may be shared, at most 8 shared nodes, no new connections outside the org). The certificate reaches a peer on the agent card (`car_device_cert`) only when that peer's own signed card request presented a certificate for an org this CAR holds, and then only for that org. Builds ship with no pinned roots until Parslee's are provisioned; until then nothing verifies and none of this applies.
 
 #### `peers.cert_status`
 - **Params**: `{ refresh?: boolean }`. `refresh: true` is an explicit request: it allows credential reads and runs one issue/refresh pass now.
@@ -22243,6 +22465,18 @@ see every agent's records.
 - `host.set_status`: update agent status and task text.
 - `host.notify`: append and broadcast a host event.
 - `host.request_approval`: create an approval request for the host UI.
+  Optional `present: false` keeps the row answerable without opening or parking
+  a phone question. Rows carry `presented:false` through replies, lists,
+  subscription snapshots and the full-row `approval.requested` / `approval.resolved`
+  events. CarHost apps retain them for manual answers without notification,
+  sound, banner, new-request activity or attention-badge counts. Ordinary rows
+  carry `presented:true`; absence on older rows/payloads means true.
+  `only_if_floor_clear: true` atomically returns
+  `{refused:true,reason:"floor_busy"}` while another question is current,
+  creating no row; refusal is durably recorded and emits
+  `approval.request_refused {agent_id,method,at,reason}`. Both controls are
+  advertised in this method's `capabilities.list` `features` entry. Omitted
+  fields retain existing behavior. Full contract: [host methods](websocket-protocol/host.md).
 - `host.resolve_approval`: resolve a pending approval request. A row that is
   no longer pending is refused (`-32003`, `error.data.reason:
   "already_resolved"`), never reported as resolved.

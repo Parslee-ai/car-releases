@@ -789,6 +789,14 @@
       "description": "Set an approval mode for one exact agent and exact tool. `always_allow` requires that agent to be attached with an eligible live callback"
     },
     {
+      "path": "audit",
+      "description": "Export the owner's record of what each agent did and who approved it"
+    },
+    {
+      "path": "audit export",
+      "description": "Export what each agent did and what was approved, by whom and when, as one JSON document. Joins the per-client event journals, the permission approvals and rejections in approvals.jsonl, the host approvals with their resolvers, and the policy denials. Run content is redacted. States the earliest record it holds and each journal's hash chain status; it does not switch hash chaining on. Works with the daemon down"
+    },
+    {
       "path": "auth",
       "description": "Parslee account authentication for CAR cloud-backed features"
     },
@@ -1341,12 +1349,28 @@
       "description": "Org-attested connections: status, admin attestation and policy, and your standing auto-accept rules"
     },
     {
+      "path": "lattice org add-granter",
+      "description": "As a key holder of `--org`: add another admin's granter key. Prints the new enrollment code; every member joins with it again. Works without a running daemon"
+    },
+    {
       "path": "lattice org attest",
       "description": "As an org admin: vouch that an announced CAR belongs to the colleague who announced it. Check its fingerprint with them first"
     },
     {
+      "path": "lattice org create",
+      "description": "As an Owner or Admin of `--org`: start its org scope on this CAR, with your login-derived granter key (or the `--granter` keys) as its key holders. Writes PARSLEE_SYNC_ORG_SCOPE to the secret store and prints the enrollment code and fingerprint; restart the daemon afterwards. Refuses an org that already has org scope here. Works without a running daemon"
+    },
+    {
       "path": "lattice org enroll-code",
       "description": "Print your org's enrollment code and its fingerprint. Give the code to a new member, and read them the fingerprint another way than the code"
+    },
+    {
+      "path": "lattice org grant",
+      "description": "As a key holder of `--org`: hand the org key to each member you `--confirm`, every member whose CAR you attested, and yourself. Restart each member's daemon afterwards"
+    },
+    {
+      "path": "lattice org granter-key",
+      "description": "Print your login-derived granter key for `--org`, to give to one of its key holders so they can add you (`add-granter`). Works without a running daemon"
     },
     {
       "path": "lattice org join",
@@ -1355,6 +1379,10 @@
     {
       "path": "lattice org policy",
       "description": "As an org admin: publish the org's Lattice policy floor. It can only narrow what members may do. Replaces the previous policy whole"
+    },
+    {
+      "path": "lattice org remove-granter",
+      "description": "As a key holder of `--org`: remove a granter key. Refuses to remove the last one. Works without a running daemon"
     },
     {
       "path": "lattice org revoke",
@@ -2008,6 +2036,10 @@
         "description": "Update an event in the current Mac user's local Calendar.app through EventKit. Use the stable event_id returned by calendar_events or calendar_create_event. This changes on-device calendar data and requires approval unless the session has full access."
       },
       {
+        "name": "car_release_status",
+        "description": "CAR's own release status, read from CAR's release sources: the installed version, the latest public release (tag and final release URL), and whether an update is currently offered through the in-app update feed. Call it for any question about which CAR version is installed or latest, or whether an update is available, and state only what it returns, naming each source it read."
+      },
+      {
         "name": "classify_image",
         "description": "Identify what an image depicts — returns ranked content labels with confidence (e.g. \"golden retriever\", \"airliner\", \"beach\"). Give a path to an image under the working directory. Use this to check what a generated or downloaded image actually shows."
       },
@@ -2102,6 +2134,10 @@
       {
         "name": "mail_send",
         "description": "Send a message through the current Mac user's local Mail.app. This sends externally and requires chat approval unless the session has full access. Returns the sent message id."
+      },
+      {
+        "name": "model_catalog",
+        "description": "Look up CAR's model catalog: the models CAR knows about, with whether each is available here. Call it whenever the user names a model or asks which models exist, before saying a model can be used or picked. Pass the name the user gave as `query`; if no row matches, tell the user plainly that the model is not in CAR's model catalog."
       },
       {
         "name": "notes_find",
@@ -2503,6 +2539,11 @@
       "namespace": "agent_permissions",
       "methods": [
         {
+          "method": "agent_permissions.apply_standing",
+          "documented": true,
+          "role": "operator"
+        },
+        {
           "method": "agent_permissions.evaluate",
           "documented": true,
           "role": "operator"
@@ -2701,6 +2742,16 @@
           "method": "assistants.invoke",
           "documented": true,
           "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "audit",
+      "methods": [
+        {
+          "method": "audit.export",
+          "documented": true,
+          "role": "host"
         }
       ]
     },
@@ -3994,6 +4045,11 @@
         },
         {
           "method": "lattice.org.attest",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "lattice.org.grant",
           "documented": true,
           "role": "host"
         },

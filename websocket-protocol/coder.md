@@ -1596,6 +1596,13 @@ returns it with `resumed: true` and attaches the caller, so a client that
 already reopens by id after a disconnect needs no other change. Passing a
 `model` different from the live discussion's is refused; close it first.
 
+**Quitting `car board` detaches; it does not close** (the owner's decision on
+car#2153, restated for car#4293). CarHost or another terminal may be in the same
+discussion with a reply running, so `q` and Ctrl-C leave it open, and `x` is
+the way to close one on purpose. The cost: when nothing else is attached, a
+reply that is still running keeps going, and spending, until it ends, and the
+discussion itself stays open until the detached TTL below closes it.
+
 A discussion **no connection is attached to** is closed once its turn has
 ended and it has had no activity for the **detached TTL (1 hour)**, through the
 same terminal close as `coder.discuss.close`. The TTL starts when the last
