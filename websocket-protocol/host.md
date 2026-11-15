@@ -87,7 +87,8 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 - Every row has the same readiness fields as `host.request_approval`, computed
   from current subscriptions whenever the list is read. Subscription changes
   therefore update readiness without replacing the approval.
-- Resolved rows created more than 24 hours ago are dropped when the ledger is read. When an approval is created, every row older than 24 hours is dropped, pending ones included, unless a high-risk-method gate is still waiting on the row; no event is sent for a pending row dropped that way. Resolved rows stay until then, or until `host.dismiss_approval` removes them.
+- Resolved rows stay for 24 hours from `resolved_at`, including across daemon restarts, or until `host.dismiss_approval` removes them. Restart preserves the row id, resolution, `resolved_at`, `resolver`, and presentation choice without replaying `approval.requested` or `approval.resolved`. `resolver` carries the daemon-stamped `{principal, transport}` from the resolving connection or trusted transport, as described under `host.resolve_approval`. Disconnect reaping (`agent_gone`) has no resolver (`None`, omitted on the wire); older rows may also omit it. Reading the ledger drops expired resolved rows using their original resolution time (creation time only for older rows without `resolved_at`). Creating an approval also drops pending rows older than 24 hours unless a high-risk-method gate is still waiting on them; no event is sent for a pending row dropped that way.
+- Resolution, dismissal, disconnect reaping, withdrawal, and hidden-row creation each save one complete floor-journal revision before changing the live approval ledger or publishing an approval event. The saved resolved row includes its resolver before the transaction commits. The resolution audit sink runs only after that commit and after `approval.resolved`. A failed save calls no resolution sink, restores the prior floor and ledger and returns a persistence error; disconnect cleanup logs that error because its socket has already closed. Withdrawal still removes the asker's pending question and records its reason; it does not create an owner decision.
 - **Who sees which approvals (#3419).** An agent-bound session gets only the approvals raised for it (`agent_id` is its own) or by its own connection, so another agent's `details.params_preview` never reaches it. The approval the high-risk-method gate raises for an agent's own call is attributed to that agent, so it stays visible here. On macOS and Windows, an agent the host granted the watcher view (`agent_permissions.set_observer`) gets every approval, as host sessions, the daemon-token operator and the CLI do. On Linux a walled agent cannot call this method at all, so for a walled agent the grant changes nothing there (CAR's own assistant runs unwalled and is scoped like any agent).
 
 #### `host.register_agent`
@@ -354,7 +355,8 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   or for none), `lattice_mirror` (a Lattice review mirror whose review is
   still unanswered in the Lattice ledger: undecided, or decided on an approval
   channel and not yet folded in, which the daemon does within about two
-  seconds; once the ledger records the answer, the row can be dismissed), `unknown_approval`.
+  seconds; once the ledger records the answer, the row can be dismissed), `unknown_approval`,
+  `persistence_failed` (the journal could not save the dismissal; the row stays listed).
 
 ### `host.event`
 Broadcast to subscribers after `host.subscribe`.

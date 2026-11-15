@@ -34,6 +34,20 @@ automatically distribute this sync passphrase.
 
 No JSON-RPC parameters, reply fields, or wrapper signatures change.
 
+**Personal sync without a host pumping it.** With a Parslee login and a sync
+passphrase the daemon opens Parslee personal sync and pumps it itself every 60
+seconds, so its own devices' endpoints arrive and their keys are trusted with no
+client calling `sync.pump` (a phone host still pumps more often while in the
+foreground). It starts only once the daemon holds a Parslee session, which only
+an authoritative credential read installs (`auth.status`, a managed agent's
+`parslee.auth`, a sign-in), so boot still reads no credential. Without a sync
+passphrase it opens nothing, so it never starts a cleartext journal that would
+later stop Parslee sync from opening. A sync opened before the daemon knew
+of any login uses the separate pre-login journal; the first login the daemon
+learns of closes that journal, and the next use opens Parslee sync with no
+restart. `car auth status` and `car doctor` say when a signed-in CAR has no sync
+passphrase, which is the one thing linking own devices needs from the person.
+
 **Agent sessions bound to a work context** also reach `secret.get` (the agent's policy still applies, and reserved OAuth slots are still refused) and `browser.producer.register` (the agent's own browser stream). Daemon-global calls such as `models.list`, `host.devices` and `host.notify` stay refused.
 
 **Sessions bound to a work context.** A connection authenticated as a supervised

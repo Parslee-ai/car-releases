@@ -482,6 +482,11 @@
           "readme": true
         },
         {
+          "name": "car-machine-inventory",
+          "description": "Read-only inventory of what coding sessions leave on a machine (Docker objects, the Docker VM's host footprint, orphaned processes) and their attribution to sessions, for Common Agent Runtime",
+          "readme": true
+        },
+        {
           "name": "car-server",
           "description": "CAR daemon — WebSocket server for the Common Agent Runtime",
           "readme": true
@@ -895,6 +900,10 @@
     {
       "path": "board brief",
       "description": "The briefing a session starts with, for the current directory's branch"
+    },
+    {
+      "path": "board comment",
+      "description": "Comment on any item on your boards, as the operator. The way to reach a session through its item when its session or org cannot be messaged, such as an item a host-run Codex thread wrote with no org binding. A comment never changes the item"
     },
     {
       "path": "board history",
@@ -1443,6 +1452,18 @@
     {
       "path": "ls",
       "description": "List every installed contributed agent (Parslee-ai/car#182 phase 4). Calls the daemon's `agents.list` and renders the result. Long alias: `agents`"
+    },
+    {
+      "path": "machine",
+      "description": "What coding sessions left on this machine: Docker containers, volumes, images, build cache and builders, the Docker VM's host memory, and orphaned processes, each attributed to the session that made it or marked unattributed. Needs a running daemon (`car doctor` shows a summary without one)"
+    },
+    {
+      "path": "machine leftovers",
+      "description": "What ended coding sessions made that still exists, with sizes, and which of it would be offered for removal (stopped containers and anonymous volumes nothing uses). Running containers and named volumes are never offered"
+    },
+    {
+      "path": "machine resources",
+      "description": "Docker containers, volumes, images, build cache and builders, the Docker VM's host memory, and orphaned processes, each attributed to the coding session that made it or marked unattributed"
     },
     {
       "path": "mail",
@@ -4187,6 +4208,31 @@
           "method": "ledger.rung_changes.list",
           "documented": true,
           "role": "host"
+        }
+      ]
+    },
+    {
+      "namespace": "machine",
+      "methods": [
+        {
+          "method": "machine.capacity",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "machine.leftovers",
+          "documented": true,
+          "role": "operator_only"
+        },
+        {
+          "method": "machine.leftovers.remove",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "machine.resources",
+          "documented": true,
+          "role": "operator_only"
         }
       ]
     },

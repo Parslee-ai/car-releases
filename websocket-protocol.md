@@ -1335,6 +1335,7 @@ behavior. This section is long — for a compact map of every method with deep l
 - [foreman](websocket-protocol/foreman.md#foreman) <!-- ws-protocol:include -->
 - [multiplayer](websocket-protocol/multiplayer.md#multiplayer) <!-- ws-protocol:include -->
 - [fleet](websocket-protocol/fleet.md#fleet) <!-- ws-protocol:include -->
+- [machine](websocket-protocol/machine.md#machine) <!-- ws-protocol:include -->
 - [coder](websocket-protocol/coder.md#coder) <!-- ws-protocol:include -->
 - [declagents](websocket-protocol/declagents.md#declagents) <!-- ws-protocol:include -->
 - [voice](websocket-protocol/voice.md#voice) <!-- ws-protocol:include -->
@@ -1869,6 +1870,11 @@ headings added later are reachable from the namespace files and
 - <a id="fleetcomposite"></a>[`fleet.composite`](websocket-protocol/fleet.md#fleetcomposite)
 - <a id="fleetworkerget"></a>[`fleet.worker.get`](websocket-protocol/fleet.md#fleetworkerget)
 - <a id="fleetworkerset"></a>[`fleet.worker.set`](websocket-protocol/fleet.md#fleetworkerset)
+- <a id="machine"></a>[machine](websocket-protocol/machine.md#machine)
+- <a id="machineresources"></a>[`machine.resources`](websocket-protocol/machine.md#machineresources)
+- <a id="machineleftovers"></a>[`machine.leftovers`](websocket-protocol/machine.md#machineleftovers)
+- <a id="machineleftoversremove"></a>[`machine.leftovers.remove`](websocket-protocol/machine.md#machineleftoversremove)
+- <a id="machinecapacity"></a>[`machine.capacity`](websocket-protocol/machine.md#machinecapacity)
 - <a id="coder"></a>[coder](websocket-protocol/coder.md#coder)
 - <a id="coderstart"></a>[`coder.start`](websocket-protocol/coder.md#coderstart)
 - <a id="coderconfirm_contract"></a>[`coder.confirm_contract`](websocket-protocol/coder.md#coderconfirm_contract)

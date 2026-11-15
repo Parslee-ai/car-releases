@@ -7,7 +7,7 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 
 **Not indexed, on purpose:** the separate "## Notification methods (server → client)" section (`host.event`, `voice.event`, `coder.event`, `coder.discuss.event`, `browser.signin_needed`/`resolved`) documents push-notification *payload shapes*, not additional namespaced RPC methods — read it directly in the full doc. Six headings documented **inside** "## Method reference" itself are excluded for the same reason — they are server-initiated pushes, not client-callable requests: `browser.view.event`, `models.pull_progress`, `models.upgrade_available`, `models.suggestion_available`, `runs.trace.event`, and `coder.session_changed` (documented a second time, briefly, in the separate Notification methods section above). The "a2a (in-core dispatcher)" subsection's 9-11 A2A v1.0 methods are also excluded: they're documented as a table of `PascalCase` / `slash/form` name pairs with no per-method heading to anchor to, and the source doc doesn't say which form is the literal wire `method` string.
 
-**92 namespaces, 560 methods.**
+**93 namespaces, 564 methods.**
 
 ## a2a (7)
 
@@ -440,6 +440,13 @@ Compact map of every JSON-RPC method under "## Method reference": namespace, met
 - [`ledger.list`](websocket-protocol/ledger.md#ledgerlist)
 - [`ledger.put`](websocket-protocol/ledger.md#ledgerput)
 - [`ledger.rung_changes.list`](websocket-protocol/ledger.md#ledgerrung_changeslist)
+
+## machine (4)
+
+- [`machine.capacity`](websocket-protocol/machine.md#machinecapacity) — Local only: peers see the rating in the fleet...
+- [`machine.leftovers`](websocket-protocol/machine.md#machineleftovers) — Refused with no recorded coding session when...
+- [`machine.leftovers.remove`](websocket-protocol/machine.md#machineleftoversremove) — Host-only: the one method that changes Docker, on...
+- [`machine.resources`](websocket-protocol/machine.md#machineresources) — Reads /system/df and each running container's...
 
 ## mail (6)
 

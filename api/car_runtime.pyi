@@ -1037,6 +1037,12 @@ class CarRuntime:
     def lattice_wait(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `lattice.wait` (owner).
 
+    def machine_leftovers(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `machine.leftovers` (operator_only).
+
+    def machine_resources(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `machine.resources` (operator_only).
+
     def meeting_get(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `meeting.get` (operator).
 
@@ -2287,6 +2293,14 @@ class CarRuntime:
     def fleet_worker_get(self) -> str:
         """Whether this instance takes farmed-out coding work, and under what
         limits. Returns ``{ config, profile }`` JSON."""
+        ...
+
+    def machine_capacity(self) -> str:
+        """This machine's load rating (``plenty`` / ``tight`` /
+        ``overloaded``), the findings behind it and the raw sample. Returns
+        ``CapacityAssessment`` JSON: ``{ rating, sampled_at_ms, findings:
+        [{ signal, rating, reason }], sample, sample_interval_ms,
+        stale_after_ms }``."""
         ...
 
     def fleet_worker_set(
@@ -4104,7 +4118,7 @@ class CarRuntime:
 
         ``query_json`` is ``{chat_ids?, since?, limit?, include_body?}``;
         ``limit`` may not exceed 500. Returns
-        ``{available, backend, reason?, messages}``; an unreadable
+        ``{available, backend, reason?, messages}``; each row has ``own_echo``. An unreadable
         database is unavailable, not an empty conversation.
         """
         ...
@@ -4532,6 +4546,9 @@ class HostClient:
 
     def ledger_rung_changes_list(self, params_json: str) -> str: ...
     # Generated host wrapper for `ledger.rung_changes.list`.
+
+    def machine_leftovers_remove(self, params_json: str) -> str: ...
+    # Generated host wrapper for `machine.leftovers.remove`.
 
     def messaging_config_get(self, params_json: str) -> str: ...
     # Generated host wrapper for `messaging.config.get`.

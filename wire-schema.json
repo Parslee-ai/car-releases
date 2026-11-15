@@ -62,6 +62,7 @@
       "rpc.meeting.stop.params",
       "rpc.memory.delete.params",
       "rpc.memory.update_status.params",
+      "rpc.messages.read.result",
       "rpc.messaging.config.set.params",
       "rpc.models.catalog_snapshot.result",
       "rpc.models.search.params",
@@ -125,7 +126,8 @@
       "rpc.workflow.run.params",
       "rpc.workflow.verify.params",
       "type.action_result",
-      "type.host_approval_request"
+      "type.host_approval_request",
+      "type.messaging_inbound"
     ],
     "follow_up": "car-86cq.1",
     "journal_event_payloads": {
@@ -196,7 +198,7 @@
       "the release version is reported at serve time in the server.schema result and is deliberately absent from these digested bytes, so the digest tracks wire shape alone",
       "rpc.<method>.params schemas describe what the daemon accepts: required follows serde's input rules, and an object rejects unknown fields only where the Rust type does (deny_unknown_fields); field aliases the daemon also accepts are not listed. mail.inbox, mail.mailboxes, meeting.list, registry.list, registry.reap, events.truncate and models.search fall back to their defaults when their params do not parse (absent, null, or mistyped), so for those methods the schema is stricter than the daemon",
       "coverage.rpc_params.not_read names methods whose handler is passed no params; coverage.rpc_params.uncovered.typed_without_schema names methods parsed into a Rust type that does not derive a schema yet; coverage.rpc_params.uncovered.unresolved names methods whose params are read field by field or through a path the generator does not resolve",
-      "notification.host.event.params covers the host.event envelope; its payload is an open JSON value, described by type.host_approval_request for the kinds coverage.notifications.host_event_payloads names and not described for any other kind (approval.resolve_requested and approval.self_resolved included)",
+      "notification.host.event.params covers the host.event envelope; its payload is an open JSON value, described by the type schemas coverage.notifications.host_event_payloads names and not described for any other kind (approval.resolve_requested and approval.self_resolved included)",
       "server-to-client notifications other than host.event are not inventoried yet, so coverage.complete stays false until they are"
     ],
     "notifications": {
@@ -205,7 +207,8 @@
       ],
       "host_event_payloads": {
         "approval.requested": "type.host_approval_request",
-        "approval.resolved": "type.host_approval_request"
+        "approval.resolved": "type.host_approval_request",
+        "messaging.inbound": "type.messaging_inbound"
       },
       "inventoried": false
     },
@@ -356,6 +359,7 @@
         "host.subscribe",
         "inference.register_runner",
         "keychain.status",
+        "machine.capacity",
         "mail.accounts",
         "memory.consolidate",
         "memory.fact_count",
@@ -411,7 +415,7 @@
         "voice.tts_stream.list",
         "workflow.list_paused"
       ],
-      "total": 606,
+      "total": 610,
       "uncovered": {
         "typed_without_schema": {
           "a2a.send": "A2aSendParams",
@@ -673,6 +677,9 @@
           "ledger.list",
           "ledger.put",
           "ledger.rung_changes.list",
+          "machine.leftovers",
+          "machine.leftovers.remove",
+          "machine.resources",
           "meeting.start",
           "memory.add_fact",
           "memory.admission_table",
@@ -839,6 +846,7 @@
         "mail.message_body",
         "mail.messages",
         "mail.send",
+        "messages.read",
         "models.catalog_snapshot",
         "server.handshake",
         "server.schema",
@@ -854,7 +862,7 @@
         "tools.stream.subscribe",
         "tools.unregister"
       ],
-      "total": 606,
+      "total": 610,
       "uncovered": [
         "CancelTask",
         "CreateTaskPushNotificationConfig",
@@ -1182,6 +1190,10 @@
         "ledger.list",
         "ledger.put",
         "ledger.rung_changes.list",
+        "machine.capacity",
+        "machine.leftovers",
+        "machine.leftovers.remove",
+        "machine.resources",
         "meeting.get",
         "meeting.list",
         "meeting.start",
@@ -1208,7 +1220,6 @@
         "message/send",
         "message/stream",
         "messages.chats",
-        "messages.read",
         "messages.send",
         "messages.services",
         "messaging.config.get",
@@ -1690,6 +1701,11 @@
               "format": "uint",
               "minimum": 0.0,
               "type": "integer"
+            },
+            "spend_caps": {
+              "description": "The spend caps the agent's definition declares (`[{ usd, per }]`, the managed row's shape; car#4340); absent when it declares none. Only model calls made through CAR count against them.",
+              "items": true,
+              "type": "array"
             },
             "tools": {
               "items": {
@@ -3451,7 +3467,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Who resolved the approval, stamped by the daemon from the session or transport that resolved it, never from anything the caller sent (car#3398). Absent while the approval is pending and on a row resolved before the daemon recorded resolvers. An existing client ignores it."
+              "description": "Who resolved the approval, stamped by the daemon from the session or transport that resolved it, never from anything the caller sent (car#3398). Absent while pending, on disconnect reaping (`agent_gone`), and on a row resolved before the daemon recorded resolvers. An existing client ignores it."
             },
             "status": {
               "$ref": "#/definitions/HostApprovalStatus"
@@ -5057,6 +5073,96 @@
         "body"
       ],
       "title": "MemoryUpdateStatusParams",
+      "type": "object"
+    },
+    "rpc.messages.read.result": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ChatMessage": {
+          "additionalProperties": false,
+          "description": "One read-only row from Messages.app's chat database.",
+          "properties": {
+            "chat_id": {
+              "description": "The `chat.guid` returned by [`list_chats`], when the row is linked to a chat.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "date": {
+              "description": "RFC3339 timestamp converted from Messages.app's Apple-epoch nanoseconds.",
+              "type": "string"
+            },
+            "handle": {
+              "description": "Sender handle. Outbound (`is_from_me`) rows commonly have no handle.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "description": "Stable `message.guid`; callers must not parse it.",
+              "type": "string"
+            },
+            "is_from_me": {
+              "type": "boolean"
+            },
+            "own_echo": {
+              "description": "Received self-echo matched by the reader before projection.",
+              "type": "boolean"
+            },
+            "text": {
+              "description": "Present only when `include_body` was requested and a body was recoverable.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "chat_id",
+            "handle",
+            "is_from_me",
+            "own_echo",
+            "date",
+            "text"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Availability envelope — returned from every list-ish method so callers can branch on `available` instead of assuming a populated list.\n\n**Flatten caution.** This struct is `#[serde(flatten)]`ed into every listing payload (see `CalendarListing`, `ContactListing`, etc.). Do not add fields with names that collide with payload fields. `#[non_exhaustive]` to keep future additions additive.",
+      "properties": {
+        "available": {
+          "description": "True if the backend returned real data.",
+          "type": "boolean"
+        },
+        "backend": {
+          "description": "Backend that was attempted (`\"eventkit\"`, `\"msgraph\"`, `\"eds\"`, ...).",
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/definitions/ChatMessage"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "description": "When `available` is false, human-readable explanation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "backend",
+        "reason",
+        "messages"
+      ],
+      "title": "MessageReadListing",
       "type": "object"
     },
     "rpc.messaging.config.set.params": {
@@ -8487,7 +8593,7 @@
               "type": "null"
             }
           ],
-          "description": "Who resolved the approval, stamped by the daemon from the session or transport that resolved it, never from anything the caller sent (car#3398). Absent while the approval is pending and on a row resolved before the daemon recorded resolvers. An existing client ignores it."
+          "description": "Who resolved the approval, stamped by the daemon from the session or transport that resolved it, never from anything the caller sent (car#3398). Absent while pending, on disconnect reaping (`agent_gone`), and on a row resolved before the daemon recorded resolvers. An existing client ignores it."
         },
         "status": {
           "$ref": "#/definitions/HostApprovalStatus"
@@ -8503,6 +8609,44 @@
         "created_at"
       ],
       "title": "HostApprovalRequest",
+      "type": "object"
+    },
+    "type.messaging_inbound": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "One inbound iMessage row, projected from `message` JOIN `handle`.\n\n`body` is the human-readable message text, already decoded from `attributedBody` (or the `text` column when it was populated). It is never the raw BLOB bytes and never empty for a row that carried a body.",
+      "properties": {
+        "body": {
+          "description": "Decoded human-readable body.",
+          "type": "string"
+        },
+        "date": {
+          "description": "`message.date` — Apple epoch nanoseconds, also used for the echo delay.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "handle_id": {
+          "description": "`handle.id` — the sender handle (phone number / Apple ID email).",
+          "type": "string"
+        },
+        "own_echo": {
+          "description": "Received twin of an earlier same-chat send within the echo delay.",
+          "type": "boolean"
+        },
+        "rowid": {
+          "description": "`message.ROWID` — the monotonic high-water key.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rowid",
+        "handle_id",
+        "body",
+        "date",
+        "own_echo"
+      ],
+      "title": "InboundMessage",
       "type": "object"
     }
   }

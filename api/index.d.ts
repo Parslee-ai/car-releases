@@ -1097,6 +1097,12 @@ export class CarRuntime {
   /** Generated daemon wrapper for `lattice.wait` (owner). */
   latticeWait(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `machine.leftovers` (operator_only). */
+  machineLeftovers(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `machine.resources` (operator_only). */
+  machineResources(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `meeting.get` (operator). */
   meetingGet(paramsJson: string): Promise<string>;
 
@@ -1742,6 +1748,16 @@ export class CarRuntime {
 
   /** Whether this instance takes farmed-out coding work. `{ config, profile }` JSON. */
   fleetWorkerGet(): Promise<string>;
+
+  /**
+   * This machine's load rating and why. `CapacityAssessment` JSON:
+   * `{ rating: "plenty"|"tight"|"overloaded", sampled_at_ms, findings: [{ signal,
+   * rating, reason }], sample: { cores, memory_total_bytes, load_average?,
+   * memory_pressure?, memory_available_bytes?, swap_used_bytes?,
+   * swapped_out_bytes?, disk_free_bytes?, disk_total_bytes?, ... },
+   * sample_interval_ms, stale_after_ms }`.
+   */
+  machineCapacity(): Promise<string>;
 
   /**
    * Enroll (or withdraw) this instance as a fleet worker. **Operator-only, and
@@ -4083,7 +4099,7 @@ export class CarRuntime {
    * Read Messages.app rows newest first. `queryJson` is
    * `{chat_ids?: string[], since?: string, limit?: number,
    * include_body?: boolean}`. `limit` may not exceed 500. Returns
-   * `{available, backend, reason?, messages}`;
+   * `{available, backend, reason?, messages}`; each row carries `own_echo`.
    * an unreadable database is unavailable, not an empty conversation.
    *
    * Blocks the JS event loop for the whole call; on a server or any request path use `messagesReadAsync`.
@@ -4602,6 +4618,9 @@ export class HostClient {
 
   /** Generated host wrapper for `ledger.rung_changes.list`. */
   ledgerRungChangesList(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `machine.leftovers.remove`. */
+  machineLeftoversRemove(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `messaging.config.get`. */
   messagingConfigGet(paramsJson: string): Promise<string>;

@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.63.0 (2026-11-13). Every subcommand the installed binary reports is
+> 0.64.0 (2026-11-15). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 89 top-level commands, 191 nested subcommands
+> 90 top-level commands, 194 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 89 subcommands spanning several different jobs:
+`car` is one binary with 90 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -261,6 +261,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car schedule`](#car-schedule) | Schedule commands to run on a cadence (launchd / cron / schtasks) |
 | [`car registry`](#car-registry) | Registry tooling for the contributed-agents registry (Parslee-ai/car#182 phase 5): `digest` a manifest, or `validate` a registry directory (the CI gate run by Parslee-ai/car-agent-registry) |
 | [`car fleet`](#car-fleet) | What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon |
+| [`car machine`](#car-machine) | What coding sessions left on this machine: Docker containers, volumes, images, build cache and builders, the Docker VM's host memory, and orphaned processes, each attributed to the session that made it or marked unattributed. Needs a running daemon (`car doctor` shows a summary without one) |
 | [`car mp`](#car-mp) | Multiplayer development: a work item moves Build → Improve → Polish through different developers before it merges, each stage a coder session on its owner's machine with the engine they choose. Needs a running daemon and a shared git remote |
 | [`car claude`](#car-claude) | Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon |
 | [`car codex`](#car-codex) | Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent, installs session-only collaboration and policy hooks, injects the daemon brief, and removes the agent on exit. Needs a running daemon. Arguments after `--` go to `codex` |
@@ -2448,6 +2449,9 @@ Commands:
   items      List the shared work board: what is in flight, who is driving it, and what it waits on
   (the coder-session monitor is plain `car board`)
   history    One item's history: each change, the session that made it, comments
+  comment    Comment on any item on your boards, as the operator. The way to reach a session through
+  its item when its session or org cannot be messaged, such as an item a host-run Codex thread wrote
+  with no org binding. A comment never changes the item
   brief      The briefing a session starts with, for the current directory's branch
   reconcile  Make a project's board follow its code host (opt-in). The daemon then marks items done
   or abandoned when their PR merges or is abandoned, moves them to review when a PR opens, and opens
@@ -2495,6 +2499,24 @@ Arguments:
 Options:
       --org <ORG>
       --json
+  -h, --help       Print help
+```
+
+#### car board comment
+
+```text
+Comment on any item on your boards, as the operator. The way to reach a session through its item
+when its session or org cannot be messaged, such as an item a host-run Codex thread wrote with no
+org binding. A comment never changes the item
+
+Usage: car board comment [OPTIONS] <ID> <BODY>
+
+Arguments:
+  <ID>
+  <BODY>  The comment (at most 2 KB)
+
+Options:
+      --org <ORG>
   -h, --help       Print help
 ```
 
@@ -2750,8 +2772,11 @@ Environment:
   WT_POOL_HOOK_WAIT
                    minutes `hook` waits for a slot when the pool is full (default 10)
 
-Per-machine git config: wtpool.size (default 6), wtpool.dir (default
-<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+Per-machine git config: wtpool.size (default 6; re-read while an acquire
+waits), wtpool.dir (default <parent>/<repo>-pool), wtpool.prepare (overrides
+the file's `prepare`), wtpool.idleMinutes (default 30; WT_POOL_IDLE_MINUTES
+overrides): how long a merged slot, or twice as long a Codex app-server's
+slot, sits with no edit before reclaim frees it while its holder lives.
 
 Exit codes:
   0  done
@@ -2807,8 +2832,11 @@ Environment:
   WT_POOL_HOOK_WAIT
                    minutes `hook` waits for a slot when the pool is full (default 10)
 
-Per-machine git config: wtpool.size (default 6), wtpool.dir (default
-<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+Per-machine git config: wtpool.size (default 6; re-read while an acquire
+waits), wtpool.dir (default <parent>/<repo>-pool), wtpool.prepare (overrides
+the file's `prepare`), wtpool.idleMinutes (default 30; WT_POOL_IDLE_MINUTES
+overrides): how long a merged slot, or twice as long a Codex app-server's
+slot, sits with no edit before reclaim frees it while its holder lives.
 
 Exit codes:
   0  done
@@ -2861,8 +2889,11 @@ Environment:
   WT_POOL_HOOK_WAIT
                    minutes `hook` waits for a slot when the pool is full (default 10)
 
-Per-machine git config: wtpool.size (default 6), wtpool.dir (default
-<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+Per-machine git config: wtpool.size (default 6; re-read while an acquire
+waits), wtpool.dir (default <parent>/<repo>-pool), wtpool.prepare (overrides
+the file's `prepare`), wtpool.idleMinutes (default 30; WT_POOL_IDLE_MINUTES
+overrides): how long a merged slot, or twice as long a Codex app-server's
+slot, sits with no edit before reclaim frees it while its holder lives.
 
 Exit codes:
   0  done
@@ -2893,8 +2924,11 @@ Environment:
   WT_POOL_HOOK_WAIT
                    minutes `hook` waits for a slot when the pool is full (default 10)
 
-Per-machine git config: wtpool.size (default 6), wtpool.dir (default
-<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+Per-machine git config: wtpool.size (default 6; re-read while an acquire
+waits), wtpool.dir (default <parent>/<repo>-pool), wtpool.prepare (overrides
+the file's `prepare`), wtpool.idleMinutes (default 30; WT_POOL_IDLE_MINUTES
+overrides): how long a merged slot, or twice as long a Codex app-server's
+slot, sits with no edit before reclaim frees it while its holder lives.
 
 Exit codes:
   0  done
@@ -2929,8 +2963,11 @@ Environment:
   WT_POOL_HOOK_WAIT
                    minutes `hook` waits for a slot when the pool is full (default 10)
 
-Per-machine git config: wtpool.size (default 6), wtpool.dir (default
-<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+Per-machine git config: wtpool.size (default 6; re-read while an acquire
+waits), wtpool.dir (default <parent>/<repo>-pool), wtpool.prepare (overrides
+the file's `prepare`), wtpool.idleMinutes (default 30; WT_POOL_IDLE_MINUTES
+overrides): how long a merged slot, or twice as long a Codex app-server's
+slot, sits with no edit before reclaim frees it while its holder lives.
 
 Exit codes:
   0  done
@@ -2986,8 +3023,11 @@ Environment:
   WT_POOL_HOOK_WAIT
                    minutes `hook` waits for a slot when the pool is full (default 10)
 
-Per-machine git config: wtpool.size (default 6), wtpool.dir (default
-<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+Per-machine git config: wtpool.size (default 6; re-read while an acquire
+waits), wtpool.dir (default <parent>/<repo>-pool), wtpool.prepare (overrides
+the file's `prepare`), wtpool.idleMinutes (default 30; WT_POOL_IDLE_MINUTES
+overrides): how long a merged slot, or twice as long a Codex app-server's
+slot, sits with no edit before reclaim frees it while its holder lives.
 
 Exit codes:
   0  done
@@ -3028,8 +3068,11 @@ Environment:
   WT_POOL_HOOK_WAIT
                    minutes `hook` waits for a slot when the pool is full (default 10)
 
-Per-machine git config: wtpool.size (default 6), wtpool.dir (default
-<parent>/<repo>-pool), wtpool.prepare (overrides the file's `prepare`).
+Per-machine git config: wtpool.size (default 6; re-read while an acquire
+waits), wtpool.dir (default <parent>/<repo>-pool), wtpool.prepare (overrides
+the file's `prepare`), wtpool.idleMinutes (default 30; WT_POOL_IDLE_MINUTES
+overrides): how long a merged slot, or twice as long a Codex app-server's
+slot, sits with no edit before reclaim frees it while its holder lives.
 
 Exit codes:
   0  done
@@ -5537,6 +5580,59 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+### car machine
+
+```text
+What coding sessions left on this machine: Docker containers, volumes, images, build cache and
+builders, the Docker VM's host memory, and orphaned processes, each attributed to the session that
+made it or marked unattributed. Needs a running daemon (`car doctor` shows a summary without one)
+
+Usage: car machine <COMMAND>
+
+Commands:
+  resources  Docker containers, volumes, images, build cache and builders, the Docker VM's host
+  memory, and orphaned processes, each attributed to the coding session that made it or marked
+  unattributed
+  leftovers  What ended coding sessions made that still exists, with sizes, and which of it would be
+  offered for removal (stopped containers and anonymous volumes nothing uses). Running containers
+  and named volumes are never offered
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car machine resources
+
+```text
+Docker containers, volumes, images, build cache and builders, the Docker VM's host memory, and
+orphaned processes, each attributed to the coding session that made it or marked unattributed
+
+Usage: car machine resources [OPTIONS]
+
+Options:
+      --json  Print the raw inventory JSON
+  -h, --help  Print help
+```
+
+#### car machine leftovers
+
+```text
+What ended coding sessions made that still exists, with sizes, and which of it would be offered for
+removal (stopped containers and anonymous volumes nothing uses). Running containers and named
+volumes are never offered
+
+Usage: car machine leftovers [OPTIONS]
+
+Options:
+      --session <SESSION>  One session, ended or not (its id, e.g. `claude-session-…`)
+      --json               Print the raw report JSON
+      --remove             Remove what is offered: lists exactly what will be removed, then asks.
+      Never a running container, a named volume or anything of a live session
+      --yes                With --remove: do not ask
+  -h, --help               Print help
 ```
 
 ### car mp

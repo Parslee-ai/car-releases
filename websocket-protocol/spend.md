@@ -31,11 +31,16 @@ refuses a non-empty `spend_caps` field (an absent, null or empty one, as an
 caps are kept). A refusal sends nothing to the provider and
 costs nothing, and the agent's process is not stopped, restarted or paused:
 its next call after the period resets goes through by itself. A capped
-orchestrator's own calls are capped; its workers' calls are not counted
-against its cap until workers PR 5 (`docs/proposals/orchestrator-workers.md`)
-adds the orchestrator's key to every worker call.
+orchestrator's `[spend]` caps cap its own calls. Its workers' calls are capped
+by its `[workers.spend] caps` (car#4339; the rules are in
+`docs/agent-bundle-spec.md`): every worker call is also charged to the
+orchestrator's workers total, key `workers:<orchestrator>`, an aggregate that is
+never a payer and is left out of `spend.costs` `total`, and each call is
+admitted against those caps on that total. A worker refused there gets the
+shared refusal (`cap: "shared"`, below). `[workers.spend] per_label` caps are
+refused at install as not supported by this CAR yet.
 
-**Asking the owner** (car#3407). The first time an agent is refused at its own cap in a period, CAR opens one owner-facing `HostApprovalRequest` for that agent and period, id `spend-cap:<principal>:<per>:<reset unix seconds>`, with one option, `acknowledge`. Its text names the agent, the cap, the spend and the reset time, and says how to raise the cap: install a version of the bundle with a larger `[spend]` cap, since caps change only that way. Further refusals in the period open no more requests, and neither does one after a daemon restart: once the request is open, a marker under the meter's `spend/cap-approvals/` records the period. A request that could not be opened leaves no marker, so the next refusal asks again. Nothing resumes until the cap is raised or the period resets. A shared cap below a worker tree's root asks nothing, as it names no amount. `[workers.spend]` caps are #4339, and declarative-agent caps are #4340.
+**Asking the owner** (car#3407). The first time an agent is refused at its own cap in a period, CAR opens one owner-facing `HostApprovalRequest` for that agent and period, id `spend-cap:<principal>:<per>:<reset unix seconds>`, with one option, `acknowledge`. Its text names the agent, the cap, the spend and the reset time, and says how to raise the cap: install a version of the bundle with a larger `[spend]` cap, since caps change only that way. Further refusals in the period open no more requests, and neither does one after a daemon restart: once the request is open, a marker under the meter's `spend/cap-approvals/` records the period. A request that could not be opened leaves no marker, so the next refusal asks again. Nothing resumes until the cap is raised or the period resets. An orchestrator's `[workers.spend]` cap asks the same way, once per orchestrator and period whichever worker reached it: the id is `spend-cap:workers:<orchestrator>:<per>:<reset>`, the request's `agent_id` is the orchestrator, and its text says to install a version of the orchestrator's bundle with a larger `[workers.spend]` cap (car#4339). Any other shared cap below a worker tree's root asks nothing, as it names no amount. A declarative agent's own `spend_caps` (`declagents.md`, `declagents.get`; car#4340) ask the same way, id `spend-cap:declarative:<id>:<per>:<reset>`, `agent_id` the agent's id, and the text says to save the agent with a larger spend cap, since caps are part of its definition.
 
 **The refusal, error `-32018`.** Every refusal is a JSON-RPC error with
 `code: -32018`, the exact text below as `message`, and a stable
@@ -177,6 +182,6 @@ At 80% of settled monthly spend, CAR durably reserves one warning for that owner
 
 #### `spend.changed` (server → client notification)
 - A `host.event` with `kind: "spend.changed"` on the `host.subscribe` stream (see [host](host.md#host)): `{ kind: "spend.changed", agent_id, payload: { agent: "agent:<id>", at_budget, periods } }`. `agent_id` is the bare id for an agent; `payload.agent` is the meter key; `at_budget` is `null` or `{ cap, holding, resets_at, zone }`; `periods` is `spend.status`'s `periods` object (`hour`, `day`, `month`, each `{ start, resets_at, spent_usd, calls, unpriced_calls, refused_calls, cap_usd, left_usd, at_budget }`).
-- Published when a principal enters "at budget" (on the refusal that reached the cap) and when the meter's minute tick clears it after the period resets, so a dashboard shows and removes "At budget" without reloading, within a minute of the reset. A session bound to a supervised agent receives only its own.
+- Published when a principal enters "at budget" (on the refusal that reached the cap) and when the meter's minute tick clears it after the period resets, so a dashboard shows and removes "At budget" without reloading, within a minute of the reset. A principal refused at a cap its own key does not hold is published under the key whose cap was reached, and cleared under that key: a worker refused at its orchestrator's `[workers.spend]` total names `workers:<orchestrator>`, and a worker, the operator, an outside credential or CAR's own work refused at an owner or class limit names `owner:<owner>` or that class's key. An agent or declarative agent is published under its own key at every cap. A session bound to a supervised agent receives only its own.
 
 {% endraw %}

@@ -114,4 +114,15 @@ recipients retain their consent checks.
 `agents.install` accepts `owner_assistant: true` beside the manifest to bind
 that agent after a successful install. Worker bundles cannot hold this role.
 
+#### Received iMessage events (server → client notification)
+
+When enabled, the iMessage poller emits `host.event` kind `messaging.inbound`
+for each allowlisted inbound row before the floor handles it. The payload is
+`{ rowid, handle_id, body, date, own_echo }`; `date` is Apple-epoch nanoseconds.
+`own_echo` is the reader's boolean described in [messages.read](messages.md#messagesread).
+Owner assistants must ignore rows marked `own_echo: true`. CAR's floor drops
+marked echoes before parsing; its closed approval grammar remains a second
+wall for unmarked prompt echoes. Unknown senders are still dropped before
+host publication. The persisted watermark advances over marked rows too.
+
 {% endraw %}
