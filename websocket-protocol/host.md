@@ -10,6 +10,7 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 - **Params**: `{}`
 - **Returns**: `{ subscribed: boolean, agents: HostAgent[], devices: HostDevice[], approvals: HostApproval[], events: HostEvent[], pending_signins: { conversation_id: string, standing_session: boolean, message: string }[], event_sequence: number, identity?: HostIdentity }`
 - Registers the connection to receive `host.event` notifications. Returns the current snapshot.
+- **Handshake first.** The connection must have completed `server.handshake` (`{"protocol_version":N}`) with a success reply before `host.subscribe`; until then the call is refused with error code `-32005` and a message that starts `protocol handshake required:` and names `server.handshake`.
 - **Who sees which records (#3419).** A session bound to a supervised agent (`session.auth { agent_id, token }`, or an outside credential acting as one) is subscribed to its own records only: the snapshot's `agents`, `approvals` and `events` hold only what is attributed to that agent (`approvals` also keeps a row its own connection raised), and the later `host.event` broadcasts it receives are only those whose `agent_id` is its own, plus the `approval.resolve_requested` fan-out for an approval its connection owns. `devices`, `pending_signins` and `identity` are unchanged. On macOS and Windows, an agent the host granted the watcher view (`agent_permissions.set_observer`) gets every record, as host sessions, the daemon-token operator and the CLI always do; its snapshot `agents` holds every registered agent too. Granting or withdrawing through `agent_permissions.set_observer` re-scopes a subscription that is already open; the snapshot already returned is not re-sent, so call `host.subscribe` again for it. A grant changed by another process (a hand edit of `agent-permissions.json`) applies to an open subscription only when it subscribes again. On Linux a walled agent cannot call this method at all, so for a walled agent the grant changes nothing there (CAR's own assistant runs unwalled and is scoped like any agent).
 - **`identity` (added 2026-05)**: daemon-identifying metadata so hosts that connect to multiple daemons (e.g. one supervised by CarHost.app plus an ad-hoc `cargo run -p car-server` dev/eval daemon on a different port) can tell which one they're on and whether it's the supervisor lock owner.
   - `version` — `CARGO_PKG_VERSION` of the daemon binary
@@ -78,12 +79,91 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 
 #### `host.events`
 - **Params**: `{ limit?: number = 100 }`
-- **Returns**: `{ events: HostEvent[] }`
+- **Returns**: `HostEvent[]` — a bare array of `{ id, sequence, timestamp, kind, agent_id?, message, payload }`, newest first. There is no `events` envelope: unlike the `host.subscribe` snapshot, whose `events` field holds the newest 50 rows in this same shape and order, this reply is the array itself, so a client reading `result.events` gets nothing.
 - **Who sees which events (#3419).** An agent-bound session gets only the events whose `agent_id` is its own (an unattributed event such as `device.*` is not its own), and `limit` counts those, so it gets its own newest `limit` rather than its share of everyone's. On macOS and Windows, an agent the host granted the watcher view (`agent_permissions.set_observer`) gets every event, as host sessions, the daemon-token operator and the CLI do. On Linux a walled agent cannot call this method at all, so for a walled agent the grant changes nothing there (CAR's own assistant runs unwalled and is scoped like any agent).
 
 #### `host.approvals`
-- **Params**: `{}`
-- **Returns**: `(HostApproval & { subscribed: boolean, answerable: boolean })[]`
+- **Params**: `{ pending?: boolean, collaboration?: string }`
+- **Returns**: `(HostApproval & { subscribed: boolean, answerable: boolean })[]`;
+  with `pending: true`, the person's pending asks (below).
+- Without `pending` (or with `pending: false`), newest first: the approvals
+  ledger, described in the rest of this section, every row with exactly the
+  fields it always had. `collaboration` is read only with `pending`.
+- **Every other ask, in the unfiltered list.** For the person's own two
+  surfaces (the host client and the signed-in dashboard) the list also holds
+  every other ask the pending view lists, with the same `id`, and each of
+  those settled in the last 24 hours, in the ledger row's shape: `action` is
+  the question, `details` is the pending view's row for it (`kind`,
+  `source`, `from`, `collaboration`, and the rest below), `options`,
+  `status` (`pending` or `resolved`), `created_at` (when it was asked),
+  `resolved_at` and `resolution` once settled, `presented: true`,
+  `subscribed: false` and `answerable: true`. `resolution` is the answer as
+  this CAR holds it: the option or words the person chose, the reply that
+  settled a thread question, `accept` or `decline` for a board item
+  (`withdrawn` when its sender took it back), or a Lattice request's answer.
+  A settled question asking everyone (`details.everyone: true`) also names
+  who took it in `details.resolved_by` (their name, as `from` names people)
+  and `details.resolved_by_account`, for every member it asked.
+  Every one is read from the mechanism that owns that ask, the same read the
+  pending view and the `collab.list` and `collab.wait` counts make, so the
+  lists cannot disagree; settled asks survive a restart because each owner
+  keeps them (the collaboration store, the Lattice request ledger, the work
+  board). A source that cannot be read just now is missing from the list,
+  which has no `unavailable`. Any other session gets the ledger alone, as
+  before.
+- **The person's pending asks (`pending: true`).** Every ask waiting on the
+  person signed in here, oldest first:
+  `{ count, asks: [PendingAsk], unavailable?: [{ source, org, sentence }] }`.
+  `count` is the length of `asks`. Each `PendingAsk` is
+  `{ id, kind, source, org?, from, question, options, collaboration, asked_at_ms, message_id?, everyone?, item?, request_id?, request_kind?, to?, origin?, remote? }`:
+  - `id` is what `host.resolve_approval` takes as `approval_id`. A ledger
+    row keeps its own id (`approval-…`); the other kinds use
+    `ask:<org>:<collaboration>:<message_id>`, `direct:<org>:<conversation>:<message_id>`,
+    `board:<org>:<item>` and `lattice:<request_id>`. Treat it as opaque.
+  - `kind` is `decision` (a question asking the person, in a collaboration or
+    a direct conversation), `approval` (a ledger row: a solo agent's approval,
+    or an agent's approval raised for a collaboration), `handoff` or
+    `assignment` (a work-board item waiting on the person to accept it), or
+    `request` (a Lattice request to a person: a question, review, handoff or
+    message another session or agent sent a person node outside any
+    collaboration, as `lattice.requests` lists it).
+  - `source` is `collaboration`, `direct`, `agent` (a ledger row raised for no
+    collaboration), `board` or `lattice`.
+  - A `request` also carries `request_id` (its id in `lattice.requests`),
+    `request_kind` (`question`, `review_request`, `handoff` or `message`),
+    `to` (the person it asks, by name), `origin` (`local`, `device`,
+    `another_owner` or `unknown`, as `lattice.requests` says) and `remote`
+    (the asker's CAR, or `null`). Its `options` are `["approve", "deny"]`
+    for a review and empty otherwise. A review that has an approve/deny row
+    right now is listed once, as that `approval`, never also as a request.
+    A request is in no collaboration, so it is counted in the unscoped view
+    and `collab.wait`, never in a collaboration's.
+  - `from` is who asks (a member's name as `collab.list` shows it, or the
+    agent's name). A question one of another person's sessions or supervised
+    agents asked on their CAR is from that session, and its row adds
+    `from_owner`, the person's name, as `collab.read` does; it is never shown
+    as from the person; `question` is the question's text, the approval's action,
+    or the board item's title; `options` are the choices the ask offers (empty
+    for a question that offers none; `["accept", "decline"]` for a board item).
+  - `collaboration` is `{ id, title }` for an ask in a collaboration (an
+    approval is in one when its `details.collaboration` names it), else
+    `null`. `message_id` is the question's message id; `item` the board item.
+  - `everyone: true` marks a question asking every person in its
+    collaboration (`collab.message` with `ask: "everyone"`): it is listed for
+    each of them, and the first answer, from any of them through any route,
+    takes it off every one of their lists and counts. Who took it, and what
+    they answered, is on the question's `ask` mark in `collab.read` and
+    `collab.conversation`.
+  - With `collaboration` (a handle from `collab.list`), only that
+    collaboration's asks. A plain @-mention is never an ask, and a question
+    asking someone else, a resolved approval or an answered question is not
+    listed.
+  - `unavailable` names a source that could not be read just now (an
+    organization's shared work board, or `lattice`, with no `org`, for the
+    Lattice request ledger); its asks are missing from `asks`, not answered.
+  - Only the person's own two surfaces read it: the host client and the
+    signed-in dashboard. Any other session is refused with a JSON-RPC error
+    ("Only the person answers their own asks…").
 - Every row has the same readiness fields as `host.request_approval`, computed
   from current subscriptions whenever the list is read. Subscription changes
   therefore update readiness without replacing the approval.
@@ -120,6 +200,13 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   `skip`). Existing ownership and `answerable` rules still apply; use
   `system_level: true` for a row the owner answers. The presentation choice
   survives restart until the row is settled or pruned.
+- A row whose `details.collaboration` names a collaboration is that
+  collaboration's Approval ask (see `host.resolve_approval`). It offers
+  exactly Allow once (`approve`) and Decline (`deny`): `options` must be those
+  two or left out (they are then filled in), and any other options are refused
+  with a sentence saying to post a question in the collaboration instead. It
+  is always raised system-level, whatever `system_level` says, because the
+  person answers it, never the session that raised it.
 - Every accepted row carries `presented: boolean`: `false` for `present:false`,
   `true` otherwise. It travels in the request reply, `host.approvals`, the
   `host.subscribe.approvals` snapshot, durable approval records, and full-row
@@ -184,7 +271,15 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   answers; `message_send` may add `summary`, the agent's reason for the text, shown as
   Why; `email_reply` takes `{ to, cc?, subject, body, from? }`; `human_request`
   takes `{ question, context?, options?, approveMeans?, requester? }` and shows
-  the question and what Approve answers. Any other
+  the question and what Approve answers. `colleague_request` is a colleague's
+  request that one of the person's agents merge, approve, deploy, delete,
+  spend, send outside the organization or change access; it takes
+  `{ requester, agent?, operation?, target? }`, with `action` saying what would
+  happen. The macOS host labels its buttons Allow once (resolution `approve`)
+  and Decline (`deny`), and while CarHost is not the active app it raises a
+  banner titled "<requester> asks <agent>" with those two buttons, which
+  answer it through `host.resolve_approval`; `approval.resolved` takes the
+  banner down however it was answered. Any other
   `kind` gets the generic rendering. A
   row that claims `source: "chat"` while carrying any other key, or lacks
   `session_id`/`tool`, gets the generic rendering. `action` and every
@@ -209,11 +304,17 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
   `Image`, `Icon`, `Chart`, `Spacer`, `Badge`), at most 64 KiB. Anything that
   takes input, plus `Tabs` and `Modal`, is refused, because an agent-drawn
   Approve button would be a forged control on the card where a click is a
-  decision. The stored row's `a2ui` is the checked `A2uiSurface`
-  (`surfaceId: "approval"`), not the request as sent. `action` and `details`
-  stay required context: the Windows tray, iOS and Android, and the iMessage
-  and Slack prompts show those, not the tree. When a row has both `a2ui` and a
-  `details.kind` layout, CarHost shows `a2ui`.
+  decision. An `Image` must be a `data:` image the card carries itself; a
+  remote, relative or data-model-bound address is refused, because a host
+  would fetch it when the card opens, before the person decides. The stored
+  row's `a2ui` is the checked `A2uiSurface` (`surfaceId: "approval"`), not the
+  request as sent. `action` and `details` stay required context: the Windows
+  tray, iOS and Android, and the iMessage and Slack prompts show those, not the
+  tree. A request with `a2ui` and empty `details` (absent, null, `{}`, `[]` or
+  `""`) gets `details: { "card_text": "<the card's text, one line per Text
+  component in layout order>" }`; one whose card has no text either is
+  refused. When a row has both `a2ui` and a `details.kind` layout, CarHost
+  shows `a2ui`.
 - `system_level: true` opts the row out of per-session ownership so any
   authenticated session (typically CarHost or `car-host approve`) can resolve it.
   Agents requesting user approval should always set it: such a row is the
@@ -238,9 +339,85 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 > payload in the old shape is rejected because `action` is required.
 
 #### `host.resolve_approval`
-- **Params**: `ResolveHostApprovalRequest` — `{ approval_id: string, resolution: string }`
+- **Params**: `ResolveHostApprovalRequest` — `{ approval_id: string, resolution?: string, text?: string, acknowledge_processing?: boolean }`.
+  `acknowledge_processing` is read only for a `lattice:` ask (below).
+  A ledger row takes `resolution`, one of its options; the other pending asks
+  take `resolution` or `text` (below). A call that gives neither is refused
+  with a sentence saying which to give.
+- **Answering any pending ask.** `approval_id` takes any `id` from
+  `host.approvals { pending: true }`. A ledger row is resolved exactly as the
+  rest of this section describes; when its `details.collaboration` names a
+  collaboration, the reply also carries `receipt`, the post in that
+  collaboration whose body is the resolution itself (`approve` or `deny`). Such a row is
+  that collaboration's Approval ask, the person's decision: only the host
+  client and the signed-in dashboard may resolve it, and any other session,
+  the agent that raised it included, is refused `not_your_ask` with the row
+  left pending. A typed reply in the thread naming it (`collab.message` with
+  `in_reply_to` its id) is an ordinary post and leaves it pending; only Allow
+  once (`approve`) or Decline (`deny`) answers it. The other ids
+  go to the mechanism that owns the ask, and only the host client and the
+  signed-in dashboard may answer them:
+  - `ask:` (a question in a collaboration): every answer is an ordinary
+    post in the thread, a reply to the question that the asker and every
+    member read (CAR-1006). `resolution` is one of its `options`, or
+    `decline`, which posts the answer "declined"; `text` is a typed answer.
+    Returns `{ id, status: "answered", private: false, resolution?, answer?, post }`.
+    A question asking one person settles only by that person's own answer:
+    this call, or a `collab.message` from the host client with
+    `in_reply_to` the question. A reply from an agent session of the same
+    account (Claude Code, Codex) is an ordinary post and leaves the ask
+    pending, and such a session reads the ask with `for_you: false`.
+    A question asking everyone (`everyone: true`) is answered for the whole
+    team, so nothing in it is private: `resolution` is posted in the thread as
+    the reply that takes it, with the option as its body, and every member,
+    the asker included, reads who took it and what they chose. Returns
+    `{ id, status: "answered", private: false, resolution, post }`. An answer
+    after someone took it is refused `already_resolved` with the sentence
+    "<name> already took this; their answer stands." and
+    `data.taken: { resolved_by, resolved_by_account, resolved_at_ms, answer, answer_message_id }`.
+  - `direct:` (a question in a direct conversation): `text` (or `resolution`)
+    is the reply to it: `{ id, status: "answered", private: true, delivery }`.
+  - `lattice:` (a Lattice request to a person): `text` is the answer, or
+    `resolution`, one of its `options` (a review's `approve` or `deny`). It
+    is recorded and delivered exactly as `lattice.respond` from the host
+    does, so the asker gets it as an `answer` with `in_reply_to` the request
+    and `answered_by: "host"`, and the request leaves `lattice.requests` and
+    this list together; an answer through `lattice.respond` likewise
+    removes it here. Returns
+    `{ id, status: "answered", private: true, delivery, resolution? }`. A
+    request from another owner's CAR whose processing notice the person
+    has not yet agreed to is refused with `lattice.respond`'s own
+    `processing_notice_pending` error (code `-32020`, the notice's text) and
+    stays pending. Answering again with `acknowledge_processing: true`
+    agrees to that connection's notice and sends, exactly as
+    `lattice.respond { acknowledge_processing: true }`. Only the host client
+    may agree: from the signed-in dashboard it is refused
+    (`consent_is_host_only`) and nothing is sent.
+  - `board:` (a handoff or assignment): `resolution` is `accept` or
+    `decline`, applied by `board.accept` or `board.decline`:
+    `{ id, status: "answered", private: false, resolution, item }`.
+  - Give `resolution` or `text`, not both. The first answer stands, whichever
+    route gives it: this call, a `collab.message` reply with `in_reply_to`
+    from the member the question asks (for a question asking everyone, from
+    any person it asks, written by that person and not by any session,
+    supervised agent or assistant of theirs), `lattice.respond`, or
+    `board.accept`/`board.decline`. A
+    later answer is refused and changes nothing.
+  - Refusals are JSON-RPC errors carrying `data.reason`: `unknown_approval`
+    (no pending ask has that id), `already_resolved`, `not_your_ask` (the ask
+    names someone else, or the caller is not the person's own surface),
+    `invalid_resolution` (not one of the ask's options, or a choice where it
+    offers none), `no_private_route` (the asker cannot be reached privately
+    from here: another person's registered agent, or a question from the
+    person's own other computer), `not_saved` (the answer could not be saved,
+    so the ask stays pending), `refused`, `receipt_not_posted` and
+    `board_refused` (the owning mechanism refused; `data.sentence` says why).
 - **Returns**: the `HostApproval` row, resolved with the canonical option text
   (see the single-option rule below).
+  When the resolution could not be appended to the durable journal
+  (`host-approval-resolutions.jsonl`), the approval still resolves and the row
+  carries `journal_warning`, a string naming the journal path and the error
+  (car#4383).
   The resolved row carries `resolver: { principal, transport }`, stamped by the
   daemon from the session or transport that resolved it and never from the
   request (car#3398). `principal` is `conn:<client id>` for a WebSocket client,
@@ -318,7 +495,10 @@ The `host.*` namespace is the OS-integration surface — terminal/tray clients u
 
   Each refusal is recorded as an `approval.resolve_refused` event and a daemon
   warning. This holds on every platform; on Linux a walled agent is refused the
-  method outright (`agent_default_deny`). Host sessions, the daemon-token
+  method outright (`agent_default_deny`), for every row, as is a Mac's
+  orchestrator (a worker session is answered by the worker gate first), and
+  that refusal is recorded as the same event
+  with `reason: "walled_agent_default_deny"`. Host sessions, the daemon-token
   operator, the `car-host` CLI and the paired approval transports resolve these
   rows as before.
 
@@ -388,15 +568,26 @@ bound to the agent that is not walled. If you see it on a row meant for the
 person, something is approving its own work.
 
 `approval.resolve_refused` fires when `host.resolve_approval` is refused by the
-agent wall, option validation, or readiness check. Wall refusals are attributed
-to the refused agent; option/readiness refusals to the approval's agent. Payload:
+agent wall, the walled-agent default-deny, option validation, or readiness
+check. Wall and default-deny refusals are attributed to the refused agent;
+option/readiness refusals to the approval's agent. Payload:
 `{ approval_id, agent_id, client_id, resolution, reason }`, where `agent_id` is
 the refused agent for wall refusals (otherwise the approval's agent, or null),
 `client_id` is the resolving connection, and `reason` is `"gate_row"` (a
 high-risk gate row, anyone's) or `"own_system_row"` (a system-level row it
-raised), `"invalid_resolution"`, or `"owner_not_connected"`. Option/readiness
-refusals also carry `method: "host.resolve_approval"` and are durable on the floor
-journal. The row is not touched and no `approval.resolved` follows.
+raised), `"invalid_resolution"`, `"owner_not_connected"`, or
+`"walled_agent_default_deny"` (a walled agent may not call the method at all:
+an ordinary supervised agent or orchestrator on Linux, an orchestrator on a
+Mac; a worker session is answered by the worker gate before this). A
+default-deny refusal carries `approval_id` and `resolution` as the caller sent
+them, strings only and cut to 256 characters (no row is looked up, so the event
+says nothing about whether the approval exists), and
+`method: "host.resolve_approval"`; it is in the
+host event ledger, not the floor journal. Every refused call adds one event and
+none is coalesced, so a walled agent that repeats the call can push older
+events out of the bounded ledger, as repeated wall refusals already could.
+Option/readiness refusals also carry
+`method: "host.resolve_approval"` and are durable on the floor journal. The row is not touched and no `approval.resolved` follows.
 
 For an `approval.requested` created from `agents.chat.event`, the ledger row
 uses the chat event's `approval_id` and its `details` include

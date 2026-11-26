@@ -47,7 +47,7 @@ daemon down, and `audit.export`, which reads them through a running daemon.
     - With `agent`, only what belongs to that agent is returned. An event's agent
     is read from the run CAR stamped on it (`run_id`): the run's file sits
     under its agent's folder in `runs/`. An event whose run file is gone (run
-    retention) cannot be attributed, so it is counted in
+    retention) is attributed only by an agent named in its own data (`agent_id`, `agent`, `caller`); one that names none is counted in
     `sources.journals.events_unattributed` and left out, never silently. A
     permission decision names no agent and is kept only when it matches the
     fingerprint of an exported action, gate decision or denial. The gate

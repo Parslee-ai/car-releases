@@ -634,6 +634,7 @@ By default a regex match denies and an absent parameter does not. Set `negate = 
 tool    = "http_request"
 param   = "body"
 matches = "sk-[A-Za-z0-9]{20,}"   # never let an API-key-shaped string leave in a body
+reason  = "API keys never leave in a request body; send a key reference instead"
 
 [[deny_tool_param_matching]]
 tool    = "docker.rm"
@@ -648,6 +649,39 @@ negate  = true                     # deny unless the name has the trusted prefix
 | `param` | yes | parameter key inspected on the action |
 | `matches` | yes | regex source; unanchored; an uncompilable pattern denies the tool outright |
 | `negate` | no | defaults to `false`; when `true`, deny mismatch or absence instead of match |
+| `reason` | no | operator-authored explanation appended to the refusal, so a file of several rules says which one fired and why; it is written to the event log, so never put the protected secret in it. Without one (or with a blank one) the refusal is unchanged |
+
+A negated rule on a URL parameter is a destination allowlist: it refuses registering or posting on any site but the approved ones. Anchor the host and end it at `/` or the end of the value, so a host that only starts with an approved name doesn't pass. A check sees the call, not who made it, so a per-class allowlist needs each class to load its own folder. `car do`, the coder and the Claude Code/Codex hook read the project's `.car/policies/` after `~/.car/policies/`, and the rules from both must all pass. The daemon loads only `~/.car/policies/`, for every session, so there one allowlist binds every connected agent.
+
+```toml
+[[deny_tool_param_matching]]
+tool    = "browser.navigate"
+param   = "url"
+matches = '^https://(docs\.example\.org|status\.example\.org)(/|$)'
+negate  = true                     # any other site is refused
+```
+
+#### `deny_stale_write`
+Refuses a write to a file that changed since the caller read it. The caller passes the sha256 (hex, either case) of the file as it read it. The call is denied when the file at `path_param` exists and no digest was passed, the digest no longer matches, it isn't a regular file, it's over 16 MiB, or it can't be read. The only write allowed without a digest is a new file: the path names nothing, and its parent folder exists on the host that checks it. Denied as unknown: a missing path, a relative one, one with a `..` part (a writer that creates folders turns `missing/../isa.md` into an existing file), a symlink to nothing, and a missing file whose folder isn't on this host. The digest must be a parameter of the governed tool: Claude Code's `Write`/`Edit` and Codex's `apply_patch` carry none, so a rule on them refuses every overwrite. The check runs before the tool writes, so a write landing between the two, or two concurrent calls carrying the same old digest, isn't caught.
+
+The rule reads the files of the host that runs the check, and a check sees the call, not which filesystem the tool writes. So `filesystem = "host"` is required, and it's the only value: the operator states that the tool writes this host's files. **Don't govern a tool that writes a sandbox, VM, container or remote MCP target with this rule.** A file there is invisible to the host, so a missing host file would pass as new. Matching is exact hex, with no spaces trimmed.
+
+```toml
+[[deny_stale_write]]
+tool         = "write_file"
+path_param   = "path"
+digest_param = "base_sha256"
+filesystem   = "host"
+```
+
+| Param | Required | Notes |
+|-------|----------|-------|
+| `tool` | yes | tool name the rule applies to; it must write this host's files |
+| `path_param` | yes | parameter holding the path the tool writes |
+| `digest_param` | yes | parameter holding the sha256 of the version the caller read |
+| `filesystem` | yes | `"host"`; a rule without it, or with any other value, fails to load |
+
+A check on a tool's **result** belongs outside policy. Every rule here judges a tool **call** before it runs, and none sees what it returns. Refusing a result that carries a secret back into an agent's context belongs to the code that produces or relays the result, not to a policy rule.
 
 #### `rate_limit_tool`
 A sliding-window cap on how often `tool` may be called. The call is denied when admitting it would make it the `max_calls + 1`-th call to `tool` within the trailing `interval_secs`. `max_calls = 0` denies every call. This bounds how much of a side effect an agent can produce in a stretch of wall-clock time, independently of whether any single call is legitimate.
@@ -676,7 +710,9 @@ A seventh key, `trace_rule`, expresses temporal constraints over the run's execu
 
 **Nothing builds that gate outside tests, so loading a `[[trace_rule]]` is refused rather than accepted.** A policy file carrying one fails to load and names itself, instead of reporting a rule the runtime would never apply. The key is documented here so the error is recognisable, not because it is available: today, express the prohibition with one of the six enforced kinds above.
 
-Violations from these rules carry a stable rule name derived from the rule itself: `deny_tool:deploy`, `deny_keyword:rm -rf /`, `deny_tool_param:http_request.url`, `allow_tool_param:deploy.target`, `deny_tool_param_matching:http_request.body`, `rate_limit_tool:http_request`. Neither the offending value nor the regex-matched text appears in the message — the matched text is precisely the secret such a rule exists to catch, and violation reasons are written to the event log.
+One more key turns on a built-in inspector instead of adding a rule: `inspectors = ["credential_access"]` runs the credential inspector CAR's assistant runs on its host calls (`coder.deny_credential_access`: credential paths, keychain tools, environment dumps) for the calls `car policy-check-hook` and the `policy_check` MCP tool judge. It is off unless named, an unknown name fails to load, and it counts as one loaded rule. CAR's own coder and assistant run this inspector on their host calls whatever the key says.
+
+Violations from these rules carry a stable rule name derived from the rule itself: `deny_tool:deploy`, `deny_keyword:rm -rf /`, `deny_tool_param:http_request.url`, `allow_tool_param:deploy.target`, `deny_tool_param_matching:http_request.body`, `rate_limit_tool:http_request`. Neither the offending value nor the regex-matched text appears in the message — the matched text is precisely the secret such a rule exists to catch, and violation reasons are written to the event log. A `deny_tool_param_matching` rule's operator-supplied `reason` is appended verbatim (trimmed) after the relationship and before the policy file name — `tool 'op' parameter 'command' matched a denied pattern: <reason> (deny_tool_param_matching in .car/policies/x.toml)` — and after the compile error on an invalid pattern's fail-closed denial; it reaches both the policy-check finding and the refusal the tool caller receives.
 
 ### Policy violations
 

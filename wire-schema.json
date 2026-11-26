@@ -29,7 +29,10 @@
       "rpc.embed.params",
       "rpc.events.truncate.params",
       "rpc.feedback.compose_preview.params",
+      "rpc.feedback.export.params",
+      "rpc.feedback.remove.params",
       "rpc.feedback.status.params",
+      "rpc.host.approvals.params",
       "rpc.host.dismiss_approval.params",
       "rpc.host.register_agent.params",
       "rpc.host.register_device.params",
@@ -237,7 +240,10 @@
         "embed",
         "events.truncate",
         "feedback.compose_preview",
+        "feedback.export",
+        "feedback.remove",
         "feedback.status",
+        "host.approvals",
         "host.dismiss_approval",
         "host.register_agent",
         "host.register_device",
@@ -354,7 +360,6 @@
         "heal.status",
         "health.status",
         "host.agents",
-        "host.approvals",
         "host.devices",
         "host.subscribe",
         "inference.register_runner",
@@ -387,8 +392,6 @@
         "reminders.lists",
         "secret.available",
         "secret.list",
-        "selfheal.run",
-        "selfheal.status",
         "server.schema",
         "session.clear_halt",
         "session.policy.open",
@@ -398,6 +401,7 @@
         "supervision.pending",
         "supervision.unsubscribe",
         "sync.checkpoint",
+        "sync.enable_remote",
         "sync.pump",
         "sync.rebase",
         "sync.status",
@@ -415,7 +419,7 @@
         "voice.tts_stream.list",
         "workflow.list_paused"
       ],
-      "total": 610,
+      "total": 636,
       "uncovered": {
         "typed_without_schema": {
           "a2a.send": "A2aSendParams",
@@ -425,6 +429,7 @@
           "declagents.route_split": "DeclAgentSplitParams",
           "discovery.route_compose": "DiscoveryRouteComposeParams",
           "feedback.submit": "SubmitParams",
+          "heal.detections": "DetectionQuery",
           "memory.evaluate": "ProactiveEvaluationRequest",
           "memory.intervene": "ProactiveMemoryRequest",
           "memory.maintain": "ProactiveMaintenanceRequest",
@@ -432,7 +437,6 @@
           "memory.save_procedural": "ProactiveMemorySave",
           "multiplayer.submit_stage": "SubmitParams",
           "runs.complete": "RunCompleteRequest",
-          "selfheal.detections": "DetectionQuery",
           "spend.assign_class": "AssignSpendClassParams",
           "spend.set_limit": "SetSpendLimitParams",
           "verify": "VerifyRequest",
@@ -520,9 +524,17 @@
           "beads.rebuild",
           "beads.stale",
           "beads.touch",
+          "board.accept",
+          "board.assign",
+          "board.check_in",
+          "board.claim",
           "board.comment",
+          "board.decline",
+          "board.handoff",
           "board.history",
           "board.list",
+          "board.release",
+          "board.setup",
           "board.transition",
           "board.upsert",
           "bookmarks.list",
@@ -574,6 +586,23 @@
           "coder.unsubscribe",
           "coder.unwatch",
           "coder.watch",
+          "collab.accept",
+          "collab.ack",
+          "collab.agent_rule",
+          "collab.conversation",
+          "collab.conversations",
+          "collab.decline",
+          "collab.invitations",
+          "collab.invite",
+          "collab.leave",
+          "collab.list",
+          "collab.message",
+          "collab.presence",
+          "collab.read",
+          "collab.remove",
+          "collab.start",
+          "collab.wait",
+          "collab.who",
           "concierge.actions",
           "concierge.apply",
           "concierge.ask",
@@ -609,6 +638,7 @@
           "evolution.plan",
           "evolution.run",
           "feedback.list",
+          "fleet.build_job",
           "fleet.composite",
           "fleet.worker.set",
           "foreman.plan",
@@ -617,6 +647,7 @@
           "goal.set",
           "goal.status",
           "goal.suggest",
+          "heal.dismiss",
           "heal.run",
           "health.activity",
           "health.sleep",
@@ -766,8 +797,6 @@
           "scheduler.os_uninstall",
           "scheduler.run",
           "scheduler.run_loop",
-          "selfheal.dismiss",
-          "selfheal.fix",
           "session.auth",
           "session.bindSandbox",
           "session.bindSubstrate",
@@ -862,7 +891,7 @@
         "tools.stream.subscribe",
         "tools.unregister"
       ],
-      "total": 610,
+      "total": 636,
       "uncovered": [
         "CancelTask",
         "CreateTaskPushNotificationConfig",
@@ -970,9 +999,17 @@
         "beads.rebuild",
         "beads.stale",
         "beads.touch",
+        "board.accept",
+        "board.assign",
+        "board.check_in",
+        "board.claim",
         "board.comment",
+        "board.decline",
+        "board.handoff",
         "board.history",
         "board.list",
+        "board.release",
+        "board.setup",
         "board.transition",
         "board.upsert",
         "bookmarks.list",
@@ -1030,6 +1067,23 @@
         "coder.unsubscribe",
         "coder.unwatch",
         "coder.watch",
+        "collab.accept",
+        "collab.ack",
+        "collab.agent_rule",
+        "collab.conversation",
+        "collab.conversations",
+        "collab.decline",
+        "collab.invitations",
+        "collab.invite",
+        "collab.leave",
+        "collab.list",
+        "collab.message",
+        "collab.presence",
+        "collab.read",
+        "collab.remove",
+        "collab.start",
+        "collab.wait",
+        "collab.who",
         "concierge.actions",
         "concierge.apply",
         "concierge.ask",
@@ -1096,10 +1150,13 @@
         "evolution.plan",
         "evolution.run",
         "feedback.compose_preview",
+        "feedback.export",
         "feedback.list",
+        "feedback.remove",
         "feedback.status",
         "feedback.submit",
         "files.locations",
+        "fleet.build_job",
         "fleet.composite",
         "fleet.inventory",
         "fleet.worker.get",
@@ -1110,6 +1167,8 @@
         "goal.set",
         "goal.status",
         "goal.suggest",
+        "heal.detections",
+        "heal.dismiss",
         "heal.run",
         "heal.status",
         "health.activity",
@@ -1346,11 +1405,6 @@
         "secret.list",
         "secret.put",
         "secret.status",
-        "selfheal.detections",
-        "selfheal.dismiss",
-        "selfheal.fix",
-        "selfheal.run",
-        "selfheal.status",
         "session.auth",
         "session.bindSandbox",
         "session.bindSubstrate",
@@ -1395,6 +1449,7 @@
         "sync.assistant_checkpoint.get",
         "sync.assistant_checkpoint.put",
         "sync.checkpoint",
+        "sync.enable_remote",
         "sync.fence_check",
         "sync.knowledge",
         "sync.pump",
@@ -1546,27 +1601,6 @@
           ],
           "type": "object"
         },
-        "AgentInference": {
-          "additionalProperties": false,
-          "description": "A declarative agent's persisted inference selection.\n\nThe whole block is optional so legacy agents retain adaptive routing. When present, `model` is a strict model pin; `provider` disambiguates a bare model name, and `reasoning_effort` controls the provider's reasoning budget.",
-          "properties": {
-            "model": {
-              "type": "string"
-            },
-            "provider": {
-              "type": "string"
-            },
-            "reasoning_effort": {
-              "$ref": "#/definitions/ReasoningEffort"
-            }
-          },
-          "required": [
-            "model",
-            "provider",
-            "reasoning_effort"
-          ],
-          "type": "object"
-        },
         "AgentStatus": {
           "description": "Runtime status of a managed agent. Distinct from [`AgentStatus`](crate::AgentStatus) which is the *agent's* self-reported liveness signal — supervisor status describes what *we* know about the child process from this side.",
           "oneOf": [
@@ -1680,7 +1714,7 @@
             "inference": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/AgentInference"
+                  "$ref": "#/definitions/DeclarativeRowInference"
                 },
                 {
                   "type": "null"
@@ -1754,6 +1788,34 @@
           "required": [
             "check",
             "max_iterations"
+          ],
+          "type": "object"
+        },
+        "DeclarativeRowInference": {
+          "additionalProperties": false,
+          "description": "The model a declarative agent was saved with (`spec.inference`), as its row shows it.",
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "reasoning_effort": {
+              "$ref": "#/definitions/ReasoningEffort"
+            },
+            "reasoning_effort_applies": {
+              "description": "Whether the saved reasoning effort changes the requests CAR sends this model. False where the model takes no reasoning control CAR sends (a Gemini before 2.5, a Bedrock model that is not Claude, the Parslee endpoint, most on-device models), so a host shows the effort as having no effect there. Absent when the model is not in the catalog. Never saved to the spec.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "model",
+            "provider",
+            "reasoning_effort"
           ],
           "type": "object"
         },
@@ -1893,6 +1955,7 @@
               "additionalProperties": {
                 "type": "string"
               },
+              "description": "Every env name the agent's spec sets. Each value is `<redacted>` except CAR's own session bookkeeping (`CAR_LAUNCHER_PID`, `CAR_LAUNCHER_START`, `CAR_SELF_ENROLLED`, `CAR_ENROLLED_AT_MS`), which holds a pid, a time or a flag. The per-agent token is never present.",
               "type": "object"
             },
             "handshake": {
@@ -1946,6 +2009,13 @@
                 "array",
                 "null"
               ]
+            },
+            "models": {
+              "description": "The model rows the agent's `infer` calls are served from, in order: the first is the primary and each later one is used only when the one before it fails. Absent when the agent declares none and takes the owner's default routing.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "name": {
               "type": "string"
@@ -2027,6 +2097,20 @@
                 "array",
                 "null"
               ]
+            },
+            "tools_pending": {
+              "type": "boolean"
+            },
+            "wall": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/WallRecord"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The wall the current run was started under, on Linux (car#3277): the Landlock ABI the kernel reported and the one enforced, its scopes, and what is missing. Absent off Linux, for an unwalled agent, for an adopted process, and while no run is up."
             }
           },
           "required": [
@@ -2090,6 +2174,49 @@
               "type": "string"
             }
           ]
+        },
+        "WallRecord": {
+          "additionalProperties": false,
+          "description": "What one start of a walled Linux agent was actually given (car#3277): the Landlock ABI the kernel reported, the ABI the wall was built and enforced at, which of the optional protections that ABI carries, and, in words, what is missing. Taken from the ruleset `Wall::build` selected, never from a second look at the kernel, so it is what this start enforced.\n\nLinux only. A Mac or Windows start, an unwalled agent (CAR's own assistant) and a process adopted from an earlier daemon have no record, never a made-up ABI.",
+          "properties": {
+            "abstract_socket_scope": {
+              "description": "Abstract Unix sockets outside the agent's own tree are refused (ABI 6).",
+              "type": "boolean"
+            },
+            "enforced_abi": {
+              "description": "The ABI the wall was built and enforced at: the kernel's, capped at the newest one CAR asks for (9).",
+              "format": "int32",
+              "type": "integer"
+            },
+            "gaps": {
+              "description": "What this wall does not cover, in words; empty at ABI 9.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "kernel_abi": {
+              "description": "The Landlock ABI the kernel reported at this start.",
+              "format": "int32",
+              "type": "integer"
+            },
+            "pathname_socket_right": {
+              "description": "Connecting to a pathname Unix socket is a Landlock right (ABI 9).",
+              "type": "boolean"
+            },
+            "signal_scope": {
+              "description": "Signals to processes outside the agent's own tree are refused (ABI 6).",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "abstract_socket_scope",
+            "enforced_abi",
+            "kernel_abi",
+            "pathname_socket_right",
+            "signal_scope"
+          ],
+          "type": "object"
         }
       },
       "description": "`car inspect` and `agents.list` return either kind of row, untagged.",
@@ -2880,6 +3007,10 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "description": "An embedding request.",
       "properties": {
+        "installed_only": {
+          "description": "Refuse rather than download the embedding model when it is not installed. Set by a caller the user did not ask for an embedding model, such as memory ranking or agent routing, so it never fetches one (Parslee-ai/car#3771). The refusal names the model and `car models pull <name>`. Default `false`: an explicit embed call downloads the model on first use.",
+          "type": "boolean"
+        },
         "instruction": {
           "description": "Optional instruction for query-side embedding (Qwen3-Embedding format). Default: \"Retrieve relevant memory facts\"",
           "type": [
@@ -2975,6 +3106,45 @@
       "title": "ComposeParams",
       "type": "object"
     },
+    "rpc.feedback.export.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`feedback.export {id, path, replace?}`: write a saved report's redacted bundle to `path`.",
+      "properties": {
+        "id": {
+          "description": "The outbox entry's id (`submission_id`).",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute destination. An existing file is refused unless `replace`.",
+          "type": "string"
+        },
+        "replace": {
+          "description": "Replace an existing file at `path` (the host's save panel has already asked the user). Default false.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "path"
+      ],
+      "title": "ExportParams",
+      "type": "object"
+    },
+    "rpc.feedback.remove.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`feedback.remove {id}`: delete one outbox entry.",
+      "properties": {
+        "id": {
+          "description": "The outbox entry's id (`submission_id`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RemoveParams",
+      "type": "object"
+    },
     "rpc.feedback.status.params": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -2995,6 +3165,25 @@
         }
       },
       "title": "StatusParams",
+      "type": "object"
+    },
+    "rpc.host.approvals.params": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "`host.approvals` params. No params is the ledger, as before `pending` existed.",
+      "properties": {
+        "collaboration": {
+          "description": "With `pending`, only this collaboration's asks: a handle from `collab.list`. Ignored without `pending`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pending": {
+          "description": "`true`: every ask waiting on the person signed in here, instead of the approvals ledger.",
+          "type": "boolean"
+        }
+      },
+      "title": "HostApprovalsParams",
       "type": "object"
     },
     "rpc.host.dismiss_approval.params": {
@@ -3181,18 +3370,27 @@
     },
     "rpc.host.resolve_approval.params": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "Request to resolve an approval.",
+      "description": "Request to answer one pending ask by its `approval_id` (`host.resolve_approval`).\n\nA ledger row takes `resolution`, one of its options. Any other pending ask (a collaboration, direct or board ask) takes `resolution` or `text`, a typed answer. A call needs one of the two: an absent `resolution` arrives as the empty string, and the handler refuses a call that gives neither.",
       "properties": {
+        "acknowledge_processing": {
+          "description": "For a `lattice:` ask from another owner's CAR: the person agrees to that connection's cross-owner processing notice and sends, exactly as `lattice.respond { acknowledge_processing: true }`. Only the host client may agree. Read for no other ask.",
+          "type": "boolean"
+        },
         "approval_id": {
           "type": "string"
         },
         "resolution": {
           "type": "string"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
-        "approval_id",
-        "resolution"
+        "approval_id"
       ],
       "title": "ResolveHostApprovalRequest",
       "type": "object"
@@ -4040,6 +4238,27 @@
             }
           ]
         },
+        "RecoveredCost": {
+          "additionalProperties": false,
+          "description": "The dollar figure of a turn recovered from a discarded thinking pass, split by where each dollar came from.",
+          "properties": {
+            "estimated_usd": {
+              "description": "The catalog price of each pass without an accepted provider charge (it reported no usage, or usage with a missing or refused charge), each priced at its own model on its actual or estimated usage; `0.0` when no pass needed one or the catalog has no price for it.",
+              "format": "double",
+              "type": "number"
+            },
+            "provider_usd": {
+              "description": "The sum of the provider charges on the turn's passes, each accepted against the ceiling of the model that pass ran on.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "estimated_usd",
+            "provider_usd"
+          ],
+          "type": "object"
+        },
         "ThinkingBlock": {
           "additionalProperties": false,
           "description": "A single assistant extended-thinking block, preserved for verbatim replay.\n\nA normal thinking block carries `text` (possibly empty when the provider's display is \"omitted\") plus an opaque `signature` that must be echoed back unchanged. A redacted-thinking block instead carries an opaque `redacted_data` payload. Both are reconstructed to their exact provider wire shape on replay (see the Anthropic handler's `build_messages`), because the API rejects any *modified* thinking block.",
@@ -4111,8 +4330,19 @@
                 "null"
               ]
             },
+            "recovered_cost": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RecoveredCost"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The dollar figure of a turn recovered from a discarded thinking pass, as CAR assembled it from two calls that may have run on different models. `None` on every other call. Omitted from the wire when absent."
+            },
             "reported_cost_usd": {
-              "description": "The provider's own dollar figure for this call, when its response carried one (OpenRouter's `usage.cost`, which CAR asks for). `None` means the provider sent no figure, never that the call was free; the call is then priced from the catalog ([`billing::call_cost`]). Omitted from the wire when absent.",
+              "description": "The provider's own dollar figure for this call, when its response carried one (OpenRouter's `usage.cost`, which CAR asks for). `None` means the provider sent no figure, never that the call was free; the call is then priced from the catalog ([`billing::call_cost`]). Holds only what a provider billed: a recovered turn never adds a catalog estimate to it (see [`Self::recovered_cost`]). Omitted from the wire when absent.",
               "format": "double",
               "type": [
                 "number",
@@ -4417,7 +4647,7 @@
           "type": "string"
         },
         "reason": {
-          "description": "When `available` is false, human-readable explanation.",
+          "description": "When `available` is false, human-readable explanation. A mail send that is `available` can carry one too: why it is unconfirmed (`send_unconfirmed:`) or unverified (`send_unverified:`), each with `sent: false` and the matching `delivery`. A Chromium bookmark listing that is `available` carries one when some profiles' `Bookmarks` files could not be read: it names those files, and the listing holds the bookmarks from the profiles that were read.",
           "type": [
             "string",
             "null"
@@ -4511,7 +4741,7 @@
           "type": "string"
         },
         "reason": {
-          "description": "When `available` is false, human-readable explanation.",
+          "description": "When `available` is false, human-readable explanation. A mail send that is `available` can carry one too: why it is unconfirmed (`send_unconfirmed:`) or unverified (`send_unverified:`), each with `sent: false` and the matching `delivery`. A Chromium bookmark listing that is `available` carries one when some profiles' `Bookmarks` files could not be read: it names those files, and the listing holds the bookmarks from the profiles that were read.",
           "type": [
             "string",
             "null"
@@ -4609,7 +4839,7 @@
           "type": "array"
         },
         "reason": {
-          "description": "When `available` is false, human-readable explanation.",
+          "description": "When `available` is false, human-readable explanation. A mail send that is `available` can carry one too: why it is unconfirmed (`send_unconfirmed:`) or unverified (`send_unverified:`), each with `sent: false` and the matching `delivery`. A Chromium bookmark listing that is `available` carries one when some profiles' `Bookmarks` files could not be read: it names those files, and the listing holds the bookmarks from the profiles that were read.",
           "type": [
             "string",
             "null"
@@ -4667,7 +4897,7 @@
           "type": "string"
         },
         "reason": {
-          "description": "When `available` is false, human-readable explanation.",
+          "description": "When `available` is false, human-readable explanation. A mail send that is `available` can carry one too: why it is unconfirmed (`send_unconfirmed:`) or unverified (`send_unverified:`), each with `sent: false` and the matching `delivery`. A Chromium bookmark listing that is `available` carries one when some profiles' `Bookmarks` files could not be read: it names those files, and the listing holds the bookmarks from the profiles that were read.",
           "type": [
             "string",
             "null"
@@ -4887,7 +5117,7 @@
           "type": "array"
         },
         "reason": {
-          "description": "When `available` is false, human-readable explanation.",
+          "description": "When `available` is false, human-readable explanation. A mail send that is `available` can carry one too: why it is unconfirmed (`send_unconfirmed:`) or unverified (`send_unverified:`), each with `sent: false` and the matching `delivery`. A Chromium bookmark listing that is `available` carries one when some profiles' `Bookmarks` files could not be read: it names those files, and the listing holds the bookmarks from the profiles that were read.",
           "type": [
             "string",
             "null"
@@ -4957,6 +5187,34 @@
     "rpc.mail.send.result": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
+      "definitions": {
+        "SendDelivery": {
+          "description": "How far CAR could follow a send Mail accepted.",
+          "oneOf": [
+            {
+              "description": "It showed in the Outbox or the sending account's Sent: `sent: true`.",
+              "enum": [
+                "confirmed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "CAR read the sending account's Sent and it wasn't there: `sent: false`, and it may still go out, so check Outbox and Sent before sending it again.",
+              "enum": [
+                "unconfirmed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "CAR could not read the sending account's Sent, so it can't say: `sent: false`, and check Sent before sending it again.",
+              "enum": [
+                "unverified"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
       "description": "Availability envelope — returned from every list-ish method so callers can branch on `available` instead of assuming a populated list.\n\n**Flatten caution.** This struct is `#[serde(flatten)]`ed into every listing payload (see `CalendarListing`, `ContactListing`, etc.). Do not add fields with names that collide with payload fields. `#[non_exhaustive]` to keep future additions additive.",
       "properties": {
         "available": {
@@ -4967,6 +5225,17 @@
           "description": "Backend that was attempted (`\"eventkit\"`, `\"msgraph\"`, `\"eds\"`, ...).",
           "type": "string"
         },
+        "delivery": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SendDelivery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What CAR saw of a Mail.app send after Mail accepted it. Absent for a draft, a refused send and a backend that doesn't check (car#4842)."
+        },
         "message_id": {
           "type": [
             "string",
@@ -4974,14 +5243,14 @@
           ]
         },
         "reason": {
-          "description": "When `available` is false, human-readable explanation.",
+          "description": "When `available` is false, human-readable explanation. A mail send that is `available` can carry one too: why it is unconfirmed (`send_unconfirmed:`) or unverified (`send_unverified:`), each with `sent: false` and the matching `delivery`. A Chromium bookmark listing that is `available` carries one when some profiles' `Bookmarks` files could not be read: it names those files, and the listing holds the bookmarks from the profiles that were read.",
           "type": [
             "string",
             "null"
           ]
         },
         "sent": {
-          "description": "`true` if the message was actually sent or drafted.",
+          "description": "`true` if the message was actually sent or drafted. A Mail.app send is `true` only once it shows in the Outbox or the sending account's Sent; one CAR could not check is `false` (car#4857).",
           "type": "boolean"
         }
       },
@@ -5149,7 +5418,7 @@
           "type": "array"
         },
         "reason": {
-          "description": "When `available` is false, human-readable explanation.",
+          "description": "When `available` is false, human-readable explanation. A mail send that is `available` can carry one too: why it is unconfirmed (`send_unconfirmed:`) or unverified (`send_unverified:`), each with `sent: false` and the matching `delivery`. A Chromium bookmark listing that is `available` carries one when some profiles' `Bookmarks` files could not be read: it names those files, and the listing holds the bookmarks from the profiles that were read.",
           "type": [
             "string",
             "null"

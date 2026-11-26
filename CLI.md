@@ -3,17 +3,17 @@
 
 > **Generated file — do not hand-edit below the task map.** Produced by
 > `scripts/gen-cli-docs.sh` from `car --help` / `car help <command>` on car
-> 0.64.0 (2026-11-15). Every subcommand the installed binary reports is
+> 0.65.0 (2026-11-26). Every subcommand the installed binary reports is
 > below; a new subcommand cannot ship without appearing here the next time
 > this script runs. To regenerate: `bash scripts/gen-cli-docs.sh`.
 >
-> 90 top-level commands, 194 nested subcommands
+> 93 top-level commands, 211 nested subcommands
 > (one level deep) — counted from the live binary at generation time, not
 > typed by hand.
 
 ## Finding your way around
 
-`car` is one binary with 90 subcommands spanning several different jobs:
+`car` is one binary with 93 subcommands spanning several different jobs:
 running the built-in agent, coding, local model management, OS integrations,
 and installing other people's agents on your machine. This map groups the
 commands people actually reach for; the full alphabetical reference with every
@@ -195,10 +195,10 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car coder`](#car-coder) | Manage operator-controlled repository trust for CarCoder |
 | [`car coder-overlays`](#car-coder-overlays) | Show the approved harness overlays — system-prompt and tool-description text applied through `evolution.run` — that every native coder session starts with, or clear them. Nothing removes an applied overlay on its own; `--clear` is how one is taken out of force. Reads the local coder state directory; no daemon needed |
 | [`car keys`](#car-keys) | Store cloud-provider API keys in CAR's secret store, so a native-app user never sets an environment variable (docs/proposals/native-secrets-no-env.md). Runtime reads process env first, then the secret store |
-| [`car heal`](#car-heal) | Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges |
+| [`car sync`](#car-sync) | Multi-device sync through Parslee |
+| [`car heal`](#car-heal) | See and run the daemon's heal: it watches CAR for defects, repairs them in CAR's source, merges the fix within a daily budget, and checks the defect is gone on the build that contains it |
 | [`car audit`](#car-audit) | Export the owner's record of what each agent did and who approved it |
 | [`car ledger`](#car-ledger) | Review and grade the owner's decision ledger |
-| [`car selfheal`](#car-selfheal) | Inspect and operate the daemon's deterministic self-healing detector |
 | [`car daemon`](#car-daemon) | Start the daemon server (delegates to car-server binary) |
 | [`car concierge`](#car-concierge) | Your local models' concierge: what each model is doing, what it would change and what it did on its own. Without a subcommand, prints the facts (no model involved) |
 | [`car models`](#car-models) | Manage local inference models |
@@ -222,6 +222,7 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car do`](#car-do) | CAR Assistant: a general-purpose agent that works out of the box |
 | [`car policy-check-hook`](#car-policy-check-hook) | Evaluate a host's proposed tool call against `.car/policies/` and answer on stdout with that host's hook decision envelope |
 | [`car peer-inbox-hook`](#car-peer-inbox-hook) | Tell a running Claude Code session that colleagues' messages wait for it. Wired by the CAR plugin as a Claude Code hook (after a prompt or a tool call, and before stopping); reads the count `car claude`'s collaboration server keeps. Prints nothing outside a `car claude` session, and always exits 0 |
+| [`car peer-inbox-wait`](#car-peer-inbox-wait) | Start a turn in an idle Claude Code session when a colleague's message arrives. Wired by the CAR plugin as a background (`asyncRewake`) `Stop` hook: it waits on the session's pending-message count and exits with the wake code when the count rises. Reads one local file; exits 0 outside an enrolled session or when the session ends |
 | [`car board-hook`](#car-board-hook) | Brief a coding-assistant session from the shared work board. Wired by the CAR plugin as a Claude Code hook: at session start it adds the briefing (at most 30 lines), and on each prompt a line when items on the current branch changed. Prints nothing without a daemon, and always exits 0 |
 | [`car worktree`](#car-worktree) | Lease a warm git worktree from this repo's pool instead of creating one per task (acquire, release, status, reclaim, clean, and `hook` for the CAR Claude Code plugin). Off until the repo commits .car/worktree-pool.toml with `enabled = true` |
 | [`car project`](#car-project) | Manage CAR-managed projects (a named, git-backed workspace CAR creates for you — no repo to pick) |
@@ -258,13 +259,15 @@ commands on a cadence via launchd / cron / schtasks).
 | [`car restart`](#car-restart) | Restart an installed contributed agent |
 | [`car tail-log`](#car-tail-log) | Tail the most recent stdout/stderr lines captured from a supervised agent (Parslee-ai/car#231 §5.2). Calls the daemon's `agents.tail_log`. Closes the DX gap where the daemon captured logs to `~/.car/logs/` (`%USERPROFILE%\.car\logs\` on Windows) but offered no CLI surface to read them. Long alias: `logs` |
 | [`car uninstall`](#car-uninstall) | Uninstall a contributed agent (Parslee-ai/car#182 phase 4). Stops the running child if any, removes the manifest from `~/.car/agents/<id>/`, and reaps the legacy `agents.json` entry. Idempotent |
+| [`car job`](#car-job) | Start a command that keeps running after this shell ends, and read, wait for, follow, cancel or purge it from any later shell (macOS and Linux) |
 | [`car schedule`](#car-schedule) | Schedule commands to run on a cadence (launchd / cron / schtasks) |
 | [`car registry`](#car-registry) | Registry tooling for the contributed-agents registry (Parslee-ai/car#182 phase 5): `digest` a manifest, or `validate` a registry directory (the CI gate run by Parslee-ai/car-agent-registry) |
 | [`car fleet`](#car-fleet) | What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon |
 | [`car machine`](#car-machine) | What coding sessions left on this machine: Docker containers, volumes, images, build cache and builders, the Docker VM's host memory, and orphaned processes, each attributed to the session that made it or marked unattributed. Needs a running daemon (`car doctor` shows a summary without one) |
 | [`car mp`](#car-mp) | Multiplayer development: a work item moves Build → Improve → Polish through different developers before it merges, each stage a coder session on its owner's machine with the engine they choose. Needs a running daemon and a shared git remote |
-| [`car claude`](#car-claude) | Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon |
-| [`car codex`](#car-codex) | Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent, installs session-only collaboration and policy hooks, injects the daemon brief, and removes the agent on exit. Needs a running daemon. Arguments after `--` go to `codex` |
+| [`car sessions`](#car-sessions) | Claude Code and Codex sessions on this machine: `status` lists their age, idle time, context, compactions and spend; `settings` shows the sessions.toml limits and launch options that apply to one. Read-only |
+| [`car claude`](#car-claude) | Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon. Launch options and the reset point come from sessions.toml (`car sessions settings --explain`); with none set, the `claude` command line is unchanged |
+| [`car codex`](#car-codex) | Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent, installs session-only collaboration and policy hooks, injects the daemon brief, and removes the agent on exit. Needs a running daemon. Arguments after `--` go to `codex`. The reset point comes from sessions.toml; with none set, the `codex` command line is unchanged |
 | [`car publish`](#car-publish) | Publish a contributed agent to the registry (Parslee-ai/car#182 phase 5). Reads a local agent's `manifest.toml`, signs it for `--audience public` (ed25519 key at `$CAR_PUBLISH_KEY_PATH`), stages it at the versioned `agents/<namespace>/<name>/<version>/` path, updates `index.json` + the README catalog, re-runs the EXACT `car registry validate` CI gate locally, and opens a PR against the registry repo. Aborts (no PR) on a missing signing key or a validation failure |
 | [`car help`](#car-help) | Print this message or the help of the given subcommand(s) |
 
@@ -318,10 +321,14 @@ Options:
 ```text
 Replace the derived index by reading every enrolled repository
 
-Usage: car beads rebuild
+Usage: car beads rebuild [OPTIONS]
 
 Options:
-  -h, --help  Print help
+      --offline                    Rebuild in this process, with no daemon running, from this CAR
+      home's local journal (a scratch `CAR_HOME`, say)
+      --journal-dir <JOURNAL_DIR>  The daemon's `--journal-dir`, if it was given one. Default: `<CAR
+      home>/journals`
+  -h, --help                       Print help
 ```
 
 #### car beads list
@@ -777,8 +784,7 @@ Options:
 
       --local-only
           Run on local models only: every remote dispatch is refused, routing and the auditor choose
-          among on-device models, and nothing is spent. For a caller nobody is watching, such as the
-          daemon's self-heal auto-fix
+          among on-device models, and nothing is spent. For a caller nobody is watching
 
   -h, --help
           Print help (see a summary with '-h')
@@ -869,6 +875,9 @@ Options:
           with `car code --isolate-external-network` (no web search or fetch, browser, app
           connectors or MCP servers; shell without network), because on a corpus mined from a
           project's history a reference that can reach the web can read the upstream fix
+      --external-api-key-credential
+          Let the external arm authenticate with a provider API key from the environment (`car code
+          --external-api-key-credential`). Off by default: the arm uses its CLI's own login
       --limit <LIMIT>
           Run at most this many not-yet-scored tasks, then stop (the rest resume on the next run).
           Omit to run all remaining. `--limit 1` runs one task so you can inspect it and fix what it
@@ -1179,22 +1188,59 @@ Options:
   -h, --help  Print help
 ```
 
+### car sync
+
+```text
+Multi-device sync through Parslee
+
+Usage: car sync <COMMAND>
+
+Commands:
+  enable  Start syncing this machine through Parslee, end-to-end encrypted under your sync
+  passphrase, when its journal holds history recorded on this machine only (car#4209). That history
+  stays on disk on this machine, but CAR no longer shows or syncs what is in it (knowledge,
+  transcripts, coder conversations): Parslee sync starts this machine as a new device. Restart the
+  daemon afterwards if it says so
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car sync enable
+
+```text
+Start syncing this machine through Parslee, end-to-end encrypted under your sync passphrase, when
+its journal holds history recorded on this machine only (car#4209). That history stays on disk on
+this machine, but CAR no longer shows or syncs what is in it (knowledge, transcripts, coder
+conversations): Parslee sync starts this machine as a new device. Restart the daemon afterwards if
+it says so
+
+Usage: car sync enable
+
+Options:
+  -h, --help  Print help
+```
+
 ### car heal
 
 ```text
-Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs
-a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges.
+See and run the daemon's heal: it watches CAR for defects, repairs them in CAR's source, merges the
+fix within a daily budget, and checks the defect is gone on the build that contains it.
 
-Configured in `<CAR_HOME>/heal.toml`; off by default, and an issue must carry an explicit opt-in
-label. See `car selfheal` for the separate watch-only detector, which never writes.
+On by default; `[heal]` in `<CAR_HOME>/config.toml` sets the budget, the source checkout, and issues
+a person hands in (those get a pull request and are never merged).
 
 Usage: car heal <COMMAND>
 
 Commands:
-  status  Show whether the loop is enabled — and if not, why — plus its targets, review panel, and
-  engine
-  run     Run one sweep now instead of waiting for the cadence
-  help    Print this message or the help of the given subcommand(s)
+  status   Show what heal is doing — one state and one reason — then its budget, models, work in
+  flight, detections, and targets
+  run      Run one heal tick now instead of waiting for the cadence
+  list     List active detections, optionally filtered by kind, severity, or time
+  show     Print the local issue document for one detection
+  dismiss  Dismiss one active detection by dedup key. Heal never repairs a dismissed detection
+  help     Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help
@@ -1204,7 +1250,8 @@ Options:
 #### car heal status
 
 ```text
-Show whether the loop is enabled — and if not, why — plus its targets, review panel, and engine
+Show what heal is doing — one state and one reason — then its budget, models, work in flight,
+detections, and targets
 
 Usage: car heal status
 
@@ -1215,20 +1262,65 @@ Options:
 #### car heal run
 
 ```text
-Run one sweep now instead of waiting for the cadence.
+Run one heal tick now instead of waiting for the cadence.
 
-At most one item per configured target. This can run a real coder session and open a real pull
-request. It never merges.
+A tick detects defects, repairs, merges and verifies within today's budget. With `--item`, works one
+handed-in issue instead.
 
 Usage: car heal run [OPTIONS]
 
 Options:
       --item <ITEM>
-          Run one item (`owner/repo#number`) with the attended configuration (frontier models),
-          setting aside its backoff and its `needs-human` label: you are asking for it
+          Run one handed-in issue (`owner/repo#number`) with the attended configuration, setting
+          aside its backoff and its `needs-human` label: you are asking for it. Opens a pull request
+          only
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+#### car heal list
+
+```text
+List active detections, optionally filtered by kind, severity, or time
+
+Usage: car heal list [OPTIONS]
+
+Options:
+      --kind <KIND>          Detection kind (metrics_alert, agent_gave_up, agent_log_error,
+      agent_silently_idle, recurring_tool_failure, capability_miss, agent_protocol_skew,
+      scheduled_task_problem, flaky_test)
+      --severity <SEVERITY>  Severity (warning or critical)
+      --since <SINCE>        Only detections observed at or after this RFC3339 timestamp
+  -h, --help                 Print help
+```
+
+#### car heal show
+
+```text
+Print the local issue document for one detection
+
+Usage: car heal show <DEDUP_KEY>
+
+Arguments:
+  <DEDUP_KEY>  Detection SHA-256 dedup key
+
+Options:
+  -h, --help  Print help
+```
+
+#### car heal dismiss
+
+```text
+Dismiss one active detection by dedup key. Heal never repairs a dismissed detection
+
+Usage: car heal dismiss <DEDUP_KEY>
+
+Arguments:
+  <DEDUP_KEY>  Detection SHA-256 dedup key
+
+Options:
+  -h, --help  Print help
 ```
 
 ### car audit
@@ -1319,105 +1411,6 @@ Options:
       --note <NOTE>
       --json
   -h, --help                         Print help
-```
-
-### car selfheal
-
-```text
-Inspect and operate the daemon's deterministic self-healing detector
-
-Usage: car selfheal <COMMAND>
-
-Commands:
-  status   Show cadence, active counts, and the route resolved by the last tick
-  list     List active detections, optionally filtered by kind, severity, or time
-  show     Print the trusted local issue document for one detection
-  dismiss  Dismiss one active detection by dedup key
-  fix      Start one bounded coder round for an eligible recurring-tool key
-  run      Run one deterministic detection tick and its auto-fix cadence hook now
-  help     Print this message or the help of the given subcommand(s)
-
-Options:
-  -h, --help  Print help
-```
-
-#### car selfheal status
-
-```text
-Show cadence, active counts, and the route resolved by the last tick
-
-Usage: car selfheal status
-
-Options:
-  -h, --help  Print help
-```
-
-#### car selfheal list
-
-```text
-List active detections, optionally filtered by kind, severity, or time
-
-Usage: car selfheal list [OPTIONS]
-
-Options:
-      --kind <KIND>          Detection kind (metrics_alert, agent_gave_up, agent_log_error,
-      agent_silently_idle, recurring_tool_failure, capability_miss)
-      --severity <SEVERITY>  Severity (warning or critical)
-      --since <SINCE>        Only detections observed at or after this RFC3339 timestamp
-  -h, --help                 Print help
-```
-
-#### car selfheal show
-
-```text
-Print the trusted local issue document for one detection
-
-Usage: car selfheal show <DEDUP_KEY>
-
-Arguments:
-  <DEDUP_KEY>  Detection SHA-256 dedup key
-
-Options:
-  -h, --help  Print help
-```
-
-#### car selfheal dismiss
-
-```text
-Dismiss one active detection by dedup key
-
-Usage: car selfheal dismiss <DEDUP_KEY>
-
-Arguments:
-  <DEDUP_KEY>  Detection SHA-256 dedup key
-
-Options:
-  -h, --help  Print help
-```
-
-#### car selfheal fix
-
-```text
-Start one bounded coder round for an eligible recurring-tool key
-
-Usage: car selfheal fix <DEDUP_KEY>
-
-Arguments:
-  <DEDUP_KEY>  Detection SHA-256 dedup key
-
-Options:
-  -h, --help  Print help
-```
-
-#### car selfheal run
-
-```text
-Run one deterministic detection tick and its auto-fix cadence hook now
-
-Usage: car selfheal run
-
-Options:
-  -h, --help  Print help
 ```
 
 ### car daemon
@@ -2415,6 +2408,11 @@ Options:
           search or fetch, browser, app connectors or MCP servers, and a shell without network.
           Codex and Claude Code support it; an engine that cannot guarantee it refuses to start
 
+      --external-api-key-credential
+          Let an external engine authenticate with a provider API key from the environment
+          (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...). Without it those keys are removed and the
+          engine uses its own login
+
   -h, --help
           Print help (see a summary with '-h')
 
@@ -2452,7 +2450,19 @@ Commands:
   comment    Comment on any item on your boards, as the operator. The way to reach a session through
   its item when its session or org cannot be messaged, such as an item a host-run Codex thread wrote
   with no org binding. A comment never changes the item
+  claim      Take an item on an organization's shared board, as the person. It becomes yours and
+  leaves everyone else's Ready
+  check-in   Check in on an item you hold, so it does not go stale
+  release    Let go of an item you hold: it is open with no owner again
+  handoff    Offer an item you hold to another member; it stays yours until they accept
+  assign     Ask a member to take an unowned item, or clear a pending assignment
+  accept     Accept a handoff or assignment that names you
+  decline    Decline a handoff or assignment that names you
   brief      The briefing a session starts with, for the current directory's branch
+  setup      Set an organization's sealed shared board up on Parslee. It can't be undone: from then
+  on every member's CAR uses the sealed board, and items on the current board are kept on this
+  device but no longer shown; move what you still need. Only a person runs this, at a terminal: it
+  asks them to type the organization
   reconcile  Make a project's board follow its code host (opt-in). The daemon then marks items done
   or abandoned when their PR merges or is abandoned, moves them to review when a PR opens, and opens
   and closes a "main is red" incident per failing pipeline, every few minutes
@@ -2520,6 +2530,117 @@ Options:
   -h, --help       Print help
 ```
 
+#### car board claim
+
+```text
+Take an item on an organization's shared board, as the person. It becomes yours and leaves everyone
+else's Ready
+
+Usage: car board claim [OPTIONS] --org <ORG> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --check-in-hours <CHECK_IN_HOURS>  How often you promise to check in, in hours (default 24)
+      --org <ORG>
+  -h, --help                             Print help
+```
+
+#### car board check-in
+
+```text
+Check in on an item you hold, so it does not go stale
+
+Usage: car board check-in [OPTIONS] --org <ORG> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --check-in-hours <CHECK_IN_HOURS>
+      --org <ORG>
+  -h, --help                             Print help
+```
+
+#### car board release
+
+```text
+Let go of an item you hold: it is open with no owner again
+
+Usage: car board release --org <ORG> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --org <ORG>
+  -h, --help       Print help
+```
+
+#### car board handoff
+
+```text
+Offer an item you hold to another member; it stays yours until they accept
+
+Usage: car board handoff --to <TO> --org <ORG> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --to <TO>    The member's account
+      --org <ORG>
+  -h, --help       Print help
+```
+
+#### car board assign
+
+```text
+Ask a member to take an unowned item, or clear a pending assignment
+
+Usage: car board assign [OPTIONS] --org <ORG> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --to <TO>    The member's account
+      --clear      Clear the pending assignment instead
+      --org <ORG>
+  -h, --help       Print help
+```
+
+#### car board accept
+
+```text
+Accept a handoff or assignment that names you
+
+Usage: car board accept --org <ORG> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --org <ORG>
+  -h, --help       Print help
+```
+
+#### car board decline
+
+```text
+Decline a handoff or assignment that names you
+
+Usage: car board decline --org <ORG> <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --org <ORG>
+  -h, --help       Print help
+```
+
 #### car board brief
 
 ```text
@@ -2529,6 +2650,21 @@ Usage: car board brief [OPTIONS]
 
 Options:
       --org <ORG>
+  -h, --help       Print help
+```
+
+#### car board setup
+
+```text
+Set an organization's sealed shared board up on Parslee. It can't be undone: from then on every
+member's CAR uses the sealed board, and items on the current board are kept on this device but no
+longer shown; move what you still need. Only a person runs this, at a terminal: it asks them to type
+the organization
+
+Usage: car board setup --org <ORG>
+
+Options:
+      --org <ORG>  The organization (one this CAR holds a login for)
   -h, --help       Print help
 ```
 
@@ -2724,6 +2860,23 @@ Options:
   -h, --help  Print help
 ```
 
+### car peer-inbox-wait
+
+```text
+Start a turn in an idle Claude Code session when a colleague's message arrives. Wired by the CAR
+plugin as a background (`asyncRewake`) `Stop` hook: it waits on the session's pending-message count
+and exits with the wake code when the count rises. Reads one local file; exits 0 outside an enrolled
+session or when the session ends
+
+Usage: car peer-inbox-wait [OPTIONS]
+
+Options:
+      --wake-exit <WAKE_EXIT>  Exit code for the wake. Claude Code wakes on 2, but so does any clap
+      usage error, so the plugin asks for a distinct code and its shell wrapper turns only that one
+      into 2 (car#5081). Defaults to 2 for a caller that runs the bare command [default: 2]
+  -h, --help                   Print help
+```
+
 ### car board-hook
 
 ```text
@@ -2795,7 +2948,9 @@ from the base. The same owner acquiring the same branch again gets the same slot
 fetching. A branch whose holder process is gone is handed over with its uncommitted work. Before a
 new slot is handed out, origin is fetched (a repo with no origin is never fetched, as if --offline);
 a failed fetch is fatal unless --offline. With every slot leased, dead holders' clean slots are
-reclaimed first; then it waits up to --wait minutes, or exits 3.
+reclaimed first; then it waits up to --wait minutes, or exits 3. A BRANCH that looks like a commit
+SHA and names no branch is refused: pass a branch name and `--base <sha>` to start it at that
+commit.
 
 Usage: car worktree acquire [OPTIONS] <BRANCH>
 
@@ -2852,8 +3007,8 @@ Give a slot back: park it detached on the base, keep its build output, lock it, 
 
 Refused while the slot has uncommitted or untracked files, ignored files that are not build output,
 an unfinished rebase, merge, cherry-pick, revert or bisect, or commits only a detached HEAD holds.
-Refused for a slot leased to someone else, or to one of your subagents (`<owner>/agent-<id>`),
-unless --force.
+Refused for a slot leased to someone else, or to one of your subagents (`<owner>/agent-<id>`, or a
+workflow subagent's `<owner>/wf_<run>-<step>-<n>`), unless --force.
 
 Usage: car worktree release [OPTIONS] [SLOT]
 
@@ -3045,12 +3200,14 @@ the hook's JSON on stdin
 In a pool-on repo, WorktreeCreate leases a slot on `worktree-<name>` for owner `<session>/<name>`,
 held by the nearest `claude` process above the hook (refused when there is none), and prints its
 path; WorktreeRemove releases it (refused while it holds work); SubagentStop releases the slot
-leased for `<session>/agent-<id>` and deletes that branch once the base contains it. A full or
-broken pool fails creation; nothing falls back to a worktree outside the pool. In every other repo
-it makes what Claude Code makes with no hook: `.claude/worktrees/<name>` on `worktree-<name>` from
-the default branch, `.worktreeinclude` files copied; removal removes the tree and its branch, and a
-subagent's tree is removed when it stops holding nothing. Stdout is the worktree path alone.
-SubagentStop always exits 0.
+leased for `<session>/agent-<id>` (for a workflow subagent, the slot its transcript's meta names as
+its own worktree, while that is leased for `<session>/wf_…`), refused while it holds work or a
+process runs in it, and deletes that branch once the base contains it. A full or broken pool fails
+creation; nothing falls back to a worktree outside the pool. In every other repo it makes what
+Claude Code makes with no hook: `.claude/worktrees/<name>` on `worktree-<name>` from the default
+branch, `.worktreeinclude` files copied; removal removes the tree and its branch, and a subagent's
+tree is removed when it stops holding nothing. Stdout is the worktree path alone. SubagentStop
+always exits 0.
 
 Usage: car worktree hook
 
@@ -3726,6 +3883,10 @@ Report current grant state for a domain.
 
 On macOS a check that does not answer within 2 s (an app running but not answering Apple Events)
 reports status `not_responding` and exits 3.
+
+The running CAR daemon is asked first, so the answer is for the process that holds the app's grants.
+With no daemon listening, this `car` process is checked instead. The `reported_for` field and a line
+on stderr say which: `daemon` or `this car process`.
 
 Usage: car permissions status [OPTIONS] <DOMAIN>
 
@@ -5267,6 +5428,159 @@ Options:
   -h, --help       Print help
 ```
 
+### car job
+
+```text
+Start a command that keeps running after this shell ends, and read, wait for, follow, cancel or
+purge it from any later shell (macOS and Linux)
+
+Usage: car job <COMMAND>
+
+Commands:
+  start   Start a detached command and print its job id
+  status  Show a job's state (the newest job when no id is given). Changes nothing
+  list    List jobs, oldest first. Changes nothing
+  wait    Wait for a job to finish and exit with its code (70 when it was cancelled or lost).
+  Changes nothing
+  logs    Print a job's output
+  purge   Remove finished jobs (drained, cancelled or lost, with nothing left running). Lists what
+  it would remove unless --apply; with --apply each job's outcome record is archived to
+  jobs/archive/ID.json before its folder is removed, and every removal is logged to jobs/purge.log.
+  A job that is still running is never touched
+  cancel  Stop a job: TERM to its session, KILL after the grace period. A job that already finished
+  is left as it is; cancelling twice is fine
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car job start
+
+```text
+Start a detached command and print its job id.
+
+The command runs in its own session with no controlling terminal, stdin from /dev/null and its
+output in the job's log. It keeps running when this shell ends. Returns once the job is detached and
+recorded.
+
+Usage: car job start [OPTIONS] --cwd <CWD> -- <CMD>...
+
+Arguments:
+  <CMD>...
+          The command and its arguments, after `--`
+
+Options:
+      --key <KEY>
+          Name the job: a later start with the same key and the same command, folder and allowed
+          environment returns this job instead of running another; a different one exits 4. Scoped
+          to your OS user
+
+      --cwd <CWD>
+          Folder the command runs in
+
+      --env-allow <NAME>...
+          Environment variables the command gets; nothing else is passed. The job records the names,
+          never the values
+
+      --json
+          Print the result as JSON
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### car job status
+
+```text
+Show a job's state (the newest job when no id is given). Changes nothing
+
+Usage: car job status [OPTIONS] [ID]
+
+Arguments:
+  [ID]
+
+Options:
+      --json
+  -h, --help  Print help
+```
+
+#### car job list
+
+```text
+List jobs, oldest first. Changes nothing
+
+Usage: car job list [OPTIONS]
+
+Options:
+      --json
+  -h, --help  Print help
+```
+
+#### car job wait
+
+```text
+Wait for a job to finish and exit with its code (70 when it was cancelled or lost). Changes nothing
+
+Usage: car job wait [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --json               Print the final state as JSON
+      --timeout <SECONDS>  Give up after this many seconds (exit 75)
+  -h, --help               Print help
+```
+
+#### car job logs
+
+```text
+Print a job's output
+
+Usage: car job logs [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --follow  Keep printing until the job finishes
+  -h, --help    Print help
+```
+
+#### car job purge
+
+```text
+Remove finished jobs (drained, cancelled or lost, with nothing left running). Lists what it would
+remove unless --apply; with --apply each job's outcome record is archived to jobs/archive/ID.json
+before its folder is removed, and every removal is logged to jobs/purge.log. A job that is still
+running is never touched
+
+Usage: car job purge [OPTIONS]
+
+Options:
+      --apply              Remove the jobs instead of listing them
+      --older-than <DAYS>  Only jobs whose last state is at least this many days old [default: 0]
+      --json               Print the result as JSON
+  -h, --help               Print help
+```
+
+#### car job cancel
+
+```text
+Stop a job: TERM to its session, KILL after the grace period. A job that already finished is left as
+it is; cancelling twice is fine
+
+Usage: car job cancel [OPTIONS] <ID>
+
+Arguments:
+  <ID>
+
+Options:
+      --grace <SECONDS>  Seconds between TERM and KILL [default: 10]
+  -h, --help             Print help
+```
+
 ### car schedule
 
 ```text
@@ -5448,6 +5762,8 @@ Commands:
   reach
   worker    Show whether this machine takes coding subtasks farmed out by peers
   enroll    Enroll this machine as a fleet worker for the named repositories
+  build     Build the Cargo project on an available device
+  test      Test the Cargo project on an available device
   withdraw  Stop taking work from peers. Keeps the repository list for next time
   run       Run one coding goal across the fleet: decompose it, place the independent subtasks on
   the instances that have this repository, and gate the reassembly **here**
@@ -5522,11 +5838,38 @@ Options:
           has the commit, where a laptop on an unpushed branch declines every dispatch. Off for a
           laptop, where a peer should not cause a fetch in a repository someone is working in.
 
+      --build-jobs
+          Accept Cargo builds and tests from your Parslee devices instead of Foreman subtasks
+
       --fetch-remote <FETCH_REMOTE>
           Remote a runner fetches from. Defaults to `origin`
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+#### car fleet build
+
+```text
+Build the Cargo project on an available device
+
+Usage: car fleet build [OPTIONS]
+
+Options:
+      --repo <REPO>  Directory in the Git checkout. Defaults to the current directory
+  -h, --help         Print help
+```
+
+#### car fleet test
+
+```text
+Test the Cargo project on an available device
+
+Usage: car fleet test [OPTIONS]
+
+Options:
+      --repo <REPO>  Directory in the Git checkout. Defaults to the current directory
+  -h, --help         Print help
 ```
 
 #### car fleet withdraw
@@ -5802,21 +6145,86 @@ Options:
   -h, --help             Print help
 ```
 
+### car sessions
+
+```text
+Claude Code and Codex sessions on this machine: `status` lists their age, idle time, context,
+compactions and spend; `settings` shows the sessions.toml limits and launch options that apply to
+one. Read-only
+
+Usage: car sessions <COMMAND>
+
+Commands:
+  status    List every Claude Code and Codex session on this machine: age, idle time, turns, last
+  context, fill, compactions, spend, and the role, kind and launch mode `car claude` or `car codex`
+  recorded. Read-only. With --json, every field carries its source or `unknown (<reason>)`
+  settings  Show the sessions.toml settings that apply to a session, or to a role and vendor. Reads
+  ~/.car/sessions.toml, then the project's .car/sessions.toml; within each, `[defaults]`,
+  `[kind.<kind>]`, `[role.<role>]`, `[vendor.<vendor>]`; the last section that sets a key wins
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+#### car sessions status
+
+```text
+List every Claude Code and Codex session on this machine: age, idle time, turns, last context, fill,
+compactions, spend, and the role, kind and launch mode `car claude` or `car codex` recorded.
+Read-only. With --json, every field carries its source or `unknown (<reason>)`
+
+Usage: car sessions status [OPTIONS]
+
+Options:
+      --json  One JSON document: sessions, hand off records and unread sources
+  -h, --help  Print help
+```
+
+#### car sessions settings
+
+```text
+Show the sessions.toml settings that apply to a session, or to a role and vendor. Reads
+~/.car/sessions.toml, then the project's .car/sessions.toml; within each, `[defaults]`,
+`[kind.<kind>]`, `[role.<role>]`, `[vendor.<vendor>]`; the last section that sets a key wins
+
+Usage: car sessions settings [OPTIONS] [SESSION]
+
+Arguments:
+  [SESSION]  A session id from `car sessions status`; its launch spec names the role, kind, vendor
+  and directory
+
+Options:
+      --role <ROLE>      The role to resolve for (a `[role.<key>]` section)
+      --vendor <VENDOR>  `claude` or `codex` (a `[vendor.<name>]` section)
+      --kind <KIND>      `session` (the default) or `subagent`, which reads only warn_* keys
+      --explain          Print each key with its value and the `file:[section]` that set it
+  -h, --help             Print help
+```
+
 ### car claude
 
 ```text
 Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to
 the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's
 collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments
-after `--` go to `claude`. Needs a running daemon
+after `--` go to `claude`. Needs a running daemon. Launch options and the reset point come from
+sessions.toml (`car sessions settings --explain`); with none set, the `claude` command line is
+unchanged
 
-Usage: car claude [ARGS]...
+Usage: car claude [OPTIONS] [ARGS]...
 
 Arguments:
   [ARGS]...
 
 Options:
-  -h, --help  Print help
+      --role <ROLE>  Resolve sessions.toml for this role (a `[role.<key>]` section) and record it in
+      the session's launch spec
+      --background   Run `claude --bg`: Claude Code keeps the session and this command prints its id
+      and exits. No CAR identity is passed on; the session's collaboration helper enrolls itself
+      --no-prune     Apply none of the tool-pruning keys (deny_tools, required_tools,
+      skill_desc_chars) from any sessions.toml layer
+  -h, --help         Print help
 ```
 
 ### car codex
@@ -5824,15 +6232,19 @@ Options:
 ```text
 Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent,
 installs session-only collaboration and policy hooks, injects the daemon brief, and removes the
-agent on exit. Needs a running daemon. Arguments after `--` go to `codex`
+agent on exit. Needs a running daemon. Arguments after `--` go to `codex`. The reset point comes
+from sessions.toml; with none set, the `codex` command line is unchanged
 
-Usage: car codex [ARGS]...
+Usage: car codex [OPTIONS] [ARGS]...
 
 Arguments:
   [ARGS]...
 
 Options:
-  -h, --help  Print help
+      --role <ROLE>  Resolve sessions.toml for this role (a `[role.<key>]` section) and record it in
+      the session's launch spec
+      --background   Refused: Codex has no background mode
+  -h, --help         Print help
 ```
 
 ### car publish

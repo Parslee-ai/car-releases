@@ -11,7 +11,7 @@ next to this file are for you instead.
 Download **`CAR-darwin-arm64.pkg`** from the
 [latest release](https://github.com/Parslee-ai/car-releases/releases/latest)
 and double-click it. That's the whole install — it puts **CAR Host**
-in your menu bar. (Apple Silicon Mac, macOS 26 or newer.)
+in your menu bar. (Apple Silicon Mac, macOS 15 or newer.)
 
 The app keeps itself up to date automatically. You won't need to do
 this again.

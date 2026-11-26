@@ -7,9 +7,10 @@
 Bridges around the OS-shipped scripting layer. `run_applescript` and the `shortcuts.*` methods are macOS-only (Apple CLIs); `run_powershell` is the Windows analog. Each method errors with a PlatformUnsupported message on the platforms it doesn't target.
 
 #### `automation.run_applescript`
-- **Params**: `{ script: string, language?: "applescript" | "javascript", args?: string[], timeout_ms?: number }`
-- **Returns**: `{ stdout: string, stderr: string, exit_code: number | null }`
+- **Params**: `{ script: string, language?: "applescript" | "javascript", args?: string[], timeout_ms?: number, imessage_send?: null | { to: string, body: string } }`
+- **Returns**: `{ stdout: string, stderr: string, exit_code: number | null, imessage_send?: { declared: true } }`
 - Wraps `osascript -l <lang> -` with the script piped to stdin. `args` are passed positionally to the script's `on run argv` (AppleScript) or `function run(argv)` (JXA). Subprocess exit codes other than 0 surface as JSON-RPC errors with the script's own stderr in the message. macOS-only.
+- `imessage_send` declares that the script sends an iMessage. `null` (or no key) means it sends none. For `{ to, body }`, both non-empty and `body` at most 1,500 characters, CAR records the send in the send log ([messages.read](messages.md#messagesread)) before the script starts and runs it with `argv = [to, tagged]`: `body` plus a 64-character invisible tag only CAR makes. The script sends the tagged text, once, to `to` (AppleScript `item 2 of argv` to `item 1 of argv`; JXA `argv[1]` to `argv[0]`) and never retypes it. The received echo of that text is then marked `own_echo`. `imessage_send` cannot be combined with `args`. `CAR_APPLESCRIPT_IMESSAGE=required` refuses a call without the key; the default `optional` (or any other value) accepts one. A malformed value, a missing key under `required`, or 500 open declarations refuses the call before `osascript` starts. The assistant's `run_applescript` tool takes the same argument.
 
 #### `automation.run_powershell`
 - **Params**: `{ script: string, timeout_ms?: number }`

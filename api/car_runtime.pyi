@@ -364,6 +364,145 @@ class ScheduledRunRefusedEvent(TypedDict):
 
 
 # ---------------------------------------------------------------------------
+# Collaborations (``collab.*``; reached through the generated ``collab_*``
+# wrappers, which return JSON strings)
+# ---------------------------------------------------------------------------
+
+CollabSendStatus = Literal["delivered", "queued", "unconfirmed", "refused"]
+"""Where a ``collab.message`` send stands. Exactly these four.
+``delivered`` and ``refused`` never change; a ``queued`` or ``unconfirmed``
+send whose status or reason changes later (to ``delivered``, to ``refused``,
+or from one held reason to another) comes back as a ``CollabDeliveryUpdate``."""
+
+CollabSendReason = Literal[
+    "not_on_car", "recipient_offline", "parslee_unreachable", "signed_out", "awaiting_key", "holders_unknown", "sending", "directory_unreadable", "parslee_busy",
+    "ambiguous_name", "not_in_org", "secret_detected", "too_large", "rate_limited", "conversations_unavailable", "duplicate", "invalid_options", "same_owner", "personal_context", "not_bound", "not_signed_in", "account_changed", "org_required", "undeliverable", "parslee_refused", "not_saved", "directory_unavailable", "needs_resend", "not_reachable", "not_member", "not_in_thread",
+    "no_receipt",
+]
+"""Why a send stands where it does (``None`` exactly when ``delivered``).
+A closed list: reasons are only ever added, never renamed or reused. Queued:
+not_on_car, recipient_offline, parslee_unreachable, signed_out, awaiting_key, holders_unknown, sending,
+directory_unreadable, parslee_busy. Unconfirmed: no_receipt.
+Every other reason is refused. ``needs_resend`` is a refused send that is
+kept: call ``collab.message`` again with the same ``client_id`` to send it
+again."""
+
+
+class CollabSendResult(TypedDict):
+    """The answer of ``collab.message``."""
+
+    status: CollabSendStatus
+    reason: Optional[CollabSendReason]
+    sentence: str
+    """One sentence, safe to show a person as it is: no ids, tokens or
+    secrets."""
+    client_id: str
+    """The caller's id for this send: the ``client_id`` given, or a UUID
+    minted for it. ``collab.message`` again with it returns this send's
+    current state (that is how a retry works); it never sends twice."""
+    message_id: Optional[str]
+    """The backend's id for the message; ``None`` when nothing was kept."""
+
+
+class CollabDeliveryUpdate(TypedDict):
+    """A later change to a send the caller made, in ``collab.read``'s
+    ``delivery_updates``."""
+
+    type: Literal["delivery_update"]
+    client_id: str
+    message_id: Optional[str]
+    status: CollabSendStatus
+    reason: Optional[CollabSendReason]
+    sentence: str
+
+
+CollabNoticeKind = Literal["history_failed", "unexplained_member", "checkpoint_conflict"]
+"""A membership warning raised to every member of a conversation."""
+
+
+CollabNotice = TypedDict(
+    "CollabNotice",
+    {
+        "type": Literal["notice"],
+        "kind": CollabNoticeKind,
+        "with": str,
+        "sentence": str,
+        "at_ms": int,
+    },
+)
+"""A membership warning, in ``collab.read``'s ``notices`` and in
+``collab.conversation``. ``with`` names who the conversation is with, as
+``collab.who`` does."""
+
+CollabDeparture = TypedDict(
+    "CollabDeparture",
+    {
+        "type": Literal["departure"],
+        "with": str,
+        "person": str,
+        "account": str,
+        "agents": List[str],
+        "sentence": str,
+        "at_ms": int,
+    },
+)
+"""A person left the organization, in ``collab.read``'s ``notices`` and in
+``collab.conversation``, shown once per reader. ``person`` names who left as
+``collab.who`` does, ``account`` is their account, and ``agents`` the
+accounts of their assistants that ended with them."""
+
+class CollabAdmissionStale(TypedDict, total=False):
+    """Present on a bound session's ``collab.list``, ``collab.who``,
+    ``collab.read``, ``collab.wait``, ``collab.conversation(s)``,
+    ``board.list``, ``board.history`` and ``lattice.inbox`` answer when
+    Parslee answered organization admission as busy: the answer is what this
+    CAR already holds and may be missing new items. ``admission_sentence`` is
+    safe to show the person. Absent otherwise."""
+
+    admission_stale: Literal[True]
+    admission_sentence: str
+
+
+CollabConversationPage = TypedDict(
+    "CollabConversationPage",
+    {"with": str, "entries": List[Dict[str, Any]], "more": bool, "next": Optional[str]},
+)
+"""The answer of ``collab.conversation``: one page, oldest first. Each
+entry's ``type`` is ``received`` (``state`` ``opened``, ``not_yet_available``
+or ``unopenable``; ``writer`` ``left`` or ``removed`` when the writer is no
+longer a current member, absent otherwise; ``former_member`` is reserved and
+nothing produces it yet), ``sent`` (with
+``status``, ``reason``, ``sentence`` and ``client_id``), ``notice``,
+``departure``, or ``lost``
+(``lost_before_ms``, ``sentence``). ``more`` is ``True`` when older entries
+remain, and then ``next`` is an opaque string to pass as ``before``; it is
+``None`` on the oldest page."""
+
+CollabConversationListing = TypedDict(
+    "CollabConversationListing",
+    {
+        "with": str,
+        "account": str,
+        "state": Literal["open", "closed"],
+        "unread": int,
+        "last_at_ms": Optional[int],
+    },
+)
+"""One pair conversation in ``collab.conversations``. ``with`` is the other
+person's ``name`` exactly as ``collab.who`` gives it, ``unread`` counts what
+is still unread for this caller by ``collab.read``'s read positions, and
+``last_at_ms`` is ``None`` when it has no message."""
+
+CollabConversationList = TypedDict(
+    "CollabConversationList",
+    {"org": str, "conversations": List[CollabConversationListing]},
+)
+"""The answer of ``collab.conversations``: every pair conversation the person
+owns, open and closed, newest ``last_at_ms`` first and those with no message
+last. Listing moves no read position."""
+
+
+# ---------------------------------------------------------------------------
 # CarRuntime — persistent runtime instance with state, memory, tools, and
 # policies. Each instance carries its own memgine + inference engine.
 # ---------------------------------------------------------------------------
@@ -385,6 +524,8 @@ class ScopedInferenceRuntime:
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
         intent_json: Optional[str] = None,
+        *,
+        attempt_id: Optional[str] = None,
     ) -> str: ...
 
     def infer_tracked_with_request(self, request_json: str) -> str: ...
@@ -401,6 +542,8 @@ class ScopedInferenceRuntime:
         parallel_tool_calls: Optional[bool] = None,
         intent_json: Optional[str] = None,
         images_json: Optional[str] = None,
+        *,
+        attempt_id: Optional[str] = None,
     ) -> str: ...
 
     def classify(
@@ -408,6 +551,8 @@ class ScopedInferenceRuntime:
         text: str,
         labels: List[str],
         model: Optional[str] = None,
+        *,
+        attempt_id: Optional[str] = None,
     ) -> str: ...
 
     def route_model(self, prompt: str, intent_json: Optional[str] = None) -> str: ...
@@ -737,14 +882,35 @@ class CarRuntime:
     def beads_touch(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `beads.touch` (owner).
 
+    def board_accept(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.accept` (operator).
+
+    def board_assign(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.assign` (operator).
+
+    def board_check_in(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.check_in` (operator).
+
+    def board_claim(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.claim` (operator).
+
     def board_comment(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `board.comment` (operator).
+
+    def board_decline(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.decline` (operator).
+
+    def board_handoff(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.handoff` (operator).
 
     def board_history(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `board.history` (operator).
 
     def board_list(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `board.list` (operator).
+
+    def board_release(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `board.release` (operator).
 
     def board_transition(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `board.transition` (operator).
@@ -829,6 +995,54 @@ class CarRuntime:
 
     def coder_unsubscribe(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `coder.unsubscribe` (operator).
+
+    def collab_accept(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.accept` (operator).
+
+    def collab_ack(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.ack` (operator).
+
+    def collab_conversation(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.conversation` (operator).
+
+    def collab_conversations(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.conversations` (operator).
+
+    def collab_decline(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.decline` (operator).
+
+    def collab_invitations(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.invitations` (operator).
+
+    def collab_invite(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.invite` (operator).
+
+    def collab_leave(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.leave` (operator).
+
+    def collab_list(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.list` (operator).
+
+    def collab_message(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.message` (operator).
+
+    def collab_presence(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.presence` (operator).
+
+    def collab_read(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.read` (operator).
+
+    def collab_remove(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.remove` (operator).
+
+    def collab_start(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.start` (operator).
+
+    def collab_wait(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.wait` (operator).
+
+    def collab_who(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `collab.who` (operator).
 
     def concierge_actions(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `concierge.actions` (operator).
@@ -950,14 +1164,23 @@ class CarRuntime:
     def feedback_compose_preview(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `feedback.compose_preview` (operator).
 
+    def feedback_export(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `feedback.export` (operator_only).
+
     def feedback_list(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `feedback.list` (operator).
+
+    def feedback_remove(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `feedback.remove` (operator_only).
 
     def feedback_status(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `feedback.status` (operator).
 
     def feedback_submit(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `feedback.submit` (operator).
+
+    def fleet_build_job(self, params_json: str) -> str: ...
+    # Generated daemon wrapper for `fleet.build_job` (operator_only).
 
     def goal_clear(self, params_json: str) -> str: ...
     # Generated daemon wrapper for `goal.clear` (agent).
@@ -1673,7 +1896,10 @@ class CarRuntime:
 
         Each result has the shape
         ``{"fact_id": Optional[str], "subject": str, "body": str, "kind": str,``
-        ``"confidence": float, "score": float, "tags": List[str], "source": str}``.
+        ``"confidence": float, "score": float, "path": str, "tags": List[str], "source": str}``.
+        ``path`` is ``"semantic"`` when the memory's embedder served the query
+        (meaning matches count, ``score`` is the higher of word and meaning
+        match) and ``"words"`` otherwise.
         Matches are weighted by how well they match ``query``, so a full match
         ranks above a one-word overlap; ``confidence`` is the hit's share of
         PageRank mass in this result, comparable within one call only.
@@ -1841,11 +2067,21 @@ class CarRuntime:
         """``host.agents`` — current host agent registry snapshot."""
 
     def host_events(self, limit: int | None = None) -> str:
-        """``host.events`` — recent host events, newest last. Omit ``limit``
-        for the daemon default."""
+        """``host.events`` — recent host events, newest first. Returns a JSON
+        string of a bare ``HostEvent[]`` array (no ``events`` envelope). Omit
+        ``limit`` for the daemon default."""
 
-    def host_approvals(self) -> str:
-        """``host.approvals`` — pending host approvals."""
+    def host_approvals(
+        self, pending: bool = False, collaboration: str | None = None
+    ) -> str:
+        """``host.approvals`` — the host approvals ledger. With ``pending``,
+        every ask waiting on the person (approvals, collaboration and direct
+        questions, board handoffs and assignments), oldest first, as
+        ``{count, asks, unavailable?}``; ``collaboration`` keeps one
+        collaboration's asks. Answer any of them with
+        ``host_resolve_approval``. Without ``pending``, the host client and the
+        signed-in dashboard also get every other ask, waiting or settled in
+        the last 24 hours, in the ledger row's shape."""
 
     def host_register_agent(self, request_json: str) -> str:
         """``host.register_agent`` — register an agent on this connection."""
@@ -1874,7 +2110,17 @@ class CarRuntime:
         """``host.request_approval`` — request approval; JSON accepts present and only_if_floor_clear."""
 
     def host_resolve_approval(self, request_json: str) -> str:
-        """``host.resolve_approval`` — resolve one pending host approval."""
+        """``host.resolve_approval`` — answer one pending ask by its
+        ``approval_id``: ``{approval_id, resolution?, text?,
+        acknowledge_processing?}``. A ledger row
+        takes ``resolution`` as before; an ``ask:`` id takes ``resolution``
+        (one of its options, a private answer; posted in the thread when the
+        question asks everyone) or ``text`` (a public reply);
+        a ``direct:`` id takes either; a ``board:`` id takes ``accept`` or
+        ``decline``; a ``lattice:`` id (a Lattice request to a person) takes
+        ``text``, or a review's ``approve``/``deny``, and from the host client
+        ``acknowledge_processing: true`` agrees to another owner's processing
+        notice and sends."""
 
     # ``host.subscribe`` event delivery is deferred to the callback-aware
     # daemon-session API; subscribing without a consumer would drop the stream.
@@ -2286,8 +2532,11 @@ class CarRuntime:
         reachable CAR instance, folded so one row names every instance that
         offers it. ``include_remote`` defaults to true. ``timeout_ms`` bounds
         each peer individually: a sleeping machine appears as an unreachable row
-        carrying the reason, never a missing one. Returns ``FleetComposite``
-        JSON."""
+        carrying the reason, never a missing one. ``roster`` says whether this
+        daemon knows its own devices yet, ``own_certificate`` whether it holds
+        a device certificate for its current key, and ``own_devices`` lists
+        each own device on the sync roster with how it is reached and why not.
+        Returns ``FleetComposite`` JSON."""
         ...
 
     def fleet_worker_get(self) -> str:
@@ -2551,54 +2800,49 @@ class CarRuntime:
         """
 
     def heal_status(self) -> str:
-        """Self-healing repair loop status: enabled/why-not, cadence, targets,
-        rejected targets, review panel, engine."""
+        """Heal status as JSON (``heal.status``): the one ``state`` (``off``,
+        ``blocked``, ``idle``, ``working``, ``awaiting_merge``, ``verifying``,
+        ``escalated``) and the one ``reason`` for it, ``cadence_secs``,
+        ``daily_budget_usd``, the ``work`` in flight (each with its
+        ``dedup_key``, ``phase``, ``round``, ``occurrence``, ``branch`` and
+        pull request), the detectors and detection counts,
+        ``config_warnings``, the hand-in ``targets``/``orgs``/``rejected``/
+        ``discovered``, and the ``spend_meter``."""
         ...
 
     def heal_run(
         self, *, chat_session_id: str | None = None, item: str | None = None
     ) -> str:
-        """Run one self-healing repair sweep now. May open a pull request; never merges.
-        ``chat_session_id`` is for a caller bound to a supervised agent: the
-        ``session_id`` of the host's ``agents.chat`` turn it is answering, which
-        it needs to start a sweep. ``item`` (``owner/repo#number``) runs that one
-        item with the attended configuration, setting aside its backoff and its
-        ``needs-human`` label."""
+        """Run heal now (``heal.run``). Without ``item``: one heal tick
+        (detect, repair, merge, verify, hand-in issues), returning the
+        ``heal.status`` object as JSON. With ``item`` (``owner/repo#number``):
+        runs that one handed-in issue with the attended configuration and
+        returns the sweep report ``{outcomes, skipped_overlap}``; a handed-in
+        issue gets a pull request only. ``chat_session_id`` is
+        for a caller bound to a supervised agent: the ``session_id`` of the
+        host's ``agents.chat`` turn it is answering, which it needs to start
+        a run."""
         ...
 
-    def selfheal_status(self) -> str:
-        """Return self-heal status as JSON: cadence, ``auto_fix_enabled``,
-        ``max_concurrent``, ``max_per_day``, ``max_rounds_per_key``, optional
-        ``auto_fix_refusal_reason``, source
-        route/refusal, detector counts, and filing mode.
+    def heal_detections(self, query_json: Optional[str] = None) -> str:
+        """List active heal detections as JSON (``heal.detections``):
+        ``{detections, total, offset, limit, next_offset?}``. Each detection
+        includes its route and optional local issue path. Recurring tool
+        failures add ``eligible``, a secret-safe ``reconstructed_call``
+        (``tool`` plus exact ``params``) and optional owner-private
+        ``reconstructed_call_path``. Every detection carries a 1-based
+        ``occurrence``: a ``scheduled_task_problem`` that cleared and came
+        back is a new occurrence. ``query_json`` carries ``kind``,
+        ``severity``, ``since``, ``offset``, and bounded ``limit`` (max 500).
         """
 
-    def selfheal_detections(self, query_json: Optional[str] = None) -> str:
-        """List active detections as JSON, including each route and optional
-        local issue path. Recurring tool failures add ``eligible``, a
-        secret-safe ``reconstructed_call`` (``tool`` plus exact ``params``),
-        optional owner-private ``reconstructed_call_path``,
-        ``auto_fix_attempts``, ``auto_fix_exhausted``,
-        ``auto_fix_in_progress``, and ``last_auto_fix_attempt`` (including
-        ``exit_code`` and ``failure_class``). Remote deduplication adds
-        ``auto_fix_awaiting_review``, ``auto_fix_parked``,
-        ``remote_pr_number``, and ``remote_pr_url``. A detection handed to
-        the repair loop carries ``heal_issue`` (``{repo, number, url}``).
-        ``query_json``
-        carries ``kind``, ``severity``, ``since``, ``offset``, and bounded
-        ``limit``.
+    def heal_dismiss(self, dedup_key: str) -> str:
+        """Dismiss one detection by its dedup key (``heal.dismiss``): append
+        an operator dismissal marker without deleting history; heal never
+        repairs a dismissed key. Returns ``{dedup_key, dismissed,
+        already_dismissed, dismissed_at}`` as JSON. An unknown key, or a
+        resolved ``scheduled_task_problem`` key, is refused.
         """
-
-    def selfheal_dismiss(self, dedup_key: str) -> str:
-        """Append an operator dismissal marker without deleting history."""
-
-    def selfheal_fix(self, dedup_key: str) -> str:
-        """Start one bounded template-owned coder round for an eligible
-        recurring tool failure. Returns the durable attempt result as JSON.
-        """
-
-    def selfheal_run(self) -> str:
-        """Run one non-overlapping detection tick and default-on auto-fix hook."""
 
     # --- Execution ----------------------------------------------------
 
@@ -2704,8 +2948,17 @@ class CarRuntime:
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
         intent_json: Optional[str] = None,
+        *,
+        attempt_id: Optional[str] = None,
     ) -> str:
         """Generate text. Returns the model's plain-text completion.
+
+        ``attempt_id`` is an optional opaque id you mint for this attempt
+        (1-128 characters of ``A-Z a-z 0-9 . _ : -``). The daemon writes it
+        on the call's spend-ledger rows, so you read this call's own bill
+        back with ``events.query`` ``{"agent": ..., "data_matches":
+        {"attempt_id": ...}}`` rather than by order or token counts
+        (car#4797).
 
         Direct TypeSafe takes a JSON prompt with state/questions/optional
         assets, omitting model, and returns decision JSON (non-streaming).
@@ -2769,6 +3022,13 @@ class CarRuntime:
         ``usage.reasoning_tokens`` is present when the provider reports it
         (OpenAI chat and Responses, non-streaming), as a subset of
         ``completion_tokens`` (car-releases#107, #108).
+        ``usage.recovered_cost`` (``{provider_usd, estimated_usd}``) is present
+        only on a turn recovered from a discarded thinking pass, beside
+        ``usage.reported_cost_usd``, which keeps provider charges only:
+        ``estimated_usd`` is the catalog price of each pass without an accepted
+        provider charge (no usage, or usage with a missing or refused charge),
+        each at its own model on its actual or estimated usage, and ``0.0``
+        when the catalog has no price.
 
         ``client_ref`` is an opaque correlation token echoed verbatim in the
         ``inference.runner.invoke`` payload and otherwise ignored by CAR. A
@@ -2777,6 +3037,14 @@ class CarRuntime:
         daemon only after this call, so it cannot serve that purpose. Hosts
         previously had to smuggle an id through ``prompt``, which worked only
         because delegated models ignore it (car-releases#78).
+
+        A failure raises ``RuntimeError`` with attributes ``code`` (the
+        JSON-RPC code, ``None`` when no daemon response arrived), ``data``
+        (the daemon's error data or ``None``; ``data["kind"]`` names the
+        failure, such as ``"rate_limited"`` or ``"auth_rejected"``, and
+        ``data["status"]`` is the provider's HTTP status when it sent one) and
+        ``spend_refused`` (``True`` for a spend refusal). Branch on those, not
+        on the message (car#1695).
         """
 
     def infer_tracked(
@@ -2791,8 +3059,20 @@ class CarRuntime:
         parallel_tool_calls: Optional[bool] = None,
         intent_json: Optional[str] = None,
         images_json: Optional[str] = None,
+        *,
+        attempt_id: Optional[str] = None,
     ) -> str:
         """Generate with full tracking. Returns JSON.
+
+        With ``attempt_id`` (named as on ``infer``) the result also carries
+        ``attempt_id``, ``call_ids`` (the spend-ledger calls this request was
+        billed for, in settle order, each readable with ``events.query``),
+        ``pending_call_ids`` (calls it admitted whose bill is not written
+        yet) and ``settled`` (false while a bill could still be added). A
+        daemon error then carries the same fields in its ``data`` plus
+        ``billed`` and ``dispatched`` (``true`` billed, ``false`` nothing
+        reached a provider and nothing was billed, ``null`` not known yet). Only
+        ``infer_tracked_with_request`` raises with that ``data`` attached.
 
         Result shape:
         ``{"text", "tool_calls", "usage": {input_tokens, output_tokens},
@@ -2917,8 +3197,15 @@ class CarRuntime:
         text: str,
         labels: List[str],
         model: Optional[str] = None,
+        *,
+        attempt_id: Optional[str] = None,
     ) -> str:
         """Classify ``text`` against candidate ``labels``.
+
+        With ``attempt_id`` (named as on ``infer``) the daemon's result also
+        carries ``attempt_id``, ``call_ids``, ``pending_call_ids`` and
+        ``settled`` beside
+        ``classifications`` (car#4797).
 
         A registered TypeSafe direct row precedes the managed default and
         uses its named key from CAR's store, independently of Parslee.
@@ -3107,10 +3394,9 @@ class CarRuntime:
         """Register a ``ModelSchema`` via the daemon's
         ``models.register`` JSON-RPC method
         (Parslee-ai/car-releases#39). Persisted to
-        ``~/.car/models.json``; live hot-update inside a running
-        daemon is tracked as a separate follow-up. Register
-        before the daemon's inference path starts using the model,
-        or restart the daemon after registration.
+        ``~/.car/models.json`` and registered in the running daemon
+        at once, so inference and model listings see it with no
+        restart.
 
         A reserved credential (``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``,
         the AWS keys, the other names ``car keys`` stores, and the
@@ -3126,7 +3412,7 @@ class CarRuntime:
         wrapper and ``daemon_call("models.register", …)`` make the
         ordinary call.
 
-        Returns JSON ``{"id", "registered", "path", "note"}``.
+        Returns JSON ``{"id", "registered", "live", "path"}``.
         """
 
     def assistant_identity_get(self) -> str:
@@ -3243,6 +3529,7 @@ class CarRuntime:
         browser: bool | None = None,
         lattice_json: str | None = None,
         isolate_external_network: bool | None = None,
+        external_api_key_credential: bool | None = None,
         distributed: bool | None = None,
         workers: list[str] | None = None,
         discussion_id: str | None = None,
@@ -3347,7 +3634,10 @@ class CarRuntime:
         ``isolate_external_network=True`` runs an external engine with no route
         off the machine (no web search or fetch, browser, app connectors or MCP
         servers; shell without network); an engine that cannot guarantee it
-        refuses. ``discussion_id`` names a
+        refuses. ``external_api_key_credential=True`` lets an external engine
+        authenticate with an ambient provider API key (``ANTHROPIC_API_KEY``,
+        ``OPENAI_API_KEY``, ...); otherwise those keys are removed and the
+        engine uses its own login. ``discussion_id`` names a
         ``coder.discuss`` conversation this run was distilled from: its agreed
         constraints ride into contract derivation, so a rule stated once in the
         discussion need not be restated in the intent, and the session records
@@ -4100,12 +4390,22 @@ class CarRuntime:
         ``send_request_json`` is ``{account_id, to, cc?, bcc?, subject, body,
         draft_only?}``; ``draft_only: true`` saves a draft in ``account_id``'s
         Drafts instead of sending. Returns JSON ``{available, backend, reason?,
-        sent, message_id}``: ``sent: false`` with a ``reason`` (e.g.
+        sent, message_id, delivery?}``: ``sent: false`` with a ``reason`` (e.g.
         ``sender_override_failed: …`` or ``drafts_unavailable: …``, saying what
         to change in Mail's account settings) when Mail will not use
         ``account_id``'s address, or (for a draft) reports that account turned off
         or lists Drafts mailboxes for other accounts but none for it — nothing
-        is sent or drafted from another account.
+        is sent or drafted from another account. On Mail.app a send Mail
+        accepts is confirmed only once it shows up in the Outbox or Sent
+        (``sent: true``, ``delivery: "confirmed"``); if Sent was read and it
+        never did, ``sent: false``, ``delivery: "unconfirmed"`` and a
+        ``send_unconfirmed:`` reason (it may still go out: check Outbox and
+        Sent before sending it again); if Sent could not be read, or Mail
+        did not say which account sent it, ``sent: false``, ``delivery:
+        "unverified"`` and a ``send_unverified:`` reason (check Sent before
+        sending it again). ``delivery`` is absent for a draft, a refused send
+        and other backends. A send waits for Mail to
+        confirm it: up to about 3 minutes.
         """
         ...
 
@@ -4385,6 +4685,9 @@ class HostClient:
     def beads_rebuild(self, params_json: str) -> str: ...
     # Generated host wrapper for `beads.rebuild`.
 
+    def board_setup(self, params_json: str) -> str: ...
+    # Generated host wrapper for `board.setup`.
+
     def brief_compile(self, params_json: str) -> str: ...
     # Generated host wrapper for `brief.compile`.
 
@@ -4393,6 +4696,9 @@ class HostClient:
 
     def brief_read(self, params_json: str) -> str: ...
     # Generated host wrapper for `brief.read`.
+
+    def collab_agent_rule(self, params_json: str) -> str: ...
+    # Generated host wrapper for `collab.agent_rule`.
 
     def concierge_maintain(self, params_json: str) -> str: ...
     # Generated host wrapper for `concierge.maintain`.
@@ -4639,6 +4945,9 @@ class HostClient:
 
     def spend_set_limit(self, params_json: str) -> str: ...
     # Generated host wrapper for `spend.set_limit`.
+
+    def sync_enable_remote(self, params_json: str) -> str: ...
+    # Generated host wrapper for `sync.enable_remote`.
 
     def tasks_schedule(self, params_json: str) -> str: ...
     # Generated host wrapper for `tasks.schedule`.
@@ -5366,7 +5675,25 @@ def evolution_apply(
     AND a patch that leaves model-facing text (``prompt_overlay``,
     ``tool_description_overlay``) alone. Returns ``{config, rollback}`` (the
     updated config and the inverse patch that restores it), or raises when
-    refused.
+    refused. The patch is written as given; for a mutation computed against
+    an earlier config, use ``evolution_apply_from``.
+    """
+
+
+def evolution_apply_from(
+    config_json: str,
+    mutation_json: str,
+    base_json: str,
+    decision_json: Optional[str] = None,
+    human_approved: bool = False,
+) -> str:
+    """``evolution_apply`` for a patch computed against ``base_json``.
+
+    ``base_json`` (a ``HarnessConfig``) is the config the mutation's patch
+    was computed against. The patch is rebased onto ``config_json`` first, so
+    two approvals computed from the same base both survive instead of the
+    later one erasing the earlier. Authorization is ``evolution_apply``'s,
+    unchanged. Returns ``{config, rollback}``, or raises when refused.
     """
 
 
@@ -6233,9 +6560,16 @@ def run_applescript(args_json: str) -> str:
     """Run an AppleScript or JXA snippet.
 
     ``args_json`` is a JSON object: ``{"script": "...", "language":
-    "applescript" | "javascript", "args": [...], "timeout_ms": 5000}``.
-    All fields except ``script`` are optional. Returns JSON
-    ``{"stdout", "stderr", "exit_code"}``. Raises ``RuntimeError`` when
+    "applescript" | "javascript", "args": [...], "timeout_ms": 5000,
+    "imessage_send": null | {"to": "...", "body": "..."}}``.
+    All fields except ``script`` are optional (``imessage_send`` is
+    required when ``CAR_APPLESCRIPT_IMESSAGE=required``). ``imessage_send``
+    declares an iMessage the script sends: the script runs with ``argv =
+    [to, tagged]`` and sends the tagged text once, never retyped, so its
+    echo is marked ``own_echo``; it cannot be combined with ``args``.
+    Returns JSON ``{"stdout", "stderr", "exit_code"}``, plus
+    ``"imessage_send": {"declared": true}`` for a declared send. Raises
+    ``RuntimeError`` when
     the subprocess exits non-zero — the stderr is included in the
     error message so the script's own diagnostic survives.
     """
@@ -6639,6 +6973,7 @@ def agents_invoke_external(
         "max_turns": int | None,
         "isolate_network": bool | None,  # no web, browser, connectors, MCP; shell offline
         "isolate_config": bool | None,  # none of the user's CLI config; keeps the web. Codex only
+        "api_key_credential": bool | None,  # API key, not the CLI's login; default strips provider keys
         "timeout_secs": int | None,  # default 300s
         "mcp_endpoint": str | None,  # MCP server URL passed via
                                      # --mcp-config; daemon callers
@@ -6670,6 +7005,8 @@ def agents_invoke_external(
       {
         "answer": str,
         "session_id": str | None,
+        "api_key_source": str | None,  # credential Claude Code used: "none" = its login, else the key's name
+        "credential": str | None,  # what CAR selected: "login", "api_key" or "cloud"
         "turns": int,
         "tool_calls": int,
         "duration_ms": int,

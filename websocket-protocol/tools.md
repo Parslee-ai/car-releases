@@ -9,6 +9,7 @@
 - **Returns**: number of tools registered
 
 `ToolDefinition`: `{ name: string, description?: string, parameters?: object }`. Tools registered here are dispatched via `tools.execute` callbacks during proposal execution.
+- A tool that would be refused refuses the whole call, before any tool in it is registered: one whose `parameters` or `returns` JSON Schema cannot compile (`tool '<name>' has a <parameters|returns> JSON Schema that cannot compile: <reason>`), or one named after a server-owned tool (`tool '<name>' is server-owned and cannot be shadowed by tools.register`). `session.init`'s `tools` are checked the same way. An empty `parameters` object (schemaless) passes.
 
 #### `tools.list`
 - **Params**: none

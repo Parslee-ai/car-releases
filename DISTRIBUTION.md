@@ -35,6 +35,51 @@ tarball but no Python wheel.
   On a server, forward the port with `ssh -L 9101:127.0.0.1:9101 <server>`
   and open the link on your own machine.
 
+### What each nightly runs on Linux
+
+Every nightly runs these install tests against the files it published to this
+repository. The container tests start from a stock image and add only the
+ALSA and D-Bus libraries listed above.
+
+| Test | Distribution | Architecture | What it runs |
+|------|--------------|--------------|--------------|
+| `smoke-install` (npm) | Ubuntu (`ubuntu-latest` runner, 24.04 today) | x64 | `npm install car-runtime`, which loads `car-runtime.linux-x64-gnu.node`, and `car-server --help` from `car-server-linux-x64-gnu` |
+| `smoke-install` (pip) | Ubuntu (`ubuntu-latest` runner, 24.04 today) | x64 | `pip install car-runtime` from the `manylinux_2_28_x86_64` wheel, then `import car_runtime` |
+| `smoke-linux-archives` | Ubuntu 24.04 (`ubuntu:24.04` container) | x64 | `car --version` and `car-server --version` from `car-linux-x64-gnu.tar.gz`, and `car-server-linux-x64-gnu --version` |
+| `smoke-linux-archives` | Ubuntu 24.04 (`ubuntu:24.04` container) | arm64, **emulated** | the same three commands for `car-linux-arm64-gnu.tar.gz` and `car-server-linux-arm64-gnu` |
+| `smoke-linux-archives` | Debian 13 (`node:22-trixie` container) | arm64, **emulated** | loads `car-runtime.linux-arm64-gnu.node` with `require()` and reads `clientVersion()` |
+
+`smoke-linux-archives` checks every reported version against the release tag
+and its build ID. It is a new test and gates nothing: a failure turns the
+nightly's run red, but does not hold back publication, a platform's catch-up
+or a stable promotion.
+
+The arm64 rows run under QEMU emulation on an x64 runner, not on arm hardware.
+They show that the files load and start on an arm64 Linux userland, not that
+they perform correctly on a real arm64 machine.
+
+No nightly test runs Fedora or any distribution other than Ubuntu 24.04 and
+Debian 13; the glibc list above comes from the build, not from those tests.
+No test runs `car-mcp`, `car-memgine-eval`, `car-host`, or the `.node` copies
+inside the archives. Stable releases promote a nightly's files unchanged, so a
+stable is covered by the nightly it came from.
+
+### What each nightly runs on Windows
+
+| Test | Runner | What it runs |
+|------|--------|--------------|
+| `smoke-install` (npm) | `windows-latest` | `npm install car-runtime`, which loads `car-runtime.win32-x64-msvc.node` |
+| `smoke-install` (pip) | `windows-latest` | `pip install car-runtime` from the `win_amd64` wheel, then `import car_runtime` |
+| `smoke-windows-archives` | `windows-latest` | `car.exe --version` and `car-server.exe --version` from `car-win32-x64-msvc.zip`, and `car-server-win32-x64-msvc.exe --version` |
+| `smoke-windows-installer` | `windows-latest` | installs `CAR-setup-x64.exe` silently, starts `car-tray.exe`, waits for the daemon on 9100, runs the CLI against it, and checks the Apps & Features version |
+
+`smoke-windows-archives` and `smoke-windows-installer` check every reported
+version against the release tag (and its build ID, for the binaries). Both are
+optional and gate nothing: a failure turns the nightly's run red, but does not
+hold back publication, Windows catch-up or a stable promotion. A promoted
+stable's installer is rebuilt with the stable version, and the promotion
+installs it and fails unless Apps & Features shows that version.
+
 ## Packages
 
 ### macOS app + CLI — `.pkg` (no terminal)

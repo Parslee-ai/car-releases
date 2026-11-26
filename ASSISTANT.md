@@ -1,7 +1,7 @@
 {% raw %}
 # Parslee Core — the `car do` assistant
 
-> Describes CAR **0.64.0**. Check yours with `car --version`; if it
+> Describes CAR **0.65.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 CAR ships with a general-purpose agent that works out of the box: no tools to
@@ -198,7 +198,7 @@ session was started with `--full-access`.
 
 | Platform | Tool | Parameters |
 |---|---|---|
-| macOS | `run_applescript` | `script`, `language?: "applescript"\|"javascript"` (JXA preferred — models generate it more cleanly) |
+| macOS | `run_applescript` | `script`, `language?: "applescript"\|"javascript"` (JXA preferred — models generate it more cleanly), `imessage_send?: null\|{to, body}` (declare an iMessage the script sends; it then sends the tagged text CAR passes as `argv[1]` to `argv[0]`, once, and its echo is marked `own_echo`. Required when `CAR_APPLESCRIPT_IMESSAGE=required`) |
 | Windows | `run_powershell` | `script` |
 
 ### Linked devices

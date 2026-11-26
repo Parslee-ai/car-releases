@@ -70,12 +70,13 @@ live on `HostClient` and use host authority. Swift/Kotlin can use the generic da
 
 #### `conversation.list`
 - **Params**: `{}`.
-- **Returns**: `{ current: string | null, topics: { [id]: { id, question, asker, harm_rank, deadline_ms, kind, state, sent_channels, order, presented, presented_before_send } }, answers: [{raw_text, attribution}], parked: string[], stale_until_ms: number, approval_codes: object, approval_records: object, expired_approval_alerts: string[], assistant_agent_id?: string|null, refused_sends?: object[], withdrawals?: object[], approval_openers?: object, next: number }`. States are `waiting`, `open`, `parked`, `expired`, `settled`; kinds are `ask`, `emergency`, `clarification`.
+- **Returns**: `{ current: string | null, topics: { [id]: { id, question, asker, harm_rank, deadline_ms, kind, state, sent_channels, order, presented, presented_before_send, opened_at_ms, presented_at_ms } }, answers: [{raw_text, attribution}], notices: [{ kind, channel, sent_at_ms }], parked: string[], stale_until_ms: number, approval_codes: object, approval_records: object, expired_approval_alerts: string[], assistant_agent_id?: string|null, refused_sends?: object[], withdrawals?: object[], approval_openers?: object, next: number }`. States are `waiting`, `open`, `parked`, `expired`, `settled`; kinds are `ask`, `emergency`, `clarification`.
+- `opened_at_ms` is when CAR opened the topic. `presented_at_ms` is when a transport confirmed the first send of the topic to the phone, and `null` until one did; a send whose outcome is unknown leaves it `null`. `sent_channels` still lists the channels a send was reserved on, confirmed or not. Both are `null` on a topic stored by a CAR from before they were kept. `notices` lists each owner message sent with a non-question `message_kind` (`notice`, `standup`, `draft_to_send`, `back_online`) after the transport confirmed it, with that kind, its channel and when it was sent, oldest first; a failed send is not listed. The list is bounded like `topics` and `answers`: once it holds 1,024 entries the oldest are dropped and the newest 512 kept, so it is the recent sends, not every send ever made. Times are milliseconds since the Unix epoch.
 - Host authority required; includes raw owner text.
 
 #### `conversation.get`
 - **Params**: `{ topic_id: string }`.
-- **Returns**: `{ topic: object, answer: { raw_text, attribution } | null }` (topic shape above).
+- **Returns**: `{ topic: object, answer: { raw_text, attribution } | null }` (topic shape above, with `opened_at_ms` and `presented_at_ms`).
 - Only the original asker principal or host may read a topic. A supervised agent principal survives its connection reconnect; an unbound client principal does not. Poll this method to resume an asker after settlement. Another asker's id receives the same refusal as an unknown id.
 
 #### `conversation.assistant.bind`

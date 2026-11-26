@@ -898,12 +898,36 @@
       "description": "Fullscreen supervision board for coder sessions — one screen for every run on this host, whoever started it (`car code`, CarHost, milo, another board). Attach to a run's full history, confirm its outcome contract, answer its questions, approve its diff, or scope work in a repo-grounded discussion first. It shows and acts on every run, authenticating with CAR's local host key; a board launched by an agent cannot. Closing the board never stops a run"
     },
     {
+      "path": "board accept",
+      "description": "Accept a handoff or assignment that names you"
+    },
+    {
+      "path": "board assign",
+      "description": "Ask a member to take an unowned item, or clear a pending assignment"
+    },
+    {
       "path": "board brief",
       "description": "The briefing a session starts with, for the current directory's branch"
     },
     {
+      "path": "board check-in",
+      "description": "Check in on an item you hold, so it does not go stale"
+    },
+    {
+      "path": "board claim",
+      "description": "Take an item on an organization's shared board, as the person. It becomes yours and leaves everyone else's Ready"
+    },
+    {
       "path": "board comment",
       "description": "Comment on any item on your boards, as the operator. The way to reach a session through its item when its session or org cannot be messaged, such as an item a host-run Codex thread wrote with no org binding. A comment never changes the item"
+    },
+    {
+      "path": "board decline",
+      "description": "Decline a handoff or assignment that names you"
+    },
+    {
+      "path": "board handoff",
+      "description": "Offer an item you hold to another member; it stays yours until they accept"
     },
     {
       "path": "board history",
@@ -928,6 +952,14 @@
     {
       "path": "board reconcile remove",
       "description": "Stop watching a project"
+    },
+    {
+      "path": "board release",
+      "description": "Let go of an item you hold: it is open with no owner again"
+    },
+    {
+      "path": "board setup",
+      "description": "Set an organization's sealed shared board up on Parslee. It can't be undone: from then on every member's CAR uses the sealed board, and items on the current board are kept on this device but no longer shown; move what you still need. Only a person runs this, at a terminal: it asks them to type the organization"
     },
     {
       "path": "board-hook",
@@ -975,7 +1007,7 @@
     },
     {
       "path": "claude",
-      "description": "Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon"
+      "description": "Start Claude Code as a CAR-supervised collaboration session. Enrolls a per-session agent bound to the work context `car auth resolve` names for this directory, hands its identity to the CAR plugin's collaboration tools, runs `claude` in this terminal, and removes the agent when it exits. Arguments after `--` go to `claude`. Needs a running daemon. Launch options and the reset point come from sessions.toml (`car sessions settings --explain`); with none set, the `claude` command line is unchanged"
     },
     {
       "path": "code",
@@ -1055,7 +1087,7 @@
     },
     {
       "path": "codex",
-      "description": "Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent, installs session-only collaboration and policy hooks, injects the daemon brief, and removes the agent on exit. Needs a running daemon. Arguments after `--` go to `codex`"
+      "description": "Start Codex CLI as a CAR-supervised collaboration session in this directory. Enrols a session agent, installs session-only collaboration and policy hooks, injects the daemon brief, and removes the agent on exit. Needs a running daemon. Arguments after `--` go to `codex`. The reset point comes from sessions.toml; with none set, the `codex` command line is unchanged"
     },
     {
       "path": "concierge",
@@ -1134,6 +1166,10 @@
       "description": "What every CAR instance you can reach can do — agents, capabilities and models across the fleet — and whether this machine takes coding subtasks farmed out by peers (`car fleet enroll`). Needs a running daemon"
     },
     {
+      "path": "fleet build",
+      "description": "Build the Cargo project on an available device"
+    },
+    {
       "path": "fleet enroll",
       "description": "Enroll this machine as a fleet worker for the named repositories"
     },
@@ -1146,6 +1182,10 @@
       "description": "Every agent, capability, and model across this daemon and every CAR instance it can reach"
     },
     {
+      "path": "fleet test",
+      "description": "Test the Cargo project on an available device"
+    },
+    {
       "path": "fleet withdraw",
       "description": "Stop taking work from peers. Keeps the repository list for next time"
     },
@@ -1155,15 +1195,27 @@
     },
     {
       "path": "heal",
-      "description": "Inspect and operate the daemon's self-healing REPAIR loop: it reads a configured issue tracker, runs a coder session, gates the result on a multi-model panel, and opens a pull request. It never merges"
+      "description": "See and run the daemon's heal: it watches CAR for defects, repairs them in CAR's source, merges the fix within a daily budget, and checks the defect is gone on the build that contains it"
+    },
+    {
+      "path": "heal dismiss",
+      "description": "Dismiss one active detection by dedup key. Heal never repairs a dismissed detection"
+    },
+    {
+      "path": "heal list",
+      "description": "List active detections, optionally filtered by kind, severity, or time"
     },
     {
       "path": "heal run",
-      "description": "Run one sweep now instead of waiting for the cadence"
+      "description": "Run one heal tick now instead of waiting for the cadence"
+    },
+    {
+      "path": "heal show",
+      "description": "Print the local issue document for one detection"
     },
     {
       "path": "heal status",
-      "description": "Show whether the loop is enabled — and if not, why — plus its targets, review panel, and engine"
+      "description": "Show what heal is doing — one state and one reason — then its budget, models, work in flight, detections, and targets"
     },
     {
       "path": "health",
@@ -1224,6 +1276,38 @@
     {
       "path": "install",
       "description": "Install a contributed agent — from a local directory OR a registry reference (Parslee-ai/car#182 phases 4 + 5)"
+    },
+    {
+      "path": "job",
+      "description": "Start a command that keeps running after this shell ends, and read, wait for, follow, cancel or purge it from any later shell (macOS and Linux)"
+    },
+    {
+      "path": "job cancel",
+      "description": "Stop a job: TERM to its session, KILL after the grace period. A job that already finished is left as it is; cancelling twice is fine"
+    },
+    {
+      "path": "job list",
+      "description": "List jobs, oldest first. Changes nothing"
+    },
+    {
+      "path": "job logs",
+      "description": "Print a job's output"
+    },
+    {
+      "path": "job purge",
+      "description": "Remove finished jobs (drained, cancelled or lost, with nothing left running). Lists what it would remove unless --apply; with --apply each job's outcome record is archived to jobs/archive/ID.json before its folder is removed, and every removal is logged to jobs/purge.log. A job that is still running is never touched"
+    },
+    {
+      "path": "job start",
+      "description": "Start a detached command and print its job id"
+    },
+    {
+      "path": "job status",
+      "description": "Show a job's state (the newest job when no id is given). Changes nothing"
+    },
+    {
+      "path": "job wait",
+      "description": "Wait for a job to finish and exit with its code (70 when it was cancelled or lost). Changes nothing"
     },
     {
       "path": "keychain",
@@ -1690,6 +1774,10 @@
       "description": "Tell a running Claude Code session that colleagues' messages wait for it. Wired by the CAR plugin as a Claude Code hook (after a prompt or a tool call, and before stopping); reads the count `car claude`'s collaboration server keeps. Prints nothing outside a `car claude` session, and always exits 0"
     },
     {
+      "path": "peer-inbox-wait",
+      "description": "Start a turn in an idle Claude Code session when a colleague's message arrives. Wired by the CAR plugin as a background (`asyncRewake`) `Stop` hook: it waits on the session's pending-message count and exits with the wake code when the count rises. Reads one local file; exits 0 outside an enrolled session or when the session ends"
+    },
+    {
       "path": "permissions",
       "description": "OS permission preflight — TCC / Windows Privacy / xdg-desktop-portal"
     },
@@ -1838,32 +1926,16 @@
       "description": "Check whether a secret exists, without returning the value"
     },
     {
-      "path": "selfheal",
-      "description": "Inspect and operate the daemon's deterministic self-healing detector"
+      "path": "sessions",
+      "description": "Claude Code and Codex sessions on this machine: `status` lists their age, idle time, context, compactions and spend; `settings` shows the sessions.toml limits and launch options that apply to one. Read-only"
     },
     {
-      "path": "selfheal dismiss",
-      "description": "Dismiss one active detection by dedup key"
+      "path": "sessions settings",
+      "description": "Show the sessions.toml settings that apply to a session, or to a role and vendor. Reads ~/.car/sessions.toml, then the project's .car/sessions.toml; within each, `[defaults]`, `[kind.<kind>]`, `[role.<role>]`, `[vendor.<vendor>]`; the last section that sets a key wins"
     },
     {
-      "path": "selfheal fix",
-      "description": "Start one bounded coder round for an eligible recurring-tool key"
-    },
-    {
-      "path": "selfheal list",
-      "description": "List active detections, optionally filtered by kind, severity, or time"
-    },
-    {
-      "path": "selfheal run",
-      "description": "Run one deterministic detection tick and its auto-fix cadence hook now"
-    },
-    {
-      "path": "selfheal show",
-      "description": "Print the trusted local issue document for one detection"
-    },
-    {
-      "path": "selfheal status",
-      "description": "Show cadence, active counts, and the route resolved by the last tick"
+      "path": "sessions status",
+      "description": "List every Claude Code and Codex session on this machine: age, idle time, turns, last context, fill, compactions, spend, and the role, kind and launch mode `car claude` or `car codex` recorded. Read-only. With --json, every field carries its source or `unknown (<reason>)`"
     },
     {
       "path": "setup",
@@ -1912,6 +1984,14 @@
     {
       "path": "stop",
       "description": "Stop an installed contributed agent"
+    },
+    {
+      "path": "sync",
+      "description": "Multi-device sync through Parslee"
+    },
+    {
+      "path": "sync enable",
+      "description": "Start syncing this machine through Parslee, end-to-end encrypted under your sync passphrase, when its journal holds history recorded on this machine only (car#4209). That history stays on disk on this machine, but CAR no longer shows or syncs what is in it (knowledge, transcripts, coder conversations): Parslee sync starts this machine as a new device. Restart the daemon afterwards if it says so"
     },
     {
       "path": "tail-log",
@@ -2198,7 +2278,7 @@
       },
       {
         "name": "run_applescript",
-        "description": "Run an AppleScript or JavaScript-for-Automation (JXA) script to control macOS and its apps — Finder, System Events, Notes, Calendar, Mail, Reminders, notifications, window/app control, clipboard, and anything scriptable. Returns the script's stdout/stderr. This drives the real host desktop (it cannot be sandboxed), so it requires full-access approval — a capability no sandboxed or text-only agent has. Prefer JXA (`language: \"javascript\"`), which models generate more cleanly than AppleScript. A Notes body is HTML: write a list as `<ol><li>First</li><li>Second</li></ol>` (or `<ul>`) with nothing between one `</li>` and the next `<li>` — never a `<br>` between items, which Notes stores as an empty list item. A `<li><br></li>` in a note read back is an empty item, not content. When a script creates a note, return the new note's id (`note.id()`) and pass it to `notes_read` to check what was stored."
+        "description": "Run an AppleScript or JavaScript-for-Automation (JXA) script to control macOS and its apps — Finder, System Events, Notes, Calendar, Mail, Reminders, notifications, window/app control, clipboard, and anything scriptable. Returns the script's stdout/stderr. This drives the real host desktop (it cannot be sandboxed), so it requires full-access approval — a capability no sandboxed or text-only agent has. Prefer JXA (`language: \"javascript\"`), which models generate more cleanly than AppleScript. Use the app's own scripting dictionary (`Application(\"Notes\")`, `tell application \"Notes\"`) before System Events UI scripting, which clicks through menus and breaks when the window changes. Make read-only checks before any write: find and read the notes, folders or items first, then change only what the person asked for, and never change an existing note's body unless asked. Notes folders and moving a note between folders are scriptable, but Notes tags and Smart Folders are not: say so plainly and offer folders instead of reporting tags or a Smart Folder as done. A Notes body is HTML: write a list as `<ol><li>First</li><li>Second</li></ol>` (or `<ul>`) with nothing between one `</li>` and the next `<li>` — never a `<br>` between items, which Notes stores as an empty list item. A `<li><br></li>` in a note read back is an empty item, not content. When a script creates a note, return the new note's id (`note.id()`) and pass it to `notes_read` to check what was stored. A script that sends an iMessage declares it in `imessage_send` and sends the tagged text CAR passes, once, to the recipient CAR passes (AppleScript `on run argv`: `item 2 of argv` to `item 1 of argv`; JXA `function run(argv)`: `argv[1]` to `argv[0]`). Never retype that text: it carries an invisible tag that marks the echo as your own message. Pass `imessage_send: null` when the script sends no iMessage."
       },
       {
         "name": "run_powershell",
@@ -2350,7 +2430,7 @@
       },
       {
         "name": "memory_add_fact",
-        "description": "Ingest a fact into CAR's graph memory. Kind defaults to \"pattern\"; use \"constraint\" for hard rules."
+        "description": "Ingest a fact into CAR's graph memory. Kind defaults to \"pattern\"; use \"constraint\" for hard rules. Optional tenant_id stores the fact as that tenant's; on the daemon endpoint an X-Car-Tenant-Id header binds it."
       },
       {
         "name": "memory_delete",
@@ -2365,8 +2445,12 @@
         "description": "Select at most one targeted proactive memory reminder for the next action, or return an explicit silent decision."
       },
       {
+        "name": "memory_peek",
+        "description": "Return the decision memory_intervene would make for the next action (inject one reminder, or stay silent) without recording it: no injection counter or other memory state changes, so a read-only caller can ask."
+      },
+      {
         "name": "memory_query",
-        "description": "Query CAR graph memory using spreading activation. Returns top-k nodes with activation scores: a direct match scores how well it matches the query (0-1), and a node that matches no query term, reached through graph edges, scores lower than the match it came from."
+        "description": "Query CAR graph memory using spreading activation. Returns top-k nodes with activation scores: a direct match scores how well it matches the query (0-1), by words or, when the memory has an embedder, by meaning (the higher of the two), and a node that matches no query term, reached through graph edges, scores lower than the match it came from. Each row's path says which served the query: \"semantic\" or \"words\". Optional tenant_id returns only that tenant's facts; on the daemon endpoint an X-Car-Tenant-Id header binds it."
       },
       {
         "name": "memory_save_knowledge",
@@ -2394,15 +2478,15 @@
       },
       {
         "name": "skill_find",
-        "description": "Find top-k skills matching a persona/url/task triple, ranked by activation."
+        "description": "Find top-k skills matching a persona/url/task triple, ranked by activation. Optional tenant_id returns only that tenant's skills; on the daemon endpoint an X-Car-Tenant-Id header binds it."
       },
       {
         "name": "skill_ingest",
-        "description": "Ingest a skill into CAR's graph memory. A skill is executable code associated with a trigger (persona + url pattern + task keywords) so skill_find can later retrieve it for matching tasks."
+        "description": "Ingest a skill into CAR's graph memory. A skill is executable code associated with a trigger (persona + url pattern + task keywords) so skill_find can later retrieve it for matching tasks. Optional tenant_id stores the skill as that tenant's, and supersedes may then name only that tenant's skill; on the daemon endpoint an X-Car-Tenant-Id header binds it."
       },
       {
         "name": "skill_list",
-        "description": "Enumerate all ingested skills. Optional domain filter returns only skills scoped Global or Domain(domain)."
+        "description": "Enumerate all ingested skills. Optional domain filter returns only skills scoped Global or Domain(domain). Optional tenant_id returns only that tenant's skills. On the daemon endpoint an X-Car-Tenant-Id header binds the request: tenant_id defaults to it and may only restate it. Without the header it scopes the result and does not authenticate the caller."
       },
       {
         "name": "verify",
@@ -2955,7 +3039,37 @@
       "namespace": "board",
       "methods": [
         {
+          "method": "board.accept",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.assign",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.check_in",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.claim",
+          "documented": true,
+          "role": "operator"
+        },
+        {
           "method": "board.comment",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.decline",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.handoff",
           "documented": true,
           "role": "operator"
         },
@@ -2968,6 +3082,16 @@
           "method": "board.list",
           "documented": true,
           "role": "operator"
+        },
+        {
+          "method": "board.release",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "board.setup",
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "board.transition",
@@ -3291,6 +3415,96 @@
         },
         {
           "method": "coder.watch",
+          "documented": true,
+          "role": "operator"
+        }
+      ]
+    },
+    {
+      "namespace": "collab",
+      "methods": [
+        {
+          "method": "collab.accept",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.ack",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.agent_rule",
+          "documented": true,
+          "role": "host"
+        },
+        {
+          "method": "collab.conversation",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.conversations",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.decline",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.invitations",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.invite",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.leave",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.list",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.message",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.presence",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.read",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.remove",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.start",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.wait",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "collab.who",
           "documented": true,
           "role": "operator"
         }
@@ -3670,9 +3884,19 @@
           "role": "operator"
         },
         {
+          "method": "feedback.export",
+          "documented": true,
+          "role": "operator_only"
+        },
+        {
           "method": "feedback.list",
           "documented": true,
           "role": "operator"
+        },
+        {
+          "method": "feedback.remove",
+          "documented": true,
+          "role": "operator_only"
         },
         {
           "method": "feedback.status",
@@ -3699,6 +3923,11 @@
     {
       "namespace": "fleet",
       "methods": [
+        {
+          "method": "fleet.build_job",
+          "documented": true,
+          "role": "operator_only"
+        },
         {
           "method": "fleet.composite",
           "documented": true,
@@ -3764,6 +3993,16 @@
     {
       "namespace": "heal",
       "methods": [
+        {
+          "method": "heal.detections",
+          "documented": true,
+          "role": "operator"
+        },
+        {
+          "method": "heal.dismiss",
+          "documented": true,
+          "role": "operator"
+        },
         {
           "method": "heal.run",
           "documented": true,
@@ -5302,36 +5541,6 @@
       ]
     },
     {
-      "namespace": "selfheal",
-      "methods": [
-        {
-          "method": "selfheal.detections",
-          "documented": true,
-          "role": "operator"
-        },
-        {
-          "method": "selfheal.dismiss",
-          "documented": true,
-          "role": "operator"
-        },
-        {
-          "method": "selfheal.fix",
-          "documented": true,
-          "role": "operator"
-        },
-        {
-          "method": "selfheal.run",
-          "documented": true,
-          "role": "operator"
-        },
-        {
-          "method": "selfheal.status",
-          "documented": true,
-          "role": "operator"
-        }
-      ]
-    },
-    {
       "namespace": "server",
       "methods": [
         {
@@ -5623,6 +5832,11 @@
           "method": "sync.checkpoint",
           "documented": true,
           "role": "operator"
+        },
+        {
+          "method": "sync.enable_remote",
+          "documented": true,
+          "role": "host"
         },
         {
           "method": "sync.fence_check",

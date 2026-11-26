@@ -5,7 +5,7 @@
 
 ## What's exposed
 
-Sixteen tools. (Tool names are underscore-separated; an earlier version of this
+Seventeen tools. (Tool names are underscore-separated; an earlier version of this
 page listed dot-separated names, and two of them — `memory.build_context` and
 `skill.report` — never existed.)
 
@@ -38,10 +38,11 @@ hosts know to ask.
 `tools/list` carries MCP tool annotations (`readOnlyHint`, `destructiveHint`,
 `idempotentHint`, `openWorldHint`) on every entry, so a host can auto-approve a
 read without prompting the way it must for a write. Read-only: `memory_query`,
-`memory_evaluate`, `skill_find`, `skill_list`, `verify`, `simulate`,
+`memory_peek`, `memory_evaluate`, `skill_find`, `skill_list`, `verify`, `simulate`,
 `equivalent`, `optimize`, and `policy_check`.
 Everything else is a write — including `memory_intervene`, which reads like a
-query but records the injection it selects, and `skill_ingest`, which is marked
+query but records the injection it selects (use `memory_peek` for the same
+decision with nothing recorded), and `skill_ingest`, which is marked
 destructive because `supersedes` deprecates the skill it names. Nothing sets
 `openWorldHint`. The hints are
 host UX, not a security boundary: treat them the way the spec says to treat

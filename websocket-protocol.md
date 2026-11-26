@@ -41,20 +41,20 @@ Default port `9100`. Each WebSocket connection is its own session — runtime st
 
 ## Protocol version
 
-The JSON-RPC surface carries a **wire protocol version** (`car-proto::PROTOCOL_VERSION`, currently `3`) that is **independent of the package semver** — it is bumped only on a backward-incompatible change to request/response shapes or method semantics, not on every release. Protocol v3 adds immutable model/catalog identity and capability-negotiated inference controls; the two identity capabilities are mandatory for bundled v3 clients.
+The JSON-RPC surface carries a **wire protocol version** (`car-proto::PROTOCOL_VERSION`, currently `4`) that is **independent of the package semver** — it is bumped only on a backward-incompatible change to request/response shapes or method semantics, not on every release. Protocol v3 adds immutable model/catalog identity and capability-negotiated inference controls; the two identity capabilities are mandatory for bundled clients. Protocol v4 removed `selfheal.*` (any `selfheal.*` call is answered `-32601` `method removed; use heal.*`) and reshaped `heal.status`, merging the detector into [`heal.*`](websocket-protocol/heal.md#heal--the-self-healing-repair-loop); because the daemon no longer serves v3's methods, v3 left the range and `PROTOCOL_VERSION_MIN` rose to 4.
 
-Each side speaks a **range** of versions, `PROTOCOL_VERSION_MIN..=PROTOCOL_VERSION` (currently `3..=3`). Clients negotiate with `server.handshake`, run once after `session.auth` and before the main request loop. The client sends its newest version as `protocol_version` and, optionally, its oldest as `protocol_version_min`; the connection settles on the **highest version both ranges contain**, returned as the reply's `protocol_version`. A client that sends only `protocol_version` (every client before this rule, and the native hosts that ship inside CarHost) speaks exactly that one version, so it gets that version back or a refusal, as before. Only a range sharing no version with the daemon's is refused (`-32006`), and the refusal names both ranges and which side to update.
+Each side speaks a **range** of versions, `PROTOCOL_VERSION_MIN..=PROTOCOL_VERSION` (currently `4..=4`). Clients negotiate with `server.handshake`, run once after `session.auth` and before the main request loop. The client sends its newest version as `protocol_version` and, optionally, its oldest as `protocol_version_min`; the connection settles on the **highest version both ranges contain**, returned as the reply's `protocol_version`. A client that sends only `protocol_version` (every client before this rule, and the native hosts that ship inside CarHost) speaks exactly that one version, so it gets that version back or a refusal, as before. Only a range sharing no version with the daemon's is refused (`-32006`), and the refusal names both ranges and which side to update.
 
 ```json
 // → client request
 {"jsonrpc": "2.0", "id": 1, "method": "server.handshake",
- "params": {"protocol_version": 3, "protocol_version_min": 3, "client_version": "0.51.0",
+ "params": {"protocol_version": 4, "protocol_version_min": 4, "client_version": "0.51.0",
             "required_capabilities": ["infer.model-identity.v1", "models.catalog-identity.v1"],
             "optional_capabilities": []}}
 // ← server reply
 {"jsonrpc": "2.0", "id": 1,
- "result": {"protocol_version": 3, "server_protocol_version_min": 3, "server_protocol_version_max": 3,
-            "server_version": "0.51.0", "client_protocol_version": 3,
+ "result": {"protocol_version": 4, "server_protocol_version_min": 4, "server_protocol_version_max": 4,
+            "server_version": "0.51.0", "client_protocol_version": 4,
             "client_version": "0.51.0",
             "assistant_name": "Jarvis",
             "assistant_aliases": ["hey jarvis", "ok jarvis", "jarvis"],
@@ -77,11 +77,11 @@ Negotiation is fail-closed:
 
 - On an auth-enabled daemon, await a successful `session.auth` response first; request dispatch is concurrent, so pipelining `server.handshake` before that response can race the auth gate.
 - `host.subscribe` and every `auth.*` method return `-32005` (`protocol handshake required:`) until the current WebSocket session has negotiated a version. This prevents a legacy host from opening a browser flow it cannot safely complete.
-- A missing or non-numeric `protocol_version`, a non-numeric `protocol_version_min`, or a range that shares no version with the daemon's (including `protocol_version_min` above `protocol_version`) returns `-32006` (`protocol version mismatch:`) and does not negotiate the session. The message names the client's range, the daemon's range and version, and the remedy. A repeat is idempotent.
+- A missing or non-numeric `protocol_version`, a non-numeric `protocol_version_min`, or a range that shares no version with the daemon's (including `protocol_version_min` above `protocol_version`) returns `-32006` (`protocol version mismatch:`) and does not negotiate the session. The message names the client's range, the daemon's range, its version and build ID (`car-server 0.65.0, build 20261123-93ff004`; a wire-protocol change can ship without a version bump), and the remedy. For a client older than the daemon, the remedy is a restart: the session for a `car-mcp` collaboration bridge (or a reconnect of the plugin's MCP server), quit and reopen for CarHost, and for an app, the npm or PyPI package pinned to the daemon's version (`npm install car-runtime@<version>` / `pip install -U car-runtime==<version>`) and then a restart. For a newer client it is `car update` and `car daemon restart`. A repeat is idempotent.
 - A supervised agent's handshake outcome (the settled version or the refusal, both ranges, both package versions) is recorded beside `agents.json` in `agent-handshakes.json` (a worker's in its own root, `workers/<handle>/agent-handshakes.json`, never the shared file). `agents.list` reports it as the row's `handshake`, self-healing turns a refusal or skew into an `agent_protocol_skew` detection, and `car doctor` lists it under "Agent connections", so a client that fell behind is visible outside its own stderr log.
 - `required_capabilities` and `optional_capabilities` must be arrays of non-empty strings. Unsupported mandatory entries return `-32008` (`protocol capability mismatch:`) and do not negotiate; unsupported optional entries are ignored. A success returns the sorted, deduplicated `negotiated_capabilities`.
-- Bundled v3 clients require `infer.model-identity.v1` and `models.catalog-identity.v1`, and fail closed if a nominally successful reply omits either. `infer.cancel.v1` and `infer.deadline.v1` are optional and must not be inferred from protocol version alone.
-- `feedback.v1` is optional and gates every `feedback.*` method: a negotiated v3 session that did not request it is refused with `-32008` (`protocol capability mismatch:`) naming the capability. The bundled host requests it as an optional capability so an older daemon still connects.
+- Bundled clients require `infer.model-identity.v1` and `models.catalog-identity.v1`, and fail closed if a nominally successful reply omits either. `infer.cancel.v1` and `infer.deadline.v1` are optional and must not be inferred from protocol version alone.
+- `feedback.v1` is optional and gates every `feedback.*` method: a negotiated session that did not request it is refused with `-32008` (`protocol capability mismatch:`) naming the capability. The bundled host requests it as an optional capability so an older daemon still connects.
 - `workers.start-values.v1` is optional and gates nothing: it says `workers.start` accepts `values`, the per-worker secret values an orchestrator hands a worker at start (see [workers](websocket-protocol/workers.md)). An orchestrator that needs them asks for it in `optional_capabilities` and checks `negotiated_capabilities`; an older daemon refuses `values` as an unknown field.
 - Negotiation is per connection. A reconnect starts unnegotiated and repeats `session.auth` (when enabled) → `server.handshake` → `host.subscribe`.
 - A refused `server.handshake` leaves the connection unnegotiated, even after an earlier one succeeded on it: methods that need a negotiated protocol or capability are refused until a later handshake succeeds.
@@ -140,7 +140,7 @@ These need no credential: `initialize`, `ping`, `tools/list`, `prompts/list`, no
 
 **Each daemon HTTP client gets a peer identity.** A successful `initialize` response includes `MCP-Session-Id`; send that header on every later POST. That header is a **bearer credential** — treat it the way you would a token, and never publish it. CAR mints a SEPARATE, unforgeable peer id at `initialize` and derives the sender as `mcp:<peer-id>` from that, so concurrent CLI sessions no longer share an audit principal and no principal discloses the value that authenticates its session. `peer_list` publishes names to every caller, so a name derived from the credential would hand one session the means to act as another. A receive-capable session appears in `peer_list` as kind `mcp_session`, and `peer_inbox {limit?}` drains only its queue (default/max 50). The ordinary peer guards apply independently to each session: serialized-size cap, identical-repeat window, 20 messages per sender per recipient per minute (40 for all senders behind one Lattice connection together), and 50 unread queued messages. `DELETE /mcp` with the session header removes the address and unread queue; 24 hours without a request does the same for clients that disappear without DELETE. An unknown/expired supplied session id gets HTTP 404. Calls that omit the header can still use the non-peer tools their credential allows (see **Credentials on `/mcp`** above), but `peer_list`, `peer_message`, `peer_inbox`, and the node tools refuse rather than falling back to a shared sender.
 
-**Lattice tools.** The same endpoint serves `lattice_join`, `lattice_leave`, `lattice_nodes`, `lattice_find`, `lattice_claim`, `lattice_release`, `lattice_claims`, and `lattice_wait`, which mirror the `lattice.*` methods documented under the method reference, keyed on the session's `mcp:<peer-id>`. `lattice.requests`, `lattice.respond` and `lattice.human.status` are deliberately **not** MCP tools: they answer for a person, which only the operator and an agent the operator made that person's delegate may do, and an MCP session is neither. `peer_message` accepts the same optional `kind` and `in_reply_to` as `agents.message`, can address a human node as `human:<name>`, and `peer_list` rows carry each peer's `node` profile (or `null`) and include human nodes. Nothing pushes to an MCP client, so every node tool result, `peer_list`, and `peer_message` include `inbox_pending` — the session learns it has mail the next time it calls any of them.
+**Lattice tools.** The same endpoint serves `lattice_join`, `lattice_leave`, `lattice_nodes`, `lattice_find`, `lattice_claim`, `lattice_release`, `lattice_claims`, and `lattice_wait`, which mirror the `lattice.*` methods documented under the method reference, keyed on the session's `mcp:<peer-id>`. `lattice.requests`, `lattice.respond` and `lattice.human.status` are deliberately **not** MCP tools: they answer for a person, which only the operator and an agent the operator made that person's delegate may do, and an MCP session is neither. `peer_message` accepts the same optional `kind` and `in_reply_to` as `agents.message` and the same address forms for `to`: a listed address, `agent:<id>`, `name [reference]`, a stable name, a seat key, an ended session of the sender's own org (an earlier holder's id included) and `inbox:<org>` for the sender's own org reach the same place as they do through `agents.message`. It can address a human node as `human:<name>`, and `peer_list` rows carry each peer's `node` profile (or `null`) and include human nodes. Nothing pushes to an MCP client, so every node tool result, `peer_list`, and `peer_message` include `inbox_pending` — the session learns it has mail the next time it calls any of them.
 
 **Board tools.** The same endpoint serves `board_list`, `board_upsert`, `board_transition`, `board_comment` and `board_history`, which mirror the `board.*` methods (see [board](websocket-protocol/board.md#board)) for the personal board, keyed on the session's `mcp:<peer-id>` as the writing node. An `org` argument is refused: the board is the session's, never one it names.
 
@@ -315,6 +315,17 @@ logs `another car-server already owns this CAR_HOME shared state` and exits
 before it adopts any state or listens, so it can neither overwrite the token
 file nor end the primary's running work during its own boot. Run an isolated
 secondary daemon with its own `CAR_HOME`, as above.
+
+The lock is a local advisory file lock, so it only excludes daemons that see
+the same lock. It does not exclude a daemon on another host sharing the same
+`CAR_HOME`, and it does not hold on a network share mounted without working
+byte-range locks (SMB with `nobrl`, for example). Two daemons on one state root
+that way write the same journals at once. Give each host its own `CAR_HOME`, or
+mount the share with byte-range locking. A torn or interleaved row in heal's
+ledger does not stop the daemon from booting: heal skips the row, copies it
+aside as `heal/ledger.jsonl.corrupt-<timestamp>`, and runs no detection, repair
+or merge until the row is removed from the ledger and the daemon restarts
+(`heal.status` names the file and line).
 
 Before the lock, a second daemon on another port silently overwrote the token file (breaking every client of the running daemon with `token mismatch`) and unlinked its live socket, leaving that listener orphaned until it restarted, with nothing logged on either side (Parslee-ai/car#629).
 
@@ -630,7 +641,7 @@ cannot read, replace, or delete it. The complete reserved contract is:
 | `auth.accounts` | `api_base?` | `{ accounts: [{ id, email?, name?, active }] }` — every stored Parslee **login** (multiple can coexist; exactly one is `active`). Migrates a pre-multi-login session into the registry on first call. |
 | `auth.switch_account` | `account_id` (req), `api_base?` | `{ authenticated, session }` — make another held login the active view (one compare-and-swap publication of the V2 record; every login keeps its own refresh token), refresh, and return the newly-active login's session. The active login is the CLI/UI default view; it does not change the default org. |
 | `auth.remove_account` | `account_id` (req) | `{ ok, accounts, warnings }` — forget a stored login (deletes its stashed tokens). First asks that login's issuer to revoke this device's certificate; a revoke that did not go through (offline, refused) is a line in `warnings` and does not stop the removal. If it was active, another remaining login becomes active, or the session clears when none remain. A default org held by the removed login is cleared, never moved to another login. |
-| `auth.logout` | — | `{ ok: true, warnings }` — clears stored Parslee credentials and the default org. First asks each login's issuer to revoke this device's certificate (`DELETE …/device-cert/{device}`); a revoke that did not go through is a line in `warnings`, the sign-out still happens, and such a certificate expires within 12 hours. |
+| `auth.logout` | — | `{ ok: true, warnings }` — clears stored Parslee credentials and the default org. First asks each login's issuer to revoke this device's certificate (`DELETE …/device-cert/{device}`); a revoke that did not go through is a line in `warnings`, the sign-out still happens, and such a certificate expires within 12 hours. Then asks Parslee to revoke every stored refresh token (`POST {api_base}/connect/revoke`, `token_type_hint=refresh_token`, 5 s per request); a token that could not be revoked is also a line in `warnings` and stays valid at Parslee until it expires (car#5091). |
 | `auth.organizations` | — | `{ organizations: [{ context: { api_base, account_id, organization_id }, email?, role? }], default: WorkContext \| null, default_error? }` — `default_error` names an unreadable `work-contexts.json` without hiding the list. Errors while `PARSLEE_ACCESS_TOKEN` overrides the stored logins. Every (login, org) pair **every** signed-in login holds, not just the active one, read locally from the `memberships` claim of each login's own tokens (no network). Sorted by account, then org. The claim reflects membership when the token was minted; the issuer re-checks it on every context renewal. |
 | `auth.default_context.get` | — | `{ default: WorkContext \| null }` — the person's default org: what new work uses when nothing more specific (an explicit choice, the repository's `.car/config.toml`, the agent's default) names one. Stored in `work-contexts.json` under the CAR state root; separate from the active login. A malformed file is an error, not an empty default. |
 | `auth.default_context.set` | `organization_id` (req), `account_id?` | `{ default: WorkContext }` — set the default org. The signed-in login that holds the org supplies the account; `account_id` is required only when more than one does (otherwise the call fails naming them). The issuer must mint a credential for the org first, so a default is never an org this CAR cannot use. Cleared automatically when its login is removed or signed out, or when the issuer answers `invalid_organization` for it. |
@@ -655,7 +666,7 @@ session here; it reports `single_principal_mode` with the cause in
 This costs the CLI nothing: `car auth login` / `logout` / `orgs` / `switch-org` /
 `accounts` never call this surface — they use the `car-auth` crate in-process.
 The native CarHost WebSocket clients authenticate with the host token and
-negotiate protocol v3 before calling this surface.
+negotiate protocol v4 before calling this surface.
 
 Credential reads also emit `auth.credential.event` to host-management
 connections after authorization and protocol negotiation. The notification is
@@ -700,7 +711,7 @@ bounded attempt limit.
 #### `diagnostics.secret_store_activity`
 
 This host-management-only, WS-only method is a read of process-lifetime
-aggregate operation attempts. It requires protocol v3 and
+aggregate operation attempts. It requires a negotiated protocol (v4) and
 returns exactly:
 
 ```json
@@ -961,8 +972,8 @@ car-server --no-auth --port 9100   # auth off (opt-out)
 {"jsonrpc":"2.0","id":0,"result":{"ok": true, "auth_enabled": true}}
 
 // Then negotiate this connection's exact wire protocol:
-{"jsonrpc":"2.0","id":1,"method":"server.handshake","params":{"protocol_version":3,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}}
-{"jsonrpc":"2.0","id":1,"result":{"protocol_version":3,"server_version":"0.51.0","client_protocol_version":3,"negotiated_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"]}}
+{"jsonrpc":"2.0","id":1,"method":"server.handshake","params":{"protocol_version":4,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocol_version":4,"server_version":"0.51.0","client_protocol_version":4,"negotiated_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"]}}
 
 // Subsequent calls work normally. Host/auth clients subscribe only after
 // the handshake succeeds:
@@ -1346,6 +1357,7 @@ behavior. This section is long — for a compact map of every method with deep l
 - [brief](websocket-protocol/brief.md#brief) <!-- ws-protocol:include -->
 - [lattice](websocket-protocol/lattice.md#lattice) <!-- ws-protocol:include -->
 - [board](websocket-protocol/board.md#board) <!-- ws-protocol:include -->
+- [collab](websocket-protocol/collab.md#collab) <!-- ws-protocol:include -->
 ## Notification methods (server → client)
 
 These arrive as JSON-RPC notifications (no `id`). The client doesn't respond to them.
@@ -1443,7 +1455,7 @@ Same pattern as `tools.execute`, but for delegating per-agent inference during `
 | `-32019` | Outcome report not recorded — `outcomes.resolve_pending` reports that matched no pending trace (`trace_not_pending`, with `data.recorded` and `data.dropped`), or an `outcomes.record_external_grade` refusal; `error.data.reason` names why. See [outcomes](websocket-protocol/outcomes.md#outcomes) |
 | `-32020` | A call on a person's Lattice node refused — `lattice.requests`, `lattice.respond`, `lattice.human.status`, a delegate's forward with `agents.message { on_behalf_of }`, or an `agents.upsert` changing `delegate_for` from anything but the host client. `error.data.reason` is `processing_notice_pending` (with `data.connection`), `consent_is_host_only`, `approval_is_host_only`, `not_a_delegate`, `not_delegate_for_human`, `self_answer`, `forward_not_found` or `forward_not_a_question`. See [lattice](websocket-protocol/lattice.md#lattice) |
 
-A refusal can carry `error.data` with a stable `reason` that code can match; the `-32003` refusals of the worker gate do (`error.data.reason`, for example `not_on_worker_list`), and so do those of an outside credential's session (`not_on_credential_list`, `credential_session_bound`) and `session.auth`'s refusal of an outside credential on this port (`outside_credential_on_private_port`). So do the host approval refusals: `host.resolve_approval` answers `already_resolved` or `owner_not_connected`, and `host.dismiss_approval` answers `approval_pending`, `not_your_approval`, `lattice_mirror` or `unknown_approval` (see [host](websocket-protocol/host.md#host)). A public-door socket CAR closes itself carries close code `4001` (credential revoked), `4002` (expired), `4003` (label ended, reserved) or `4004` (daemon shutting down); see [credentials](websocket-protocol/credentials.md#credentials).
+A refusal can carry `error.data` with a stable `reason` that code can match; the `-32003` refusals of the worker gate do (`error.data.reason`, for example `not_on_worker_list`), and so do those of an outside credential's session (`not_on_credential_list`, `credential_session_bound`) `session.auth`'s refusal of an outside credential on this port (`outside_credential_on_private_port`), and its refusal of an agent whose registration changed while it authenticated (`registration_changed`). So do the host approval refusals: `host.resolve_approval` answers `already_resolved` or `owner_not_connected`, and `host.dismiss_approval` answers `approval_pending`, `not_your_approval`, `lattice_mirror` or `unknown_approval` (see [host](websocket-protocol/host.md#host)). A public-door socket CAR closes itself carries close code `4001` (credential revoked), `4002` (expired), `4003` (label ended, reserved) or `4004` (daemon shutting down); see [credentials](websocket-protocol/credentials.md#credentials).
 
 The error `message` field contains a human-readable description.
 
@@ -1754,6 +1766,7 @@ headings added later are reachable from the namespace files and
 - <a id="evolutionrun"></a>[`evolution.run`](websocket-protocol/cascade.md#evolutionrun)
 - <a id="sync"></a>[sync](websocket-protocol/sync.md#sync)
 - <a id="syncstatus"></a>[`sync.status`](websocket-protocol/sync.md#syncstatus)
+- <a id="syncenable_remote"></a>[`sync.enable_remote`](websocket-protocol/sync.md#syncenable_remote)
 - <a id="syncappend"></a>[`sync.append`](websocket-protocol/sync.md#syncappend)
 - <a id="syncassistant_checkpointput--syncassistant_checkpointget"></a>[`sync.assistant_checkpoint.put` / `sync.assistant_checkpoint.get`](websocket-protocol/sync.md#syncassistant_checkpointput--syncassistant_checkpointget)
 - <a id="syncassistant_actionput--syncassistant_actionget"></a>[`sync.assistant_action.put` / `sync.assistant_action.get`](websocket-protocol/sync.md#syncassistant_actionput--syncassistant_actionget)
@@ -1796,11 +1809,8 @@ headings added later are reachable from the namespace files and
 - <a id="heal--the-self-healing-repair-loop"></a>[`heal.*` — the self-healing repair loop](websocket-protocol/heal.md#heal--the-self-healing-repair-loop)
 - <a id="healstatus"></a>[`heal.status`](websocket-protocol/heal.md#healstatus)
 - <a id="healrun"></a>[`heal.run`](websocket-protocol/heal.md#healrun)
-- <a id="selfhealstatus"></a>[`selfheal.status`](websocket-protocol/heal.md#selfhealstatus)
-- <a id="selfhealdetections"></a>[`selfheal.detections`](websocket-protocol/heal.md#selfhealdetections)
-- <a id="selfhealdismiss"></a>[`selfheal.dismiss`](websocket-protocol/heal.md#selfhealdismiss)
-- <a id="selfhealfix"></a>[`selfheal.fix`](websocket-protocol/heal.md#selfhealfix)
-- <a id="selfhealrun"></a>[`selfheal.run`](websocket-protocol/heal.md#selfhealrun)
+- <a id="healdetections"></a>[`heal.detections`](websocket-protocol/heal.md#healdetections)
+- <a id="healdismiss"></a>[`heal.dismiss`](websocket-protocol/heal.md#healdismiss)
 - <a id="eventscost_by_agent"></a>[`events.cost_by_agent`](websocket-protocol/heal.md#eventscost_by_agent)
 - <a id="replanset_config"></a>[`replan.set_config`](websocket-protocol/heal.md#replanset_config)
 - <a id="runs"></a>[runs](websocket-protocol/runs.md#runs)

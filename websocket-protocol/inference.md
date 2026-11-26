@@ -23,15 +23,15 @@
 
 #### `search`
 - **Params**: `{ query: string, max_results?: number }` (`max_results` clamped to 1–20, default 5).
-- **Returns**: `{ query, source, results: [{ title, url, snippet, score, published_date? }] }`, where `source` is `"parslee"`, `"tavily"`, or `"duckduckgo"`.
+- **Returns**: `{ query, source, results: [{ title, url, snippet, score, published_date? }] }`, where `source` is `"parslee"`, `"tavily"`, or `"duckduckgo"`. Each `title` and `snippet` carries no control or invisible format characters; a `title` is at most 300 characters and a `snippet` at most 1,000.
 - **Backend resolution** (daemon-side, from its environment): a signed-in Parslee session (`PARSLEE_ACCESS_TOKEN`) → Parslee's hosted search (`/api/v1/orgs/{org}/search`); else `TAVILY_API_KEY` (env or keychain) → Tavily direct; else the keyless DuckDuckGo fallback (zero-config, lower quality). No params control the backend — it's environment-resolved.
 - Results cached ~60s; rate-limited 10/min (per the `search` ToolSchema).
 - **DuckDuckGo pacing**: DuckDuckGo throttles by address, so the daemon asks it with a form POST and spaces its requests to it at least 2.5 s apart (shared with Parslee Core's `web_search` in the same process). Pacing and back-off are per process: another CAR process on the machine keeps its own, and neither survives a restart; one search waits and requests for at most 60 s; and after DuckDuckGo throttles a request it is not asked again for 60 s. A throttled search (HTTP 202, 403 or 429, or its challenge page), a search inside that window, and one whose turn would come after its 60 s return an error saying so, never an empty `results` list. DuckDuckGo's own ad links (paths under `duckduckgo.com/y.js`) are not returned as results.
 
 #### `web_fetch`
 - **Params**: `{ url: string }`.
-- **Returns**: `{ url, status, content_type, title?, text }` — `url` is the final URL after redirects; `text` is extracted readable text (HTML reduced to title + visible text, scripts/styles dropped; non-HTML returned verbatim).
-- Only the first 8 MiB of the response body are read; the `text` of a longer page is of that part and ends in `…[truncated]…`.
+- **Returns**: `{ url, status, content_type, title?, text }` — `url` is the final URL after redirects; `text` is extracted readable text (HTML reduced to title + visible text, one line per content block, a block nested in another counted once, scripts/styles dropped; non-HTML returned as sent). `title` and `text` carry no control or invisible format characters, and `title` is at most 300 characters.
+- Only the first 8 MiB of the response body are read, and of an HTML page only the first 128 KiB are parsed; the `text` of a longer page is of that part and ends in `…[truncated]…`.
 - Keyless (plain HTTP GET). Cached ~300s; rate-limited 20/min. Companion to `search`.
 
 #### `speech.prepare`

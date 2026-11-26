@@ -411,7 +411,12 @@ the shared `/tmp`, `/var/tmp` and Darwin user temporary directory only by the
 names tools that ignore `TMPDIR` create there: bash here-document spools
 (`sh-thd-<digits>`) and `mktemp`'s `tmp.<random>` files and folders. Any other
 write there fails, and the check's output names the path and says to write
-under `$TMPDIR` instead. The model's own shell gets none of these names.
+under `$TMPDIR` instead. The model's own shell gets none of these names. On
+Linux, where Landlock grants by path and cannot match a name, a contract check
+gets none of the shared temporary directories at all: the verifier's
+`run_check` and the builder's checks write only their private `$TMPDIR`, where
+Linux bash spools here-documents and a bare `mktemp` creates its files and
+folders, and a write to a fixed `/tmp` name fails.
 
 Protected baseline and verifier checks do not execute tools from the merged
 login PATH directly. CAR puts the trusted Cargo/rustup proxy directory first,
@@ -507,8 +512,7 @@ other processes. Raw and canonical paths are both denied. Untrusted repository
 shells and checks without explicit network approval deny non-loopback outbound
 network. In an untrusted repository the model shell and the builder's contract
 and baseline checks are also denied read and write access to the operator's
-credential stores on macOS (Linux untrusted sessions get none of these denies
-yet, tracked in #3690): the list the independent
+credential stores on macOS and Linux: the list the independent
 verifier's shell is denied (`repo_trust::operator_credential_stores`):
 `~/.aws`, `~/.ssh`, `~/.azure`, `~/.codex`, `~/.claude`, `~/.config`,
 `~/.docker`, `~/.kube`, `~/.gnupg`, `~/Library/Keychains`, `~/.netrc`,
@@ -543,6 +547,27 @@ that namespace. An individually network-approved check still runs without
 `--net`; its existing host-network reach is an explicit operator grant. The
 token/run files and peer `/proc` state remain hidden in either posture. Windows
 and other platforms have no secret sandbox.
+
+A network-denied Linux command needs iproute2: the sandbox runs
+`ip link set lo up` inside the private namespace so the check can reach a
+service it started on localhost. When `ip` is missing or fails, setup stops
+with exit 125 and `car: secret sandbox setup failed: loopback could not be
+enabled (iproute2 'ip' missing or failed)` before the check runs. A contract
+check that ends this way did not run: the shared check runner returns
+`infrastructure failure: the check's sandbox could not be set up, so the check
+never ran: <reason>` instead of an exit code. The verifier's `run_check` ends
+its round as Infrastructure on that error. A builder check records it with no
+exit code and that reason (`check failed to run: …`), so a baseline check that
+ends this way is reported as unable to run rather than as a red check. Install
+iproute2 on the host to fix it.
+
+Whether the sandbox can start is probed once per composed setup (the
+wrapper, its network posture and group drop, and the policy's own denied
+paths and confinement), and only a setup that started is remembered (up to
+1024). A policy that fails to set up is refused on its own and probed again
+on its next use; it never makes another policy unavailable, and another
+policy's start never makes it available. Each command still runs under its
+own wrapper, which fails closed.
 
 A read-only mount does not stop `connect()` on a Unix socket, so a socket the
 host user reaches through a supplementary group (a `root:docker 0660`
@@ -691,8 +716,18 @@ holds commands whose own command words are recognized network tools or network
 verbs, plus commands containing `http://`, `https://`, `ftp://`, `/dev/tcp`, or
 `/dev/udp`. It still follows nested shell `-c`, `eval`, and AppleScript `do shell
 script` commands. It does not inspect Python, Node, Ruby, Perl, awk, heredoc, or
-redirected interpreter bodies for networking keywords; those checks remain in
-the contract and the OS sandbox enforces their network boundary. A recognized
+redirected interpreter bodies for networking keywords; on Linux and macOS those
+checks remain in the contract and the OS sandbox enforces their network
+boundary. Windows has no such sandbox, so there a check is held as a network
+check until approved unless every command it runs, read the way `cmd /C` reads
+it (backslash paths, `^` escapes, `&`, `|`, parentheses, `if exist`), is a
+known-local program: a file or text utility, a read-only Git command, a version
+probe such as `python --version`, or a compiled toolchain (`cargo`, `go`, a C
+compiler). Python, Node, Deno, Bun, PowerShell, Ruby, test runners such as
+`pytest` and `jest`, package scripts such as `npm test` and `uv run`,
+`node_modules\.bin` tools, `call`, `start`, `cmd /c`, batch scripts, and
+`%VAR%` commands are all held. A compiled toolchain's tests and build scripts
+still run without network isolation there. A recognized
 network check without approval is moved to `Not verified by this contract`
 before baseline, confirmation, execution, or restart adoption. It is never run
 and never aborts the session merely because approval is absent.
@@ -796,7 +831,7 @@ system can be starved rather than answered.
 | `--contract-file <PATH>` | JSON `OutcomeContract`. **When present, derivation does not run.** A check may declare `credentials: [ENV_NAME]`; because this file is operator-supplied, those exact declarations are approved. Network is not: a check that needs it carries `"network_approved": true`. `allow_credentials` separately removes only `DenyCredentialAccess` from check command inspection. Each check remains capped at `--max-check-timeout-secs`. See [The contract](#the-contract). |
 | `--target-branch <NAME>` | Delivery branch, stable across sessions. Required for `--deliver pr`. |
 | `--pr-base <NAME>` | PR base. Defaults to the repo's default branch. |
-| `--body-prefix <TEXT>` | Trusted caller-supplied text placed verbatim at the start of the generated PR body. The model cannot edit it. Intended for stable orchestrator markers such as `<!-- car-selfheal:key=… -->`; do not pass untrusted model output. |
+| `--body-prefix <TEXT>` | Trusted caller-supplied text placed verbatim at the start of the generated PR body. The model cannot edit it. Intended for stable orchestrator markers such as `<!-- my-orchestrator:key=… -->`; do not pass untrusted model output. |
 | `--draft` | Open the pull request as a draft. |
 | `--deliver <MODE>` | `pr` \| `branch` \| `none`. Defaults to `pr` with a target branch, else `branch`. Pull-request delivery selects GitHub for `github.com` origins and Azure DevOps for `dev.azure.com`, `ssh.dev.azure.com`, and `*.visualstudio.com` origins. GitHub requires an authenticated `gh` CLI; Azure DevOps requires the `azure-devops` extension for `az` plus `az login` or `AZURE_DEVOPS_EXT_PAT`. Set `CAR_CODER_FORGE=github` or `CAR_CODER_FORGE=azure-devops` for a self-hosted or otherwise unrecognized origin; an unknown origin fails before the delivery commit or push and names that override. GitLab, Bitbucket, and other forges are not supported. Use `branch` when an external orchestrator will open the review artifact. `branch` publishes a clean worktree whose HEAD is ahead of the base as a re-delivery, the same as `pr`; it fails only when the base already contains HEAD. |
 | `--model <ID>` | Pin the inference model. The pin governs every contract-derivation lane, and an unparseable-reply retry re-asks that model instead of rotating away from it. |
@@ -808,7 +843,7 @@ system can be starved rather than answered.
 | `--keep-workspace` | Keep the workspace on any non-zero exit, and on a green `--deliver none` run. A deadline-starved post-loop gate is always retained because the loop already verified that tree green; a stalled run is always retained for diagnosis. |
 | `--transcript <PATH>` | Mirror the JSONL stream to a file. A path that cannot be created or opened is a `config_error` refusal before any spend — never a silent downgrade to no transcript. |
 | `--json` | Emit the JSONL stream on stdout, one compact object per line. |
-| `--local-only` | Run on local models only, for a caller nobody is watching (the daemon's self-heal auto-fix passes it). Every remote dispatch is refused (`remote_in_local_only_scope`, and `remote_in_local_worker` from the restricted engine), routing chooses among on-device models, and `auditor_model = "auto"` picks the largest local text model from a vendor other than the builder's. Nothing is spent. |
+| `--local-only` | Run on local models only, for a caller nobody is watching. Every remote dispatch is refused (`remote_in_local_only_scope`, and `remote_in_local_worker` from the restricted engine), routing chooses among on-device models, and `auditor_model = "auto"` picks the largest local text model from a vendor other than the builder's. Nothing is spent. |
 
 The three cap flags and their config keys are opt-in operator policy; none has a
 finite default. External-agent invocations likewise have no default wall-clock
@@ -855,6 +890,17 @@ silent. A command that stops printing for a full window is still killed and the
 session still ends `stalled`. That output is liveness only. It never counts as
 a worktree change, so a builder that prints on every turn but changes nothing
 still ends `no_progress` at `no_progress_turn_limit`.
+
+A silent command whose processes keep using CPU also counts as alive on macOS
+and Linux, so a long quiet compile is not killed. For a contract check, from
+the builder or the verifier's `run_check`, CPU use counts only when the same
+silence window also shows the check's processes writing files. A check that
+only spins on the CPU, writing nothing and printing nothing for a full window,
+is killed as no progress and judged red, and its output says it used CPU but
+wrote no files. If CAR cannot read a live process's write counters, it does not
+treat that as proof of no writes, and CPU use alone keeps the check alive for
+that window. A check that keeps printing or keeps writing is outside this rule
+and still runs until it ends, times out, or is cancelled.
 
 ## Exit codes
 
@@ -1321,13 +1367,21 @@ probes through the same confined shell. Legacy findings without `kind` are
 defects when `reproduction` is non-empty after trimming and notes otherwise;
 an explicit `kind: "note"` is always a note and its reproduction never runs.
 
-A `challenge` says a PASS is not proven. CAR gives each challenged PASS outcome
-one fresh verifier round without a builder repair and includes
-`audit_challenges: [{outcome_id, reason}]` in the verifier input. PASS then
-requires a probe recorded in that round; otherwise CAR records UNPROVEN with a
-manual prerequisite carrying the reason. A challenge without an outcome id
-applies to every PASS outcome. A challenge on FAIL or UNPROVEN is recorded but
-opens no extra round. If an outcome is challenged again after its one challenge
+A verifier PASS of an outcome that an approved contract check backs must cite a
+passing `run_check` probe of that check where `run_check` can run (verifier
+isolation and write confinement both hold); a shell probe alone is refused.
+Where `run_check` cannot run, such a PASS that cites at least one probe that
+exited zero is recorded as NOT_COVERED instead, and one that cites none is
+refused. NOT_COVERED is set by CAR only. It does not block delivery, the audit
+treats it as graded, and the grade call's result carries `not_covered_reason`.
+
+A `challenge` says a PASS is not proven. CAR gives each challenged PASS or
+NOT_COVERED outcome one fresh verifier round without a builder repair and
+includes `audit_challenges: [{outcome_id, reason}]` in the verifier input. PASS
+then requires a probe recorded in that round; otherwise CAR records UNPROVEN
+with a manual prerequisite carrying the reason. A challenge without an outcome
+id applies to every PASS and NOT_COVERED outcome. A challenge on FAIL or
+UNPROVEN is recorded but opens no extra round. If an outcome is challenged again after its one challenge
 round, CAR makes it UNPROVEN and returns to the bounded builder repair path; it
 never opens a second challenge round.
 
@@ -1639,8 +1693,27 @@ like product code. In the deploy-lag replay, `live-fleet.sh` remains pristine
 while its invoked `deploy_lag.py` and `repo-deploy-map.json` use the builder's
 fixed bytes.
 
+A contract CarCoder derives itself (the outcomes fan-out) declares the grading
+helper files and directories its checks run as `protected_paths`, so a helper
+with no test-like name, such as `checks/verdict.py`, is locked. The model names
+those helpers per outcome (`helper_files`); CAR writes no check script itself.
+Because a declared contract is authoritative, the declaration also lists every
+path the undeclared mode protects for that contract's checks at the worktree's
+`HEAD`, so declaring a helper never unlocks a test file. Without a worktree to
+compute that from, the contract stays undeclared. A model revision of such a
+derived contract (continue, revise or the all-green repair) keeps its prior
+paths, adds the paths the revision adds, and adds what the undeclared mode
+protects for the revised checks, so a test file a newly added check runs is
+locked too. If that undeclared set cannot be captured, the prior contract's own
+declaration stands, so a derived contract that was undeclared stays undeclared.
+A hand-written contract that declares
+`protected_paths` keeps exactly that declaration through a revision. Only a hand-written contract
+with no `protected_paths` stays in the undeclared mode above. For that contract the daemon log carries one warning that names each
+helper treated as product and the file that runs it.
+
 `editable_paths` opts matching protected files out of the overlay, so checks
-run the builder's copy. Those changes are still
+run the builder's copy. Only the operator writes it: a model revision keeps the
+prior contract's `editable_paths`, for every source. Those changes are still
 recorded as allowed and shown to the verifier and auditor. An ordinary
 builder-added test file outside a protected directory is not protected,
 reported, or overwritten because it did not exist in the start commit.
@@ -1767,7 +1840,9 @@ check runs and is reported. Two controls do bind:
   global `--max-check-timeout-secs` / `max_check_timeout_secs` ceiling is also
   optional and unbounded by default. With neither set, only silence stops a
   check: no output for `silence_window_secs` (default `900`, `0` disables, minimum `30`) kills
-  it and records a red result. The `600` in the example is therefore that
+  it and records a red result. CPU use keeps a quiet check alive only while
+  the check also writes files, so a check stuck in a CPU loop that writes
+  nothing is stopped by the same window. The `600` in the example is therefore that
   check's own explicit cap, not a default. Time spent waiting for the
   protected Cargo home's lock comes out of that limit (or out of the ceiling
   when the check sets none); preparing its tree does not. A check that times

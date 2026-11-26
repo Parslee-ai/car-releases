@@ -59,7 +59,12 @@ it.
     instead of this connection's in-memory log: its `inference_metered` rows
     (data: `agent`, `cause`, `call_id`, `model_used`, `model_id`, `tokens_in`,
     `tokens_out`, `cost_usd`, `cost_source`) and its `model_call_refused` rows
-    (see [spend](spend.md#spend)), with the other filters applied as usual. A
+    (see [spend](spend.md#spend)), with the other filters applied as usual.
+    Each row also carries `attempt_id` when the request that made the call
+    named one on `infer`, `infer_stream` or `classify`; `data_matches:
+    { attempt_id }` then returns exactly that request's rows, one
+    `inference_metered` row per billed call (a voided call has none) and its
+    refusals, before `limit` is applied (car#4797). A
     host or operator session may name any principal; a session bound to a
     supervised agent, or an outside credential's session, may name only itself,
     and naming another is refused `-32003` with `data.reason: "not_your_agent"`

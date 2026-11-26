@@ -92,7 +92,7 @@ counters = ["records_synced", "errors"]   # the only keys workers.report accepts
 |-------|------|
 | `[[workers]]` | Each entry names a valid bundle id and one exact version (no range or wildcard); a bundle is declared once. |
 | `[workers.limits]` | At most once per orchestrator (TOML attaches it to the `[[workers]]` entry it follows, but the caps are the orchestrator's). `per_label` keys follow the label-key rule `[a-z][a-z0-9_-]{0,31}`. |
-| `[workers.spend]` | `caps = [ { usd = 5, per = "month" } ]`, in the `[spend] caps` entry shape: caps on all the orchestrator's workers' model calls through CAR together (car#4339; `docs/websocket-protocol/spend.md`, "Caps"). At most once per orchestrator ("agent `<id>`: declare [workers.spend] once; …"). Needs `[runtime] bundle_format_version = 3` and `car_min_version = "0.59.0"` or newer, as `[spend]` does. `per_label` (per-label caps) is not supported by this CAR yet: a manifest that sets it is refused ("agent `<id>`: [workers.spend] per_label is not supported by this CAR yet; set caps") rather than installed with the cap ignored. |
+| `[workers.spend]` | `caps = [ { usd = 5, per = "month" } ]`, in the `[spend] caps` entry shape: caps on all the orchestrator's workers' model calls through CAR together (car#4339; `docs/websocket-protocol/spend.md`, "Caps"). At most once per orchestrator ("agent `<id>`: declare [workers.spend] once; …"). Needs `[runtime] bundle_format_version = 3` and `car_min_version = "0.59.0"` or newer, as `[spend]` does. `per_label = { tenant = [ { usd = 5, per = "day" } ] }` caps each value of a label key on its own, on that label's meter (car#4407): one tenant's workers at the cap are refused while other tenants' workers keep running. Keys follow the label key rule (`[a-z][a-z0-9_-]{0,31}`), each a list of the same entry shape; `caps` and `per_label` may be given alone or together, and any other field is refused. |
 | `[agent] role = "worker"` | Needs an exact `[agent] version` and an `external_process` transport with a command. Installed into the bundle store, never as an agent. May not declare `[[workers]]` (no nesting in v1). |
 | `[report] counters` | At most 32 keys, each `[a-z][a-z0-9_]{0,31}`, no repeats. |
 | `[transport] kind = "outside"` | An **outside agent**: CAR runs no process for it. It takes no other `[transport]` field (one is refused, not ignored). It may declare `[[workers]]`, which makes it an outside orchestrator: the same id, declared worker bundles, caps and records as an installed one, reached only through an owner-issued outside credential on the public door (`credentials.issue`, see [Remote access](remote-access.md)). Only `agents.install` makes one; `agents.upsert` refuses to create or edit it, and `agents.start` and `agents.restart` refuse it. CAR records an install generation in its own copy of the manifest: a fresh install of the id mints a new one, an upgrade keeps it, and a value a publisher writes is ignored. |
@@ -124,7 +124,7 @@ caps = [ { usd = 2, per = "hour" }, { usd = 10, per = "month" } ]
 | Field | Rule |
 |-------|------|
 | `caps` | A list of `{ usd = <number>, per = "hour" \| "day" \| "month" }`. `usd` is a number greater than 0 and at most $1,000,000,000,000 (an amount that rounds to $0 at micro-dollar precision counts as zero); each period at most once; no other key in an entry or in the table. The same entry shape is used by `[workers.spend]`. |
-| `[runtime] bundle_format_version` | Must be `3` when `[spend]` is present. |
+| `[runtime] bundle_format_version` | Must be `3` or newer when `[spend]` is present. |
 | `[runtime] car_min_version` | Must be `"0.59.0"` or newer when `[spend]` is present. A CAR older than the format-version check ignores tables it does not know and would install a capped bundle with its caps dropped; every stable CAR enforces `car_min_version`, so an older CAR refuses the bundle instead, and the caps are never silently lost. `car export` writes it. |
 
 **Refused, nothing installed.** Validation runs at `agents.install` (and in
@@ -186,6 +186,38 @@ accepted gap). A capped orchestrator's own calls are capped; its workers'
 calls are not counted against its cap until workers PR 5
 (`docs/proposals/orchestrator-workers.md`) adds the orchestrator's key to
 every worker call.
+
+### `[agent] models` — declared models
+
+An agent's author names the model rows the agent's calls are served from, in
+order (car#3401). The first entry is the primary; each later one is used only
+when the one before it fails, and every use is recorded as a `model_fallback`
+event. When the list is exhausted the call fails with an error naming every
+row tried; it is never routed anywhere else. An agent with no list takes the
+owner's default routing.
+
+```toml
+[agent]
+id = "router"
+name = "Router"
+models = ["provider/model-a", "provider/model-b"]
+
+[runtime]
+bundle_format_version = 4            # required for [agent] models
+```
+
+| Field | Rule |
+|-------|------|
+| `models` | Exact model ids, distinct, with no surrounding whitespace. Each must be a model row registered with the installing CAR (`models.list_unified`); `agents.install` refuses an entry that is not, naming it. A bundle names ids only and cannot add an endpoint. |
+| `[runtime] bundle_format_version` | Must be `4` or newer when `models` is present. A CAR that understands only an older format refuses the bundle instead of serving the agent from the owner's default. A CAR older than the format-version check itself ignores the field. |
+
+Refused, nothing installed: "agent `<id>`: [agent] models needs [runtime]
+bundle_format_version = 4", "agent `<id>`: `models` names `<model>` twice",
+"agent `<id>`: `models` entry ` ` must be a model id without surrounding
+whitespace", and on a worker bundle, which pins through `[worker] models`,
+"worker bundle `<id>` declares [agent] models; …". The serving rules are in
+[agents](websocket-protocol/agents.md) under `agents.upsert`, **Declared
+models**.
 
 ---
 

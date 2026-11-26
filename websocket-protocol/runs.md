@@ -129,7 +129,12 @@ existence/owner oracle on the write path either).
 
 #### `runs.complete`
 - **Params**: `{ run_id, outcome }` where `outcome` is an `AgentOutcome`
-  (`{ status, summary, evidence, metrics, timestamp }`).
+  (`{ status, summary, evidence, metrics, timestamp, error? }`). `error` is
+  `{ kind, code, status? }`, set by the packaged agent loops when inference
+  failed: `kind` is the `infer` error's `data.kind` (`unknown` when the failure
+  carried none, such as a dropped connection), `code` its JSON-RPC code or
+  `null`, `status` the provider's HTTP status. It is stored with the outcome
+  and returned by `runs.get_trace` (car#1695).
 - **Returns**: `{ run_id, ok }`.
 - Records a terminal `RunEnded` record carrying the reported outcome and
   acks. Unknown or already-terminal `run_id`s return an error (a stale or
@@ -461,8 +466,12 @@ daemon appends. Shape: `{ run_id, agent_id, record, cursor, status }`.
   process resolved from the secret store since it started, or a daemon, host
   or agent token. The redactor does not sweep the keychain: a stored key the
   daemon has not resolved since its last start, and that has no credential
-  shape, is not recognized. Scrubbing at write time, which closes that gap, is
-  tracked in car#3645.
+  shape, is not recognized.
+- **Write-side scrub.** The prompt, parameters and output of every action turn
+  (`runs.record_turns` and the daemon's own proposal recorder) are redacted of
+  known secrets before truncation and before they are stored, with the same
+  redactor, so the run file holds none of a value the daemon knows. A secret CAR never stored and whose shape it
+  does not recognise still passes through.
 - **WS-only** — no FFI binding. The FFI parity table is unchanged.
 
 

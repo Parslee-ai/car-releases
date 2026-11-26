@@ -72,7 +72,22 @@ export interface AgentOutcome {
   timestamp: string;
   transcript: AgentMessage[];
   terminal_tool?: { name: string; arguments: Record<string, unknown> };
+  /**
+   * Set when inference failed (car#1695). `kind` is the daemon's
+   * classification of its error variant (`'unknown'` when the failure
+   * carried none, such as a dropped connection); branch on it, not on
+   * `summary`. Newer daemons may add kinds, so handle an unlisted one. `code` is the
+   * JSON-RPC code, null without a daemon response; `status` is the
+   * provider's HTTP status when there was one.
+   */
+  error?: { kind: InferenceErrorKind; code: number | null; status?: number };
 }
+
+export type InferenceErrorKind =
+  | 'model_not_found' | 'auth_rejected' | 'quota_exhausted' | 'rate_limited'
+  | 'transient' | 'timeout' | 'spend_refused' | 'content_refused' | 'cancelled'
+  | 'unsupported' | 'resource_blocked' | 'configuration' | 'invalid_request'
+  | 'failed' | 'unknown' | (string & {});
 
 export type AgentMessage = Record<string, unknown> & { role: string };
 export interface AgentTerminalTool extends AgentToolSchema {
@@ -134,6 +149,219 @@ export type SpendKeyKind =
   | 'car'
   | 'declarative'
   | 'credential';
+
+/**
+ * Where a `collab.message` send stands (`status`), and in a
+ * `collab.read` delivery update. Exactly these four. `delivered` and
+ * `refused` never change; a `queued` or `unconfirmed` send whose status
+ * or reason changes later (to `delivered`, to `refused`, or from one held
+ * reason to another) comes back as a {@link CollabDeliveryUpdate}.
+ */
+export type CollabSendStatus = 'delivered' | 'queued' | 'unconfirmed' | 'refused';
+
+/**
+ * Why a send stands where it does (`reason`; `null` exactly when
+ * `delivered`). A closed list: reasons are only ever added, never renamed
+ * or reused. Each belongs to one status: queued not_on_car, recipient_offline, parslee_unreachable, parslee_busy, signed_out, awaiting_key, holders_unknown, sending, directory_unreadable;
+ * unconfirmed no_receipt; every other one is refused. `needs_resend` is a
+ * refused send that is kept: call `collab.message` again with the same
+ * `client_id` to send it again.
+ */
+export type CollabSendReason =
+  | 'not_on_car'
+  | 'recipient_offline'
+  | 'parslee_unreachable'
+  | 'signed_out'
+  | 'awaiting_key'
+  | 'holders_unknown'
+  | 'sending'
+  | 'directory_unreadable'
+  | 'parslee_busy'
+  | 'ambiguous_name'
+  | 'not_in_org'
+  | 'secret_detected'
+  | 'too_large'
+  | 'rate_limited'
+  | 'conversations_unavailable'
+  | 'duplicate'
+  | 'invalid_options'
+  | 'same_owner'
+  | 'personal_context'
+  | 'not_bound'
+  | 'not_signed_in'
+  | 'account_changed'
+  | 'org_required'
+  | 'undeliverable'
+  | 'parslee_refused'
+  | 'not_saved'
+  | 'directory_unavailable'
+  | 'needs_resend'
+  | 'not_reachable'
+  | 'not_member'
+  | 'not_in_thread'
+  | 'no_receipt';
+
+/** The answer of `collab.message` (JSON-parse `collabMessage`'s result). */
+export interface CollabSendResult {
+  status: CollabSendStatus;
+  reason: CollabSendReason | null;
+  /** One sentence, safe to show a person as it is: no ids, tokens or secrets. */
+  sentence: string;
+  /**
+   * The caller's id for this send: the `client_id` given, or a UUID minted
+   * for it. `collab.message` again with it returns this send's current
+   * state (that is how a retry works); it never sends twice.
+   */
+  client_id: string;
+  /** The backend's id for the message; `null` when nothing was kept. */
+  message_id: string | null;
+}
+
+/** A later change to a send the caller made, in `collab.read`'s `delivery_updates`. */
+export interface CollabDeliveryUpdate {
+  type: 'delivery_update';
+  /** The `client_id` `collab.message` returned. */
+  client_id: string;
+  /** The backend's id for the message, while this CAR still holds it. */
+  message_id: string | null;
+  status: CollabSendStatus;
+  reason: CollabSendReason | null;
+  sentence: string;
+}
+
+/** A membership warning raised to every member of a conversation. */
+export type CollabNoticeKind = 'history_failed' | 'unexplained_member' | 'checkpoint_conflict';
+
+/** A membership warning, in `collab.read`'s `notices` and in `collab.conversation`. */
+export interface CollabNotice {
+  type: 'notice';
+  kind: CollabNoticeKind;
+  /** Who the conversation is with, as `collab.who` names them. */
+  with: string;
+  sentence: string;
+  at_ms: number;
+}
+
+/** A message from the other side, in `collab.conversation`. */
+export interface CollabReceivedEntry {
+  type: 'received';
+  /** `null` only for the `not_yet_available` entry. */
+  message_id: string | null;
+  from: string | null;
+  kind: string | null;
+  body: string | null;
+  options: string[];
+  in_reply_to: string | null;
+  sent_at_ms: number | null;
+  state: 'opened' | 'not_yet_available' | 'unopenable';
+  /** Present for `not_yet_available` and `unopenable`. */
+  sentence?: string;
+  authority?: 'owner' | 'none';
+  /**
+   * Absent while the writer is a current member. `left`: left the
+   * conversation or the organization (their name stays on what they wrote);
+   * `removed`: removed from the conversation. `former_member` is reserved for a
+   * writer erased from it; nothing produces it yet.
+   */
+  writer?: 'former_member' | 'removed' | 'left';
+}
+
+/**
+ * A person left the organization, in `collab.read`'s `notices` and in
+ * `collab.conversation`. Shown once per reader.
+ */
+export interface CollabDeparture {
+  type: 'departure';
+  /** Who the conversation is with, as `collab.who` names them. */
+  with: string;
+  /** Who left, as `collab.who` names them. */
+  person: string;
+  /** Their account. */
+  account: string;
+  /** The accounts of their assistants that ended with them. */
+  agents: string[];
+  sentence: string;
+  at_ms: number;
+}
+
+/** A message the caller sent, in `collab.conversation`, with where it stands now. */
+export interface CollabSentEntry {
+  type: 'sent';
+  message_id: string;
+  client_id: string;
+  from: string;
+  kind: string;
+  body: string;
+  options: string[];
+  in_reply_to: string | null;
+  sent_at_ms: number;
+  status: CollabSendStatus;
+  reason: CollabSendReason | null;
+  sentence: string;
+}
+
+/** Messages no device can open any more: one entry, at the start of the oldest page. */
+export interface CollabLostRangeEntry {
+  type: 'lost';
+  lost_before_ms: number;
+  sentence: string;
+}
+
+export type CollabConversationEntry =
+  | CollabReceivedEntry
+  | CollabSentEntry
+  | CollabNotice
+  | CollabDeparture
+  | CollabLostRangeEntry;
+
+/**
+ * Present on a bound session's `collab.list`, `collab.who`, `collab.read`,
+ * `collab.wait`, `collab.conversation(s)`, `board.list`, `board.history` and
+ * `lattice.inbox` answer when Parslee answered organization admission as busy:
+ * the answer is what this CAR already holds and may be missing new items.
+ * Absent otherwise.
+ */
+export interface CollabAdmissionStale {
+  admission_stale?: true;
+  /** A plain sentence safe to show the person. */
+  admission_sentence?: string;
+}
+
+/** The answer of `collab.conversation`: one page, oldest first. */
+export interface CollabConversationPage {
+  with: string;
+  entries: CollabConversationEntry[];
+  /**
+   * `more` is `true` when older entries remain, and then `next` is an opaque
+   * string to pass as `before`; it is `null` on the oldest page.
+   */
+  more: boolean;
+  /** The cursor for the next older page: pass it as `before`, unchanged. */
+  next: string | null;
+}
+
+/** One pair conversation in `collab.conversations`. */
+export interface CollabConversationListing {
+  /** The other person's `name`, exactly as `collab.who` gives it. */
+  with: string;
+  /** Their account. */
+  account: string;
+  state: 'open' | 'closed';
+  /** Messages still unread for this caller, by `collab.read`'s read positions. */
+  unread: number;
+  /** When its newest message was stored; `null` when it has none. */
+  last_at_ms: number | null;
+}
+
+/**
+ * The answer of `collab.conversations`: every pair conversation the person
+ * owns, open and closed, newest `last_at_ms` first and those with no message
+ * last. Listing moves no read position.
+ */
+export interface CollabConversationList {
+  org: string;
+  conversations: CollabConversationListing[];
+}
 
 /**
  * One key's row of `spend.costs`. Dollars are rounded up to the cent; the
@@ -436,6 +664,12 @@ export interface CoderStartOptions {
    * network. An engine that cannot guarantee it refuses. Off by default.
    */
   isolateExternalNetwork?: boolean | undefined | null;
+  /**
+   * Let an external engine authenticate with an ambient provider API key
+   * (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...). Off by default: those
+   * keys are removed and the engine uses its own login.
+   */
+  externalApiKeyCredential?: boolean | undefined | null;
   /**
    * Farm a **foreman** session's subtasks across every reachable CAR instance
    * that can serve this repository, instead of this machine alone. The
@@ -794,14 +1028,35 @@ export class CarRuntime {
   /** Generated daemon wrapper for `beads.touch` (owner). */
   beadsTouch(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `board.accept` (operator). */
+  boardAccept(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.assign` (operator). */
+  boardAssign(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.check_in` (operator). */
+  boardCheckIn(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.claim` (operator). */
+  boardClaim(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `board.comment` (operator). */
   boardComment(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.decline` (operator). */
+  boardDecline(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.handoff` (operator). */
+  boardHandoff(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `board.history` (operator). */
   boardHistory(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `board.list` (operator). */
   boardList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `board.release` (operator). */
+  boardRelease(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `board.transition` (operator). */
   boardTransition(paramsJson: string): Promise<string>;
@@ -886,6 +1141,54 @@ export class CarRuntime {
 
   /** Generated daemon wrapper for `coder.unsubscribe` (operator). */
   coderUnsubscribe(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.accept` (operator). */
+  collabAccept(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.ack` (operator). */
+  collabAck(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.conversation` (operator). */
+  collabConversation(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.conversations` (operator). */
+  collabConversations(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.decline` (operator). */
+  collabDecline(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.invitations` (operator). */
+  collabInvitations(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.invite` (operator). */
+  collabInvite(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.leave` (operator). */
+  collabLeave(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.list` (operator). */
+  collabList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.message` (operator). */
+  collabMessage(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.presence` (operator). */
+  collabPresence(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.read` (operator). */
+  collabRead(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.remove` (operator). */
+  collabRemove(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.start` (operator). */
+  collabStart(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.wait` (operator). */
+  collabWait(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `collab.who` (operator). */
+  collabWho(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `concierge.actions` (operator). */
   conciergeActions(paramsJson: string): Promise<string>;
@@ -1007,14 +1310,23 @@ export class CarRuntime {
   /** Generated daemon wrapper for `feedback.compose_preview` (operator). */
   feedbackComposePreview(paramsJson: string): Promise<string>;
 
+  /** Generated daemon wrapper for `feedback.export` (operator_only). */
+  feedbackExport(paramsJson: string): Promise<string>;
+
   /** Generated daemon wrapper for `feedback.list` (operator). */
   feedbackList(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `feedback.remove` (operator_only). */
+  feedbackRemove(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `feedback.status` (operator). */
   feedbackStatus(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `feedback.submit` (operator). */
   feedbackSubmit(paramsJson: string): Promise<string>;
+
+  /** Generated daemon wrapper for `fleet.build_job` (operator_only). */
+  fleetBuildJob(paramsJson: string): Promise<string>;
 
   /** Generated daemon wrapper for `goal.clear` (agent). */
   goalClear(paramsJson: string): Promise<string>;
@@ -1742,7 +2054,10 @@ export class CarRuntime {
    * CAR instance, folded so one row names every instance that offers it.
    * `includeRemote` defaults to true. `timeoutMs` bounds each peer
    * individually: a sleeping machine appears as an unreachable row carrying the
-   * reason, never a missing one. Returns `FleetComposite` JSON.
+   * reason, never a missing one. `roster` says whether this daemon knows its
+   * own devices yet, `own_certificate` whether it holds a device certificate
+   * for its current key, and `own_devices` lists each own device on the sync
+   * roster with how it is reached and why not. Returns `FleetComposite` JSON.
    */
   fleetComposite(includeRemote?: boolean, timeoutMs?: number): Promise<string>;
 
@@ -1996,7 +2311,10 @@ export class CarRuntime {
    * match ranks above a one-word overlap; `confidence` is the hit's share of
    * PageRank mass in this result, comparable within one call only. `score`
    * is the hit's own match strength (0..1; 0 for a hit that matches no
-   * query term) and is the field to threshold on.
+   * query term) and is the field to threshold on. `path` is `"semantic"`
+   * when the memory's embedder served the query (meaning matches count, and
+   * `score` is the higher of the word and meaning match) and `"words"`
+   * otherwise.
    */
   queryFacts(query: string, k?: number | null): string;
 
@@ -2153,10 +2471,18 @@ export class CarRuntime {
   syncAppend(requestJson: string): Promise<string>;
   /** `host.agents` — current host agent registry snapshot. */
   hostAgents(): Promise<string>;
-  /** `host.events` — recent host events, newest last; omit `limit` for the daemon default. */
+  /** `host.events` — recent host events, newest first. Resolves to a JSON string of a bare `HostEvent[]` array (no `events` envelope); omit `limit` for the daemon default. */
   hostEvents(limit?: number): Promise<string>;
-  /** `host.approvals` — pending host approvals. */
-  hostApprovals(): Promise<string>;
+  /**
+   * `host.approvals` — the host approvals ledger. With `pending`, every ask
+   * waiting on the person (approvals, collaboration and direct questions,
+   * board handoffs and assignments), oldest first, as
+   * `{count, asks, unavailable?}`; `collaboration` keeps one collaboration's
+   * asks. Answer any of them with `hostResolveApproval`. Without `pending`,
+   * the host client and the signed-in dashboard also get every other ask,
+   * waiting or settled in the last 24 hours, in the ledger row's shape.
+   */
+  hostApprovals(pending?: boolean, collaboration?: string): Promise<string>;
   /** `host.register_agent` — register an agent on this connection. */
   hostRegisterAgent(requestJson: string): Promise<string>;
   /** `host.unregister_agent` — unregister an agent owned by this connection. */
@@ -2173,7 +2499,17 @@ export class CarRuntime {
   hostNotify(requestJson: string): Promise<string>;
   /** `host.request_approval` — request approval; JSON accepts present and only_if_floor_clear. */
   hostRequestApproval(requestJson: string): Promise<string>;
-  /** `host.resolve_approval` — resolve one pending host approval. */
+  /**
+   * `host.resolve_approval` — answer one pending ask by its `approval_id`:
+   * `{approval_id, resolution?, text?, acknowledge_processing?}`. A ledger row takes `resolution`
+   * as before; an `ask:` id takes `resolution` (one of its options, a
+   * private answer; posted in the thread when the question asks everyone)
+   * or `text` (a public reply); a `direct:` id takes either;
+   * a `board:` id takes `accept` or `decline`; a `lattice:` id (a Lattice
+   * request to a person) takes `text`, or a review's `approve`/`deny`, and
+   * from the host client `acknowledge_processing: true` agrees to another
+   * owner's processing notice and sends.
+   */
   hostResolveApproval(requestJson: string): Promise<string>;
   // `host.subscribe` event delivery is deferred to the callback-aware
   // daemon-session API; subscribing without a consumer would drop the stream.
@@ -2504,12 +2840,23 @@ export class CarRuntime {
    * `intentJson` is an optional serialized {@link IntentHint} —
    * caller-facing routing hints (task, prefer_local, require). Omit to
    * preserve the existing adaptive vs. pinned-model behavior.
+   *
+   * `attemptId` is an optional opaque id you mint for this attempt (1-128
+   * characters of `A-Z a-z 0-9 . _ : -`). The daemon writes it on the
+   * call's spend-ledger rows, and the result then also carries
+   * `attempt_id`, `call_ids` (the ledger calls this request was billed for,
+   * in settle order), `pending_call_ids` (calls it admitted whose bill is
+   * not written yet) and `settled` (false while a bill could still be
+   * added). Read a call's own bill back with `events.query`
+   * `{ agent, data_matches: { attempt_id } }`, never by order or token
+   * counts (car#4797).
    */
   infer(
     prompt: string,
     model?: string | null,
     maxTokens?: number | null,
     intentJson?: string | null,
+    attemptId?: string | null,
   ): Promise<string>;
 
   /**
@@ -2569,6 +2916,13 @@ export class CarRuntime {
    * Vision-capable hosted models (Claude 3.5+/4.x, GPT-4o, Gemini)
    * accept these directly; non-vision providers reject the request
    * via a structured error from the daemon. See #230.
+   *
+   * `attemptId` names this attempt as on {@link infer}; the result then
+   * carries `attempt_id`, `call_ids` and `pending_call_ids` (car#4797). The
+   * daemon's error for such a request carries the same fields in its
+   * `data`, with `billed` and `dispatched` (`true` billed; `false` nothing
+   * reached a provider and nothing was billed; `null` not known yet); only
+   * {@link inferTrackedWithRequest} rejects with that `data` attached.
    */
   inferTracked(
     prompt: string,
@@ -2580,6 +2934,7 @@ export class CarRuntime {
     toolChoice?: string | null,
     parallelToolCalls?: boolean | null,
     imagesJson?: string | null,
+    attemptId?: string | null,
   ): Promise<string>;
 
   /**
@@ -2608,7 +2963,13 @@ export class CarRuntime {
    *
    * `usage.reasoning_tokens` is present when the provider reports it
    * (OpenAI chat and Responses, non-streaming) and is a subset of
-   * `completion_tokens`.
+   * `completion_tokens`. `usage.recovered_cost` (`{ provider_usd,
+   * estimated_usd }`) is present only on a turn recovered from a discarded
+   * thinking pass, beside `usage.reported_cost_usd`, which keeps provider
+   * charges only: `estimated_usd` is the catalog price of each pass
+   * without an accepted provider charge (no usage, or usage with a missing
+   * or refused charge), each at its own model on its actual or estimated
+   * usage, and `0.0` when the catalog has no price.
    *
    * `client_ref` is an opaque correlation token echoed verbatim in the
    * `inference.runner.invoke` payload and otherwise ignored by CAR. A
@@ -2684,8 +3045,17 @@ export class CarRuntime {
    * between the model's reply and the label, not a probability; labels match
    * case-insensitively with `_`/`-`/punctuation read as spaces. Rejects when
    * the reply names none of the labels.
+   *
+   * With `attemptId` (named as on {@link infer}) the daemon's result also
+   * carries `attempt_id`, `call_ids` and `pending_call_ids` beside
+   * `classifications` (car#4797).
    */
-  classify(text: string, labels: string[], model?: string | null): Promise<string>;
+  classify(
+    text: string,
+    labels: string[],
+    model?: string | null,
+    attemptId?: string | null,
+  ): Promise<string>;
 
   /**
    * Encode `text` via the named local model's tokenizer. Returns a JSON
@@ -2863,15 +3233,9 @@ export class CarRuntime {
    * Register a `ModelSchema` via the daemon's `models.register`
    * JSON-RPC method (Parslee-ai/car-releases#39). The schema is
    * persisted to `~/.car/models.json` (replacing any existing
-   * entry with the same `id`).
-   *
-   * **Visibility limitation**: the model becomes visible to
-   * `infer` / `models.list` / `models.list_unified` on the **next
-   * daemon boot**. Live hot-update inside a running daemon is
-   * tracked as a separate follow-up that requires interior
-   * mutability on the `UnifiedRegistry`. Register before
-   * starting the daemon's inference path, or restart the daemon
-   * after a batch of registrations.
+   * entry with the same `id`) and registered in the running
+   * daemon at once, so `infer` / `models.list` /
+   * `models.list_unified` see it with no restart.
    *
    * A reserved credential (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, the AWS
    * keys, the other names `car keys` stores, and the credentials CAR stores
@@ -2884,7 +3248,7 @@ export class CarRuntime {
    * method presents the host credential: the generated `modelsRegister`
    * wrapper and `daemonCall("models.register", …)` make the ordinary call.
    *
-   * Returns JSON `{id, registered, path, note}`.
+   * Returns JSON `{id, registered, live, path}`.
    */
   registerModel(schemaJson: string): Promise<string>;
 
@@ -3606,49 +3970,44 @@ export class CarRuntime {
    * `cost_overage` alert. */
   metricsAlerts(thresholdsJson?: string): Promise<string>;
 
-/** Self-healing repair loop status: enabled/why-not, cadence, targets,
-   * rejected targets, review panel, engine. */
+  /** Heal status as JSON (`heal.status`): the one `state` (`off`,
+   * `blocked`, `idle`, `working`, `awaiting_merge`, `verifying`, `escalated`)
+   * and the one `reason` for it, `cadence_secs`, `daily_budget_usd`, the
+   * `work` in flight (each with its `dedup_key`, `phase`, `round`,
+   * `occurrence`, `branch` and pull request), the detectors and detection
+   * counts, `config_warnings`, the hand-in `targets`/`orgs`/`rejected`/
+   * `discovered`, and the `spend_meter`. */
   healStatus(): Promise<string>;
-  /** Run one self-healing repair sweep now. May open a pull request; never merges. */
+  /** Run one heal tick now (`heal.run`): detect, repair, merge, verify,
+   * hand-in issues. Returns the `heal.status` object as JSON. */
   healRun(): Promise<string>;
   /**
    * `chatSessionId` is for a caller bound to a supervised agent: the
    * `session_id` of the host's `agents.chat` turn it is answering, which it
-   * needs to start a sweep. `item` (`owner/repo#number`) runs that one item
-   * with the attended configuration, setting aside its backoff and its
-   * `needs-human` label.
+   * needs to start a run. `item` (`owner/repo#number`) runs that one
+   * handed-in issue with the attended configuration and returns the sweep
+   * report `{outcomes, skipped_overlap}` instead; a handed-in issue gets a
+   * pull request only.
    */
   healRun(chatSessionId: string | null, item?: string | null): Promise<string>;
-/** Self-heal status as JSON: cadence, `auto_fix_enabled`, `max_concurrent`,
-   * `max_per_day`, `max_rounds_per_key`, optional `auto_fix_refusal_reason`,
-   * last tick, source route/refusal,
-   * detector counts, and `filing_mode` (`watch-only` or `pr-only`). */
 
-  selfhealStatus(): Promise<string>;
+  /** List active (not dismissed) heal detections as JSON (`heal.detections`):
+   * `{detections, total, offset, limit, next_offset?}`. Each detection
+   * includes `route` and an optional `local_issue_path`. Recurring tool
+   * failures add `eligible`, a secret-safe `reconstructed_call` (`tool` plus
+   * exact `params`) and optional owner-private `reconstructed_call_path`.
+   * Every detection carries a 1-based `occurrence`: a
+   * `scheduled_task_problem` that cleared and came back is a new occurrence.
+   * `queryJson` carries optional `kind`, `severity`, `since`, `offset`, and
+   * `limit` (max 500). */
+  healDetections(queryJson?: string): Promise<string>;
 
-  /** List active (not dismissed) self-heal detections as JSON. Each includes
-   * `route` and an optional `local_issue_path`. Recurring tool failures add
-   * `eligible`, a secret-safe `reconstructed_call` (`tool` plus exact `params`),
-   * optional owner-private `reconstructed_call_path`, `auto_fix_attempts`,
-   * `auto_fix_exhausted`, `auto_fix_in_progress`, and
-   * `last_auto_fix_attempt` (including `exit_code` and `failure_class`). Remote
-   * deduplication adds `auto_fix_awaiting_review`, `auto_fix_parked`,
-   * `remote_pr_number`, and `remote_pr_url`. A detection handed to the
-   * repair loop carries `heal_issue` (`{repo, number, url}`).
-   * `queryJson` carries optional `kind`, `severity`,
-   * `since`, `offset`, and `limit` (max 500). */
-  selfhealDetections(queryJson?: string): Promise<string>;
-
-  /** Append a dismissal marker for a stable detection dedup key without
-   * deleting history. */
-  selfhealDismiss(dedupKey: string): Promise<string>;
-
-  /** Start one bounded template-owned coder round for an eligible recurring
-   * tool failure. Returns the durable attempt result as JSON. */
-  selfhealFix(dedupKey: string): Promise<string>;
-
-  /** Run one non-overlapping detection tick and default-on auto-fix hook. */
-  selfhealRun(): Promise<string>;
+  /** Dismiss one detection by its dedup key (`heal.dismiss`): appends a
+   * dismissal marker without deleting history, and heal never repairs a
+   * dismissed key. Returns `{dedup_key, dismissed, already_dismissed,
+   * dismissed_at}` as JSON. An unknown key, or a resolved
+   * `scheduled_task_problem` key, is refused. */
+  healDismiss(dedupKey: string): Promise<string>;
 
   /** This connection's execution log counts and approximate retained native
    * bytes. Returns JSON. */
@@ -4069,15 +4428,23 @@ export class CarRuntime {
    * Send or draft mail. `sendRequestJson` is `{account_id, to, cc?, bcc?,
    * subject, body, draft_only?}`; `draft_only: true` saves a draft in
    * `account_id`'s Drafts instead of sending. Returns JSON `{available,
-   * backend, reason?, sent, message_id}`: `sent: false` with a `reason`
+   * backend, reason?, sent, message_id, delivery?}`: `sent: false` with a `reason`
    * (e.g. `sender_override_failed: …` or `drafts_unavailable: …`, saying
    * what to change in Mail's account settings) when Mail will not use
    * `account_id`'s address, or (for a draft) reports that account turned off
    * or lists Drafts mailboxes for other accounts but none for it — nothing
-   * is sent or drafted from another account.
+   * is sent or drafted from another account. On Mail.app a send Mail accepts
+   * is confirmed only once it shows up in the Outbox or Sent (`sent: true`,
+   * `delivery: "confirmed"`); if Sent was read and it never did, `sent:
+   * false`, `delivery: "unconfirmed"` and a `send_unconfirmed:` reason (it
+   * may still go out: check Outbox and Sent before sending it again); if Sent
+   * could not be read, or Mail did not say which account sent it, `sent:
+   * false`, `delivery: "unverified"` and a `send_unverified:` reason (check
+   * Sent before sending it again). `delivery` is absent for a draft, a
+   * refused send and other backends.
    *
    * Blocks the JS event loop for the whole call; on a server or any request path use `mailSendAsync`.
-   * Sending drives Mail.app through a script and can take seconds.
+   * A send drives Mail.app through scripts and waits for it to confirm: up to about 3 minutes.
    */
   mailSend(sendRequestJson: string): string;
 
@@ -4457,6 +4824,9 @@ export class HostClient {
   /** Generated host wrapper for `beads.rebuild`. */
   beadsRebuild(paramsJson: string): Promise<string>;
 
+  /** Generated host wrapper for `board.setup`. */
+  boardSetup(paramsJson: string): Promise<string>;
+
   /** Generated host wrapper for `brief.compile`. */
   briefCompile(paramsJson: string): Promise<string>;
 
@@ -4465,6 +4835,9 @@ export class HostClient {
 
   /** Generated host wrapper for `brief.read`. */
   briefRead(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `collab.agent_rule`. */
+  collabAgentRule(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `concierge.maintain`. */
   conciergeMaintain(paramsJson: string): Promise<string>;
@@ -4711,6 +5084,9 @@ export class HostClient {
 
   /** Generated host wrapper for `spend.set_limit`. */
   spendSetLimit(paramsJson: string): Promise<string>;
+
+  /** Generated host wrapper for `sync.enable_remote`. */
+  syncEnableRemote(paramsJson: string): Promise<string>;
 
   /** Generated host wrapper for `tasks.schedule`. */
   tasksSchedule(paramsJson: string): Promise<string>;
@@ -6322,11 +6698,28 @@ export function evolutionEvaluate(
  * component AND a patch that leaves model-facing text (`prompt_overlay`,
  * `tool_description_overlay`) alone. Returns `{ config, rollback }` (the
  * updated config and the inverse patch that restores it), or throws when
- * refused.
+ * refused. The patch is written as given; for a mutation computed against an
+ * earlier config, use `evolutionApplyFrom`.
  */
 export function evolutionApply(
   configJson: string,
   mutationJson: string,
+  decisionJson?: string | null,
+  humanApproved?: boolean,
+): string;
+
+/**
+ * `evolutionApply` for a mutation whose patch was computed against
+ * `baseJson` (a `HarnessConfig`) rather than `configJson`: the patch is
+ * rebased onto `configJson` first, so two approvals computed from the same
+ * base both survive instead of the later one erasing the earlier.
+ * Authorization is `evolutionApply`'s, unchanged. Returns
+ * `{ config, rollback }`, or throws when refused.
+ */
+export function evolutionApplyFrom(
+  configJson: string,
+  mutationJson: string,
+  baseJson: string,
   decisionJson?: string | null,
   humanApproved?: boolean,
 ): string;
@@ -6705,11 +7098,19 @@ export function rankProposals(
  *   "script": "return 1 + 2",
  *   "language": "applescript" | "javascript",  // optional, default applescript
  *   "args": ["positional", "args"],             // optional
- *   "timeout_ms": 5000                          // optional
+ *   "timeout_ms": 5000,                         // optional
+ *   "imessage_send": null | { "to": "+15551234567", "body": "hi" } // optional
  * }
  * ```
  *
- * Returns JSON `{stdout, stderr, exit_code}`. Rejects with the
+ * `imessage_send` declares an iMessage the script sends: the script is run
+ * with `argv = [to, tagged]` and must send the tagged text (body plus an
+ * invisible tag) once, never retyped, so its echo is marked `own_echo`. It
+ * cannot be combined with `args`, and is required when
+ * `CAR_APPLESCRIPT_IMESSAGE=required`.
+ *
+ * Returns JSON `{stdout, stderr, exit_code}`, plus
+ * `imessage_send: {declared: true}` for a declared send. Rejects with the
  * subprocess stderr on non-zero exit.
  */
 export function runApplescript(argsJson: string): Promise<string>;
@@ -7134,6 +7535,8 @@ export function agentsHealthExternal(
  *     "isolate_network"?: boolean,     // no web, browser, connectors, MCP; shell offline
  *     "isolate_config"?: boolean,      // none of the user's CLI config (MCP, plugins,
  *                                      // connectors, memory); keeps the web. Codex only
+ *     "api_key_credential"?: boolean,  // authenticate with an API key, not the CLI's
+ *                                      // login; default false strips provider keys
  *     "timeout_secs"?: number,         // hard deadline (default 300s)
  *     "mcp_endpoint"?: string,         // MCP server URL passed via
  *                                      // --mcp-config; daemon callers
@@ -7165,6 +7568,8 @@ export function agentsHealthExternal(
  *   {
  *     "answer": string,                // final agent response
  *     "session_id"?: string,
+ *     "api_key_source"?: string,       // credential Claude Code used: "none" = its login, else the key's name
+ *     "credential"?: string,           // what CAR selected: "login", "api_key" or "cloud"
  *     "turns": number,
  *     "tool_calls": number,            // tool_use blocks observed
  *     "duration_ms": number,

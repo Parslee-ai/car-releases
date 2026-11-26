@@ -1,7 +1,7 @@
 {% raw %}
 # CAR as an MCP server
 
-> Describes CAR **0.64.0**. Check yours with `car --version`; if it
+> Describes CAR **0.65.0**. Check yours with `car --version`; if it
 > differs, prefer `car help <command>` on your own binary over this page.
 
 Wire CAR's graph memory, skill storage, static plan verification, and policy
@@ -24,7 +24,7 @@ are not equivalent, and the difference matters more than the transport choice:
 
 | | stdio (`car-mcp`) | daemon (`/mcp`) |
 |---|---|---|
-| Tools advertised | 16 built-ins | 16 built-ins **+ 3** (`assistant_start`, `assistant_poll`, `assistant_cancel`) |
+| Tools advertised | 17 built-ins | 17 built-ins **+ 3** (`assistant_start`, `assistant_poll`, `assistant_cancel`) |
 | Memory backing | Its own process, opens `<CAR_HOME>/memory/assistant.json` at startup | The daemon's live, already-running memgine — shared with everything else the daemon does (WS clients, `car do`) |
 | Requires the daemon running? | No | Yes |
 | Concurrent clients sharing state | No — one process per client | Yes |
@@ -96,11 +96,11 @@ at once.
 Relocate the store with `CAR_HOME` — every other daemon state path moves with
 it, so an editor plugin that wants an isolated memory sets that one variable.
 
-## The tool list — 16 tools, verified against source
+## The tool list — 17 tools, verified against source
 
 `memory_add_fact`, `memory_query`, `memory_update_status`,
 `memory_save_knowledge`, `memory_save_procedural`, `memory_delete`,
-`memory_intervene`, `memory_evaluate`, `skill_ingest`, `skill_list`,
+`memory_intervene`, `memory_peek`, `memory_evaluate`, `skill_ingest`, `skill_list`,
 `skill_find`, `verify`, `simulate`, `equivalent`, `optimize`, `policy_check` —
 this is the complete, alphabetically-sorted list the crate's own test suite
 asserts against (`server.rs`, `tool_names` test). There is also one MCP
@@ -113,17 +113,18 @@ hints per the MCP spec, not a security boundary; CAR's own gate is
 `policy_check` plus `.car/policies/`, and nothing in CAR's governance keys off
 them.
 
-### Memory (8 tools)
+### Memory (9 tools)
 
 | Tool | Read-only | Required params | Notes |
 |---|---|---|---|
 | `memory_add_fact` | no | `subject`, `body` | `kind`: `"pattern"` (default) or `"constraint"`. The one memory write durable over stdio. |
-| `memory_query` | **yes** | `query` | `k` (1–50) caps results. Spreading-activation retrieval, returns nodes + activation scores. |
-| `memory_update_status` | no | `body` | Session-local progress/risk status; a map slot, so a second call overwrites the first. `tenant_id` optional. |
+| `memory_query` | **yes** | `query` | `k` (1–50) caps results. Spreading-activation retrieval, returns nodes + activation scores and `path` (`semantic` when the memory's embedder served it, else `words`). `tenant_id` optional: only that tenant's facts. |
+| `memory_update_status` | no | `body` | Session-local progress/risk status; a map slot, so a second call overwrites the first. `tenant_id` optional; on the daemon endpoint an `X-Car-Tenant-Id` header binds it, and a body value may only restate it. |
 | `memory_save_knowledge` | no | `subject`, `body` | Durable *proactive* knowledge (requirements, policies, verified environment facts). Additive — a repeat `id` mints `<id>-2` rather than overwriting. In-process only over stdio (see durability section). |
 | `memory_save_procedural` | no | `subject`, `body` | Same shape as above, for procedural evidence (failed attempts, fixes, gotchas). Same in-process-only caveat. |
 | `memory_delete` | no | `id` | Deletes a fact by id, or clears a status id like `proactive-status:global`. In-process only over stdio. |
 | `memory_intervene` | no | *(none required)* | Selects at most one proactive reminder for the next action, or an explicit silent decision. Reads like a query but bumps the chosen fact's injection counter — not idempotent. |
+| `memory_peek` | **yes** | *(none required)* | The same decision as `memory_intervene`, with nothing recorded. |
 | `memory_evaluate` | **yes** | `cases` (array of `{id, request, relevant_fact_ids?}`) | Evaluates proactive memory against selective / always-inject / passive-retrieval / no-memory baselines on labeled cases. |
 
 `memory_save_knowledge` / `memory_save_procedural` share this input shape:
@@ -166,8 +167,8 @@ them.
 | Tool | Read-only | Required params | Notes |
 |---|---|---|---|
 | `skill_ingest` | no | `name`, `code` | Also takes `platform`, `persona`, `url_pattern`, `description`, `task_keywords`, `supersedes`. Marked *destructive*: naming an existing skill in `supersedes` flips it to deprecated. In-process only over stdio. |
-| `skill_list` | **yes** | *(none)* | Optional `domain` filter — returns skills scoped Global or that Domain. |
-| `skill_find` | **yes** | `task` | Optional `persona`, `url`, `k` (1–20). Top-k skills ranked by activation. |
+| `skill_list` | **yes** | *(none)* | Optional `domain` filter — returns skills scoped Global or that Domain. Optional `tenant_id` returns only that tenant's skills (a non-string value is refused). `resources/list`, `resources/read` and `completion/complete` take the same `tenant_id`: another tenant's fact or skill URI is neither listed nor readable, and reads as not found. A `tenant_id` containing `:` is refused. On the daemon's HTTP endpoint an `X-Car-Tenant-Id` header binds the request: an absent `tenant_id` means the header's tenant, a body value may only restate it, and a different one is refused (car#5037). Without the header (and over stdio) `tenant_id` scopes results; it does not authenticate the caller. |
+| `skill_find` | **yes** | `task` | Optional `persona`, `url`, `k` (1–20), `tenant_id`. Top-k skills ranked by activation. |
 
 ### Static verification (4 tools) — all stateless, no memory, no daemon
 
@@ -338,7 +339,7 @@ first release with `car policy-check-hook`, which the hook below runs).
 | `@agent-car:car-reason` | CAR's code reasoning engine (`car reason`) — adaptive model routing over a graph of the codebase |
 | `/car-do` | Shorthand for delegating to the `car` subagent |
 | `/car-remember`, `/car-recall` | Write and search CAR's durable memory via the `memory_add_fact` / `memory_query` MCP tools |
-| MCP server `car` | The 16 tools above, launched as `car-mcp` with `CAR_INVOKED_BY=claude-code` set (required — it seeds CAR's recursion guard so `car do` doesn't spawn a `claude` subprocess that loads this same plugin and calls back in) |
+| MCP server `car` | The 17 tools above, launched as `car-mcp` with `CAR_INVOKED_BY=claude-code` set (required — it seeds CAR's recursion guard so `car do` doesn't spawn a `claude` subprocess that loads this same plugin and calls back in) |
 | `PreToolUse` hook | Runs **your** `.car/policies/*.toml` against Claude Code's own Bash/Write/Edit/WebFetch/NotebookEdit calls, via `car policy-check-hook` |
 
 The hook is declarative — write `.car/policies/rules.toml`:

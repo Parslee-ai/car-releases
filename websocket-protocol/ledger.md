@@ -21,7 +21,14 @@ decides). A new class starts at `near_loop`, or at an explicitly declared
 `starting_rung: draft` or `starting_rung: ask_first`; `out_loop` is never a
 starting rung. Wrong drops one rung; promotion
 requires owner-configured pass-rate bars, a clean streak, and enough tap cases.
-Without evaluated bars, promotion is disabled. Class scope and paid-spend fields
+Without evaluated bars, promotion is disabled.
+A class with `no_rungs: true` is never moved by a grade on its own entries:
+Good, Wrong and Undo are still recorded and counted, and a Wrong or Undo still
+becomes a classifier case, but the class keeps its rung, including a rung an
+owner override (`ledger.class.override`) set above its family cap. An owner
+override still moves it, and the `succeeds` family cap still applies when
+another class in its family moves. The field is omitted on a class without it;
+a put that leaves it out keeps the stored value, and `false` clears it. Class scope and paid-spend fields
 are shared policy data for later classifier/enforcement consumers; they do not
 replace existing tool permissions, grants, or spend gates.
 
@@ -49,7 +56,15 @@ class stored before the field existed. Any other value is refused with
 sends, like the other policy fields. The dashboard's standup numbers read it
 from `ledger.classes.list` and from nothing else: every entry in a class that
 carries it is a record, left out of handled, needed and the out-of-the-loop
-share; agents working now still counts its actor. Configuration through put preserves the existing rung and counters.
+share, and from agents working now. Optional
+`standup_agents: "actor"|"none"` (the assistant's `standup.agents`) marks a
+class, usually a record class, whose entries put their actor in agents working
+now: a session's own activity, such as a tool call, a question asked, a
+check-in or a handoff. A class put without it, and every class stored before
+the field existed, carries no `standup_agents`; one put with `"none"` keeps
+`"standup_agents": "none"`. Both mean none, and any other value is refused. Agents working now
+counts an actor with an entry in the last hour that is a counted decision or
+sits in a class marked `actor`; bookkeeping records count nowhere. Configuration through put preserves the existing rung and counters.
 Creation records `{creation: class_id}` in `last_mover` and rung history, with
 no owner override. Grades, owner overrides and recorded lineage caps can change
 a rung. Promotion reads the TARGET rung's `pass_rate_bars[target]`, never the
@@ -177,8 +192,9 @@ Creates or configures a class without an entry, using the same host-authority an
 fsync barrier as `ledger.put`. Returns the stored class. New optional class fields:
 `starting_rung` (`near_loop`, `draft`, or `ask_first`, creation only), `succeeds` (an array of
 existing class ids; a single string is also accepted), `irreversible_actions`
-(array of action descriptions), and `gates` (array of `policy:<file>`,
-`reversible_default`, or `approval_rule:<id>`). Omission defaults to no predecessors,
+(array of action descriptions), `gates` (array of `policy:<file>`,
+`reversible_default`, or `approval_rule:<id>`), and `no_rungs` (boolean; `true` means
+grades on the class's own entries never move its rung). Omission defaults to no predecessors,
 no irreversible actions and no gates. An irreversible class without a gate is
 refused. Gates are declared policy references; this method does not load policies.
 Existing lineage is immutable, preventing cycles and removal of restrictions.

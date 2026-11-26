@@ -60,7 +60,7 @@ Add two new `ProtocolHandler` impls in `car-rs/crates/car-inference/src/`:
 
 | Handler | Targets | Bridge |
 |---------|---------|--------|
-| `AppleFoundationModelsHandler` | macOS 15+, iOS 26+ | Swift bridge via UniFFI; calls FoundationModels framework |
+| `AppleFoundationModelsHandler` | macOS 26+, iOS 26+ | Swift bridge via UniFFI; calls FoundationModels framework |
 | `AICoreHandler` | Android 14+ on supported devices | Kotlin/JNI bridge; calls AICore APIs |
 
 Both register with the model router. The router already prefers context-window headroom; teaching it to also prefer **"local, free, no network"** for cheap classification/embedding steps and **"cloud, expensive, capable"** for actual reasoning is a scoring-function change, not architecture.

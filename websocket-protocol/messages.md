@@ -38,9 +38,23 @@
     checks. A bare `is_from_me = 1` row is never evidence of daemon authorship:
     the owner's iPhone creates those rows too. Its received twin stays unmarked
     and can answer the floor or resolve `A0 approve`.
+  - A script send declared through `run_applescript`'s `imessage_send`
+    ([automation](automation.md#automationrun_applescript)) is the other kind
+    of daemon-recorded send. Its declaration holds `id`, `db`, `to`, `tagged`
+    (the body plus a 64-character tag of U+200B/U+200C), `after_rowid` and
+    `declared_at_ns`. After each read's query, the earliest received row above
+    `after_rowid` whose decoded text equals `tagged` exactly is saved as a
+    positive judgment, and the declaration closes. No time window or chat check
+    applies: the tag is the identity. A copy of the tagged text pasted back
+    before the echo arrives is marked instead; a later copy is not. A
+    declaration is never compacted. It closes unmatched on the first read at
+    least 24 hours after it was declared, after recognition has looked at every
+    newer row. At most 500 may be open. `declared.matched`, `declared.unmatched`
+    and `declared.open` in the log count them.
   - Each send record matches at most one received row, persisted by ROWID.
     A persisted ROWID cursor per database advances only over new rows, in
-    chats with open reservations. No SQLite query holds the send-log lock.
+    chats with open reservations (a chat counts when an open entry's recipient
+    is one of its participants). No SQLite query holds the send-log lock.
     Restarts, history, limits and metadata-only reads retain positive marks. Intervening owner
     messages do not erase daemon send records. Text is compared before output
     truncation, without case folding or whitespace normalization.

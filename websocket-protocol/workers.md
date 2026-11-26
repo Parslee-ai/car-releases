@@ -43,7 +43,10 @@ sessions, read with `events.query`, each start once per session. A session's
 first read of a worker's starts gives it the newest 256, and, when there are
 older ones, one `worker_starts_omitted` event (`data.handle`, `data.omitted`,
 how many were not replayed, and `data.path`, the file that holds them); after
-that it is given each new start. A start whose row could not be written still
+that it is given each new start. On Linux each row also carries `wall`, the
+wall that start was given (`{kernel_abi, enforced_abi, signal_scope,
+abstract_socket_scope, pathname_socket_right, gaps}`, as in the `agents.list`
+row's `wall` field, car#3277); a start with no Linux wall has none. A start whose row could not be written still
 starts, is logged, and still reaches those event logs, with `data.record_error`
 saying why it was not recorded. Such an event has no `data.seq`: it was never
 numbered, because it is delivered from the daemon's memory, not from the file
@@ -282,7 +285,8 @@ one the worker bundle declares in `secrets`.
 from anyone else's in five ways (I1, I5):
 
 - **Fields.** Only `prompt`, `messages`, `model`, `params`, `tools`, `context`,
-  `images`, `response_format`, `intent`, `client_ref` and `cache_control` are
+  `images`, `response_format`, `intent`, `client_ref`, `cache_control` and
+  `attempt_id` (it names the worker's own ledger rows, car#4797) are
   accepted, and in `params` only `temperature`, `max_tokens`, `stop`,
   `tool_choice`, `thinking` and `cache_ttl`. Any other field, `model_id`,
   `context_query` and `memory_intervention` included, is refused with `-32003`,
@@ -371,7 +375,7 @@ stable `data.reason`:
   - `spent_usd` is each call's cost, rounded up to the next micro-dollar ($0.000001), and a day's figure is the exact sum of its calls. A call's cost is the provider's own dollar figure when the response carried one (OpenRouter's `usage.cost`); otherwise its usage times the catalog price of the model that served it, at the prompt-size tier its whole prompt falls in; otherwise $0 for a local or subscription model. A provider figure that is negative, not finite, above 100 times the call's list price (but never a ceiling below $1), or above $1,000 for a call with no list price is not taken, and the call is priced by the next of these. A call none of these can price adds to `calls` and `unpriced_calls` and nothing to `spent_usd`.
   - A call to OpenRouter that ended without OpenRouter's figure (a stream cut off before its final usage chunk) is looked up by its generation id for up to 10 minutes, and the figure found raises the call's cost on the day it was first counted. A later figure never lowers what was counted, and a lookup that finds nothing leaves the call as first counted.
   - The totals are kept in files, `workers/<handle>/spend.json` and each label's `labels/<orchestrator>/label-<key>/spend.json`, written by CAR's one spend meter from the worker's own call ledger, `workers/<handle>/calls.jsonl`. They survive a daemon restart, and a crash mid-call never leaves the worker's and its labels' totals disagreeing. A label deleted and used again starts a new total.
-  - Nothing is capped yet: spend is reported, not enforced.
+  - An orchestrator's `[workers.spend]` caps are enforced on these calls, its `caps` on all its workers together and its `per_label` caps on each label (`spend.md`, "Caps"); this method only reports.
 - **Who may call it**: an orchestrator's own agent session, for its own labels and its own workers (another worker's handle, existing or not, is `-32003`, `not_your_worker`, as is naming another orchestrator); and the host, for any. A label is read from the caller's own label folder, so another orchestrator's label of the same value is a different total. A worker may not call it.
 
 {% endraw %}

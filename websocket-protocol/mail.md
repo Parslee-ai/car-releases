@@ -38,7 +38,11 @@
 - **Note**: an unreadable INBOX is never reported as a `total: 0` summary.
   The two surfaces differ here: `mail.inbox` reports an inbox whose counts it
   cannot read as unresolved (counts unknown), while `mail.mailboxes` reports
-  a count it cannot read as `0`.
+  a count it cannot read as `0`. On the Microsoft Graph backend (Linux and
+  Windows), `mail.mailboxes` stays `available: true` and its `reason` names
+  each folder path whose `unreadItemCount` or `totalItemCount` was missing or
+  not a number (`Graph returned no unread or total count for: <paths>; those
+  rows show 0`); a folder Graph counted as `0` is not named.
   A selected account whose INBOX cannot be found or read has no entry in
   `summaries` and is listed in `unresolved` with the reason (`no mailbox named
   INBOX in the selected account(s) — list them with mail.mailboxes`, the
@@ -49,7 +53,11 @@
   When no selected account reads, the call returns `available: false` with a
   `reason` naming each account, and `unresolved` lists them. An `account_ids`
   filter matching no account returns `available: false` naming the unmatched
-  ids.
+  ids. The Microsoft Graph backend (Linux and Windows) follows the same rule:
+  an inbox Graph returns without a numeric `unreadItemCount` or
+  `totalItemCount` is `available: false` with `unresolved: [{ account_id:
+  "msgraph", reason }]`, the reason naming the missing count, not a summary of
+  `0`.
 
 #### `mail.mailboxes`
 - **Params**: `{ account_ids?: string[] }` — omit to enumerate all accounts
@@ -72,6 +80,10 @@
     A folder tree deeper or wider than that is truncated.
   - An `account_ids` filter that matches no account returns `available: false`
     with a reason naming the unmatched ids — not an empty list.
+  - On the Microsoft Graph backend, a folder whose `unreadItemCount` or
+    `totalItemCount` is missing or not a number is still listed, with `0`, and
+    the reply stays `available: true` with a `reason` naming each such folder
+    path. A folder Graph counted as `0` is not named.
   - On macOS, `total` (and `unread` for nested mailboxes) is read from Mail's
     read-only local **Envelope Index** rather than live Apple Events, so both
     can lag Mail's live state by a sync cycle. When that index is unreadable
@@ -246,11 +258,12 @@
 
 #### `mail.send`
 - **Params**: `{ account_id: string, to: string[], cc?: string[], bcc?: string[], subject: string, body: string, draft_only?: bool }`. `draft_only: true` saves a draft in `account_id`'s Drafts instead of sending.
-- **Returns**: `{ available: bool, backend: string, reason?: string, sent: bool, message_id: string | null }`. `sent: false` with a `reason` (e.g. `sender_override_failed: …` or `drafts_unavailable: …`, each saying what to change in Mail's account settings) when Mail will not use `account_id`'s address, or (for a draft) reports that account turned off or lists Drafts mailboxes for other accounts but none for it (when Mail cannot say, the draft goes ahead); nothing is sent or drafted from another account. On Mail.app, Mail can leave an autosaved copy of the message in Drafts: usually empty, or with the message if Mail moved the sender while it was being filled in (beside a saved draft, or after a refusal); CAR doesn't remove it. The outgoing message Mail creates for the call stays in Mail's (invisible) outgoing list until Mail quits.
+- **Returns**: `{ available: bool, backend: string, reason?: string, sent: bool, message_id: string | null, delivery?: "confirmed" | "unconfirmed" | "unverified" }`. `sent: false` with a `reason` (e.g. `sender_override_failed: …` or `drafts_unavailable: …`, each saying what to change in Mail's account settings) when Mail will not use `account_id`'s address, or (for a draft) reports that account turned off or lists Drafts mailboxes for other accounts but none for it (when Mail cannot say, the draft goes ahead); nothing is sent or drafted from another account. On Mail.app, Mail can leave an autosaved copy of the message in Drafts: usually empty, or with the message if Mail moved the sender while it was being filled in (beside a saved draft, or after a refusal); CAR doesn't remove it. The outgoing message Mail creates for the call stays in Mail's (invisible) outgoing list until Mail quits. On Mail.app a send Mail accepts is `sent: true` only once a new message with its subject and To addresses shows up in the Outbox (read through Mail) or in the sending account's Sent (read through Mail's Envelope Index, which needs Full Disk Access); CAR looks every 5 s after each look ends, for 120 s. A send that shows up is `delivery: "confirmed"`. If the last look read Sent and the message was not there, `sent: false`, `delivery: "unconfirmed"` and a `send_unconfirmed:` reason: it may still go out, so check Outbox and Sent before sending it again. If Sent could not be read, `sent: false`, `delivery: "unverified"` and a `send_unverified:` reason: CAR could not check, so check Sent before sending it again; a send that may never leave is never `sent: true`. Every look after the send reads only the account Mail sent from; when Mail does not say which, the send is `unverified`. When the Envelope Index cannot be read before the send, only the Outbox is looked at, for 15 s, and a send not seen there is `unverified`. `delivery` is absent for a draft, a refused send and other backends. The call can take up to about 3 minutes after approval; the daemon client waits 300 s for it, and the daemon allows it at least 210 s.
 - **Access**: this is a mutation, not a read. It requires the daemon auth token
   when daemon authentication is enabled, **is** in the default per-call
   approval-transport gate, and on macOS uses the daemon process's Mail
-  Automation permission. It does not require Full Disk Access.
+  Automation permission. It does not require Full Disk Access to send; without
+  it a send that does not show up in the Outbox is `send_unverified`.
 
 
 {% endraw %}

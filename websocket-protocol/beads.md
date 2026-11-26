@@ -70,6 +70,7 @@ outside this surface. A multi-file subtree handoff is not crash-atomic; an I/O f
 - **Params**: `{}`
 - **Role**: host; host authority required.
 - **Returns**: `{entries: {<id>: entry}, skipped?: [{file, reason}]}`. Reports skipped files with parse/validation errors. Replaces the derived index entirely from enrolled files, removing deleted entries.
+- **Offline**: `car beads rebuild --offline [--journal-dir <dir>]` runs the same rebuild in the CLI with no daemon, against `CAR_HOME` (a scratch home, say) and its `journals/sync` store, and prints the same result. It holds the daemon's `run/daemon.lock` while it runs, and it refuses when a daemon holds that lock or answers on the home's socket. It also refuses when a sync passphrase is set, and, whatever passphrase the CLI can read, when the store is one a daemon with a passphrase keeps synced, encrypted or waiting for a sign-in: a `local-before-sign-in` journal (if this machine no longer uses a passphrase, move it aside), no `device-id` yet, a `parslee-sync-enabled` marker, encrypted history, or a retired device id's oplog folder the daemon has not carried over yet. Those only the daemon opens. An unenrolled home is refused, and every refusal writes nothing to the journals.
 
 #### `beads.list`
 - **Params**: `{ project?, owner?, roots_only? }`

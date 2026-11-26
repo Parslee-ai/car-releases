@@ -100,7 +100,8 @@ allowlist, and pairing code; both channels default disabled (opt-in). An unknown
 `message_kind: "notice"` asks nothing. It sends through the same serialized
 owner-floor transport while leaving the current question and topic count
 unchanged. Standup and back-online messages may use this kind. It creates no
-answer attribution and does not take the question slot.
+answer attribution and does not take the question slot. Once the transport confirms the
+send, `conversation.list` lists it under `notices` with its kind and send time.
 
 At installation the host binds the named assistant using
 `conversation.assistant.bind {agent_id}`. That durable binding checks the

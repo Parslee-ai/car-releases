@@ -15,7 +15,10 @@ unauthenticated and static-auth-header servers (`connectors.add`), OAuth 2.1
 servers (`connectors.authenticate` / `connectors.complete_authentication`),
 and local stdio servers (`connectors.add_stdio`). A remote (HTTP) connector
 reply longer than 8 MiB is an error naming the cap, rather than being read
-without end. A remote connector follows a redirect only on the origin (scheme,
+without end. A server that takes over 10 s to accept the connection, or does
+not finish `initialize` or `tools/list` within 120 s, is an error too. A tool
+call ends at the action's own `timeout_ms` when it has one, else after 600 s
+with nothing sent, so a tool that works silently for minutes still answers. A remote connector follows a redirect only on the origin (scheme,
 host and port) of the URL it was added with; a 307 or 308 that only upgrades it
 from `http` to `https` on the same host is re-sent there with the same auth
 headers, and any other cross-origin redirect is an error naming that origin, so

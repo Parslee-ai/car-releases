@@ -290,6 +290,18 @@ GET http://127.0.0.1:9101/.well-known/agent-card.json
 
 Pre-1.0 peers can also hit `/.well-known/agent.json` — same content.
 
+The default listener follows that address. When the address leaves the host
+(a DHCP renewal, a Wi-Fi or VPN change), the listener moves to the new primary
+address within about 60 s and the mDNS record, invites and the synced endpoint
+name the new URL. After such a move it follows the next primary pick once more,
+so a listener that fell back to a tunnel during a Wi-Fi drop returns to Wi-Fi;
+that one follow can also land on a VM or container bridge that comes up and
+outranks the LAN. Otherwise a listener on an address the host still has never
+moves. A
+daemon that boots with no LAN address starts its listener once one appears; one
+whose default bind failed at boot does not retry until restarted. An explicit
+`--a2a-bind` never moves.
+
 **One server = one Agent Card.** The dispatcher is single-card by design;
 running multiple distinct agents on the same host means binding multiple
 A2A listeners (each on its own port) backed by distinct daemons, each with

@@ -508,8 +508,13 @@ no catalog row has is treated as unavailable, as before: the run stops, or
 Parslee stands in where that rule applies. Generation outside the runner refuses
 it as "model not found". The supported effort values are `low`,
 `medium`, and `high`, mapped to each serving provider's coarse reasoning
-control. On Claude and on OpenAI reasoning models, where reasoning tokens count
-against the output limit, the runner adds the reasoning budget on top of its
+control: on Google and Vertex, Gemini's thinking level (Gemini 3 and later) or
+thinking budget (Gemini 2.5); on Bedrock, Claude's thinking parameter. A Gemini
+model before 2.5, a Bedrock model that is not Claude, or Claude on Bedrock
+before 3.7 (which has no extended thinking) takes no reasoning control, and the
+saved effort has no effect there. On Claude (first-party, and on Bedrock from
+3.7), on OpenAI reasoning models and on those Gemini models, where
+reasoning tokens count against the output limit, the runner adds the reasoning budget on top of its
 per-turn answer allowance, capped at the model's catalog output limit, so a
 saved effort does not crowd out the answer. On every other model the request
 keeps the plain answer allowance, so a pin to a smaller-output model such as
@@ -681,7 +686,7 @@ This is the zero-terminal way to run agents, and it solves the daemon-first requ
 6. Sensitive actions pause in the **Approvals** tab for **Approve / Deny**.
 
 
-**Requirements:** Apple Silicon, macOS 26+. Intel Macs (`x86_64-apple-darwin`) are **not supported at all** — macOS is Apple Silicon only.
+**Requirements:** Apple Silicon, macOS 15+. Intel Macs (`x86_64-apple-darwin`) are **not supported at all** — macOS is Apple Silicon only.
 
 > Gotcha: if sign-in says *"Your CAR background service is out of date,"* the installer didn't finish replacing an older copy — reinstall the `.pkg` from the latest release.
 
@@ -863,7 +868,7 @@ car auth login                       # browser OAuth2 PKCE loopback login
 car auth login --provider microsoft  # provider hint (microsoft|google)
 car auth login --api-base https://api.parslee.ai --client-id parslee-car --callback-port 53682
 car auth status                      # is there a usable Parslee token?
-car auth logout                      # remove stored tokens from the keychain
+car auth logout                      # revoke the refresh tokens at Parslee, then remove them
 ```
 
 | Flag | Default |
@@ -914,7 +919,7 @@ clicks coalesce with the in-flight generation. Credential-dependent inference
 and other actions that genuinely need authority may also resolve credentials
 at request time.
 
-For release proof, an authorized, capability-negotiated protocol-v3 host may read
+For release proof, an authorized, capability-negotiated protocol-v4 host may read
 `diagnostics.secret_store_activity`. It returns only process-lifetime aggregate
 get, status, availability, write, and delete attempt counts. It never returns a
 service, key, filesystem location, secret value, or account identity, and it
@@ -1109,7 +1114,7 @@ On the next runtime boot, `identity.md` becomes the agent's **Identity** context
 - **`verify_proposal` before `execute_proposal`**, every time. `verify` returns `{valid, issues}`.
 - **AgentOutput shape is strict** for multi-agent runs: `{name, answer, turns, tool_calls (INTEGER count, not an array), duration_ms, error}` — missing fields break deserialization silently.
 - **`distill_skills` / `evolve_skills` require configured inference** — without a model they hang; bootstrap with hand-coded skills + `ingest_distilled_skills`.
-- **macOS is Apple Silicon + macOS 26+ only** for the Host.app no-code path; Intel is unsupported entirely.
+- **macOS is Apple Silicon + macOS 15+ only** for the Host.app no-code path; Intel is unsupported entirely.
 - **CAR is pre-1.0** — breaking changes are possible between minor versions; pin exact versions until the API stabilizes.
 
 ---
@@ -2550,7 +2555,11 @@ the tool callback back to your process over the same connection.
 - **`tool_choice` controls forward progress.** `"auto"` lets the model decide
   when to stop calling tools (your natural `Done`/`Success` signal). `"required"`
   forces a tool call every turn — only use it when you have an explicit `finish`
-  sentinel tool, or the loop can't terminate via "no more tool calls."
+  sentinel tool, or the loop can't terminate via "no more tool calls." Claude
+  Opus 5.5, Sonnet 5.5 and Fable / Mythos 5.1+ reject a forced choice, so CAR
+  sends `"required"` to them as `"auto"`: on those models a reply with no tool
+  call can still arrive, so treat it as a possible end rather than waiting for
+  `finish`.
 - **Message ordering is load-bearing.** Append in strict order:
   `assistant` (with its `tool_calls`) → one `tool_result` per call (matched by
   `tool_use_id` / `action_id`) → then the next `inferTracked`. Skipping the
@@ -3772,7 +3781,7 @@ let resp = handler.parse_response(&body_str)?; // ApiResponse { text, tool_calls
 
 `ApiRequest` (`protocol.rs:15`) carries: model, messages, system, temperature, max_tokens, tools, tool_choice, parallel_tool_calls, stream, budget_tokens, cache_control, response_format. `ApiResponse` (`protocol.rs:36`) carries: text, tool_calls, usage.
 
-> **Gotcha — Anthropic JSON output.** Anthropic has no provider-enforced `response_format` field under CAR's pinned API version. Both `json_object` and `json_schema` are **rejected with `UnsupportedMode`** rather than silently weakened. For structured output on Claude, use `tools` + `tool_choice="required"` coercion.
+> **Gotcha — Anthropic JSON output.** Anthropic has no provider-enforced `response_format` field under CAR's pinned API version. Both `json_object` and `json_schema` are **rejected with `UnsupportedMode`** rather than silently weakened. For structured output on Claude, use `tools` + `tool_choice="required"` coercion. Claude Opus 5.5, Sonnet 5.5 and Fable / Mythos 5.1+ reject a forced choice, so CAR sends `auto` there: name the tool, set `strict: true` on it if its schema compiles under Anthropic's strict mode (CAR carries a caller's `strict` through and adds none), and check that the reply is a call to it.
 >
 > **Gotcha — local multimodal.** Video/audio `ContentBlock`s on local backends return `InferenceError::UnsupportedMode` (only `ImageBase64`/`ImageUrl` are wired on native Qwen2.5-VL). Remote multimodal providers accept them via the protocol handlers.
 >
@@ -4702,12 +4711,12 @@ Auth is **ON by default since 2026-05**. When a token is installed, the **first 
 // Server responds:
 {"jsonrpc":"2.0","id":0,"result":{"ok": true, "auth_enabled": true}}
 // Await auth success, then negotiate this connection's protocol (a range: oldest..=newest):
-{"jsonrpc":"2.0","id":1,"method":"server.handshake","params":{"protocol_version":3,"protocol_version_min":3,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}}
+{"jsonrpc":"2.0","id":1,"method":"server.handshake","params":{"protocol_version":4,"protocol_version_min":4,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}}
 // Subsequent calls work normally:
 {"jsonrpc":"2.0","id":2,"method":"infer","params":{...}}
 ```
 
-Protocol v3 is fail-closed and negotiates immutable model identity. `host.subscribe` and every
+Protocol v4 is fail-closed and negotiates immutable model identity. `host.subscribe` and every
 `auth.*` method return `-32005` until this WebSocket has completed
 `server.handshake`; the daemon settles on the highest version both ranges
 contain, and a missing or malformed version, or a range sharing no version with
@@ -4843,7 +4852,7 @@ The dispatcher exposes 73+ documented methods. The author-relevant core:
 
 **Inference & models** — `infer GenerateRequest{prompt, messages?, model?, params?:{max_tokens?, temperature?, …}, context?, tools?, context_query?, response_format?, intent?}` → `{text, tool_calls, usage:{input_tokens,output_tokens}, model_used, trace_id, latency_ms, time_to_first_token_ms, local_last_resort?}`. `prompt` is required even with `messages` (send `""` when `messages` carries the conversation); without it the call fails with `invalid params`. The fallback marker is present and true only when an on-device model appended behind a remote-only chain actually served. Set `context_query` to auto-inject memory context. `infer_stream` (same request) pushes `inference.stream.event {request_id, event:{type:text|tool_start|tool_delta|usage|stop_reason|provider_output_item|error}}`; `error` is terminal. It returns the accumulated result in the **final JSON-RPC response**; there is no `done` notification. Also `embed`, `classify`, `rerank`, `tokenize`/`detokenize` (**local Qwen3 GGUF/MLX only** — remote returns `UnsupportedMode`), `transcribe`, `synthesize`, `image.generate`, `video.generate`, `speech.prepare`. Model management: `models.list`, `models.list_unified`, `models.search`, `models.recommend`, `models.setup_plan`, `models.resource_policy.get`/`set`, `models.preflight`, `models.storage_roots`, `models.adopt`, `models.remove`, `models.upgrades`/`detect_upgrades`/`check_upgrade_nudge`/`dismiss_upgrade`, `models.update_prefs_get`/`set`, `models.register`/`unregister`, `models.pull`/`install`, `models.route`, `models.stats`, `admission.status`.
 
-> **Gotchas:** `infer_stream` honors `response_format` on remote providers; an unsupported combination — including either response-format variant on Anthropic — returns an explicit `UnsupportedMode` error instead of being silently weakened. For structured output on Claude, use tools + `tool_choice=required`. `models.register`/`unregister` are phase-1: the daemon's live `UnifiedRegistry` is **not** updated in-process — changes are visible to `models.list*`/`infer` only on the **next daemon boot**, so register models before issuing `infer` or restart.
+> **Gotchas:** `infer_stream` honors `response_format` on remote providers; an unsupported combination — including either response-format variant on Anthropic — returns an explicit `UnsupportedMode` error instead of being silently weakened. For structured output on Claude, use tools + `tool_choice=required`; on Claude Opus 5.5, Sonnet 5.5 and Fable / Mythos 5.1+, which reject a forced choice, CAR sends `auto` instead, so name the tool, set `strict: true` on it yourself if its schema compiles under Anthropic's strict mode (CAR carries it through and adds none) and check for the call. `models.register`/`unregister` take effect in the running daemon at once; no restart is needed.
 
 **Multi-agent & workflows** — `multi.swarm {mode:parallel|sequential|hybrid, agents:AgentSpec[], task, synthesizer?}`, `multi.pipeline {stages, task}`, `multi.supervisor {workers, supervisor, task, max_rounds?=3}`, `multi.map_reduce {mapper, reducer, items, task}`, `multi.vote {agents, task, synthesizer?}`. `AgentSpec = {name, role?, model?, system_prompt?}`. `workflow.run {workflow}` (uses `multi.run_agent` callbacks); `workflow.verify {workflow}` → `{valid, issues}`.
 
@@ -4902,7 +4911,7 @@ async def main():
     async with websockets.connect("ws://127.0.0.1:9100") as ws:
         # If auth is on, send session.auth FIRST: await call(ws, "session.auth", {"token": TOKEN}, 0)
         await call(ws, "server.handshake", {
-            "protocol_version": 3,
+            "protocol_version": 4,
             "required_capabilities": ["infer.model-identity.v1", "models.catalog-identity.v1"],
             "optional_capabilities": [],
         }, 1)
@@ -4959,7 +4968,7 @@ car auth login parslee                         # Parslee OAuth2 PKCE sign-in (sh
 
 - **Auth first, always.** When auth is on (the default), `session.auth` must be frame #1 or you get `-32001` and a closed socket. Local dev: `--no-auth`, or read the token from the well-known path.
 - **Negotiate before host/auth calls.** Await auth success, then exact
-  `server.handshake {"protocol_version":3,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}` success before `host.subscribe` or
+  `server.handshake {"protocol_version":4,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}` success before `host.subscribe` or
   any `auth.*` method. Reconnects repeat both barriers.
 - **Sessions are ephemeral.** Memgine, state, tools, and policies die on disconnect. Persist explicitly (`memory.persist`) or bind an `agent_id` for a durable per-agent memgine. `connectionEpoch()` / `connection_epoch()` changes on the silent reconnect that follows, and the packaged loops use it to register their tools and policies again.
 - **`tools.register` takes a bare array;** `session.init` wraps it in `{tools:[...]}`.
@@ -5006,27 +5015,28 @@ The split is one of *capability ownership*, not protocol taste: the daemon holds
 
 ### CAR as an MCP Server
 
-#### The exposed surface: 16 tools, 2 resource families, 1 prompt
+#### The exposed surface: 17 tools, 2 resource families, 1 prompt
 
-`tools/list` returns the **16 built-in tools** below, defined in `car-mcp/src/schemas.rs` and cached via `OnceLock`, **plus whatever the embedding transport registered** through `Server::register_tool`. The advertised set is per-`Server`, not per-process: the daemon holds a live `Runtime` and can therefore carry tools the stdio binary has no way to run and must not advertise, so the two transports legitimately differ. The stdio binary advertises exactly these 16; the daemon adds its assistant, daemon-read, and peer tools, including `peer_list`, `peer_message`, and `peer_inbox`. The wire names are **underscored** (`memory_add_fact`, not `memory.add_fact`):
+`tools/list` returns the **17 built-in tools** below, defined in `car-mcp/src/schemas.rs` and cached via `OnceLock`, **plus whatever the embedding transport registered** through `Server::register_tool`. The advertised set is per-`Server`, not per-process: the daemon holds a live `Runtime` and can therefore carry tools the stdio binary has no way to run and must not advertise, so the two transports legitimately differ. The stdio binary advertises exactly these 17; the daemon adds its assistant, daemon-read, and peer tools, including `peer_list`, `peer_message`, and `peer_inbox`. The wire names are **underscored** (`memory_add_fact`, not `memory.add_fact`):
 
 | Tool | Hints | Required args | Optional args | Returns |
 |------|-------|---------------|---------------|---------|
 | `memory_add_fact` | write · additive | `subject`, `body` | `kind` (enum `["pattern","constraint"]`, default `pattern`) | text: `fact remembered id=assistant-note-… total=… durable=…` |
-| `memory_query` | read-only · idempotent | `query` | `k` (1–50, default 5) | top-k `[{subject, body, activation}]` via spreading activation; a direct match's `activation` is how well it matches the query (0–1, the IDF-weighted share of query terms it contains), and a node that matches no query term, reached through graph edges, scores lower than the match it was reached from |
+| `memory_query` | read-only · idempotent | `query` | `k` (1–50, default 5), `tenant_id` | top-k `[{subject, body, activation, path}]` via spreading activation; a direct match's `activation` is how well it matches the query (0–1, the IDF-weighted share of query terms it contains, or, when the memory has an embedder, the higher of that and its cosine similarity to the query; `path` is `"semantic"` or `"words"`); `tenant_id` returns only that tenant's facts, and a node that matches no query term, reached through graph edges, scores lower than the match it was reached from |
 | `memory_update_status` | write · destructive · idempotent | `body` | `tenant_id` | proactive private status JSON |
 | `memory_save_knowledge` | write · additive | `subject`, `body` | `id`, `tags[]`, `confidence`, `tenant_id`, `is_constraint` | proactive saved-entry JSON |
 | `memory_save_procedural` | write · additive | `subject`, `body` | `id`, `tags[]`, `confidence`, `tenant_id`, `is_constraint` | proactive saved-entry JSON |
 | `memory_delete` | write · destructive · idempotent | `id` | — | proactive delete report JSON |
 | `memory_intervene` | write · additive | — | `query`, `recent[]`, `trigger`, `force`, `max_candidates`, `tenant_id`, `session_id`, `exclude_fact_ids[]` | proactive inject/silent decision JSON |
+| `memory_peek` | read-only · idempotent | — | same as `memory_intervene` | the decision `memory_intervene` would make, with nothing recorded |
 | `memory_evaluate` | read-only · idempotent | `cases[]` | — | proactive ablation report JSON |
 | `verify` | read-only · idempotent | `proposal` (a `car_ir::ActionProposal` JSON object) | `max_actions` (1–1000, default 30) | `{valid, issues, simulated_state}` |
 | `simulate` | read-only · idempotent | `proposal` | `initial_state` (object, default empty) | `{final_state}` — the state the *declared* `expected_effects` imply; a blocked action contributes nothing and takes its dependents with it |
 | `equivalent` | read-only · idempotent | `proposal_a`, `proposal_b` | `test_states[]` (1–256; omitted or `[]` → two trivial defaults) | `{equivalent, tier:"sampled", states_tested, used_default_states}` — a `false` is a witness; a `true` covers only the sampled states |
 | `optimize` | read-only · idempotent | `proposal` | — | `{proposal, pruned[]}` — the proposal with phantom `state_dependencies` removed, plus `[{action_id, removed[]}]` naming what went |
 | `skill_ingest` | write · destructive | `name`, `code` | `platform`, `persona`, `url_pattern`, `description`, `task_keywords[]`, `supersedes` | ingest confirmation |
-| `skill_list` | read-only · idempotent | — | `domain` (filters to `Global` or `Domain(domain)`) | enumerated skills |
-| `skill_find` | read-only · idempotent | `task` | `persona`, `url`, `k` (1–20, default 3) | `[{skill, score}]` ranked by activation |
+| `skill_list` | read-only · idempotent | — | `domain` (filters to `Global` or `Domain(domain)`), `tenant_id` (only that tenant's skills) | enumerated skills |
+| `skill_find` | read-only · idempotent | `task` | `persona`, `url`, `k` (1–20, default 3), `tenant_id` | `[{skill, score}]` ranked by activation |
 | `policy_check` | read-only · idempotent | `tool` | `params` | `{decision, basis, inspected_as, findings[]}` — allow/deny for a tool call the caller has **not yet run**. `inspected_as` is the CAR tool the egress guardrail inspected the call as (`Bash` → `shell`, `WebFetch` → `webfetch`); `null` for an unmapped tool with neither a `command` nor a `url`; `read_file`/`write_file`/`edit_file` for Claude Code's `Read`/`Write`/`Edit` (mapped, not egress-inspected); absent on a `policy_load_failed` deny |
 
 The daemon endpoint adds three more, which the stdio binary does **not** advertise:
@@ -5039,13 +5049,13 @@ The daemon endpoint adds three more, which the stdio binary does **not** adverti
 
 `assistant_start` is `destructiveHint: true` and `openWorldHint: true` because it runs an autonomous agent with a real shell and host-side web tools — a host deciding whether to prompt should assume the worse case, since what a given run touches is not knowable up front.
 
-**What the Hints column is.** Every entry carries an `annotations` object on the wire with all four MCP hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`. The column above is their shorthand: *read-only* is `readOnlyHint: true`, *destructive* is `destructiveHint: true` (an existing entry is overwritten or retired, not merely that the call writes), *additive* is a write that only appends, and *idempotent* marks `idempotentHint: true`. No built-in CAR tool sets `openWorldHint` — all sixteen touch only the local memory graph, the local policy files, or a pure in-process check.
+**What the Hints column is.** Every entry carries an `annotations` object on the wire with all four MCP hints — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`. The column above is their shorthand: *read-only* is `readOnlyHint: true`, *destructive* is `destructiveHint: true` (an existing entry is overwritten or retired, not merely that the call writes), *additive* is a write that only appends, and *idempotent* marks `idempotentHint: true`. No built-in CAR tool sets `openWorldHint` — all seventeen touch only the local memory graph, the local policy files, or a pure in-process check.
 
 Hosts use these for approval UX: a host can auto-approve `memory_query` while still prompting for `memory_delete`, instead of prompting equally hard for both. **They are hints, not guarantees, and not a security boundary.** The MCP spec requires a client to treat annotations from an untrusted server that way, and CAR follows the same rule internally — nothing in CAR's governance keys off them. The gate is still the policy layer (`policy_check` / `.car/policies/`).
 
 Two classifications are the opposite of what the name suggests, and are worth reading before you wire up auto-approval:
 
-- **`memory_intervene` is a write.** It reads like a query — "select at most one reminder" — but selecting one bumps the chosen fact's `proactive_injections` counter, so it is neither read-only nor repeatable without effect.
+- **`memory_intervene` is a write.** It reads like a query — "select at most one reminder" — but selecting one bumps the chosen fact's `proactive_injections` counter, so it is neither read-only nor repeatable without effect. `memory_peek` takes the same arguments and returns the same decision without recording it, so a read-only caller can ask.
 - **`skill_ingest` is destructive.** Passing `supersedes` flips the named older skill's node to `SkillDeprecated`, which stops it matching `skill_find`. Ingesting without `supersedes` is purely additive, but the hint has to describe the tool's worst case.
 
 **The four verification tools, and what each one does not establish.** `verify`, `simulate`, `equivalent`, and `optimize` are the same `car-verify` entry points the FFI exposes, so the vocabulary carries over: these are *checks*, never proofs, and none of them is sound. `verify` reports findings and tags each with its `tier`. `simulate` returns the state the proposal's **declared** `expected_effects` imply — an action whose preconditions or state dependencies are unsatisfied contributes nothing and its dependents drop with it, but a declared effect is *assumed* to land and `failure_behavior` is not modelled. `equivalent` **samples**: a `false` is a witness that some probed state separates the two proposals, while a `true` says only that none of the probed states did — which is why the result carries `tier: "sampled"`, `states_tested`, and `used_default_states` rather than a bare bool. `optimize` **rewrites** instead of checking, and a dependency it prunes is exactly one `verify` would have reported as unavailable, so run `verify` on the returned proposal rather than reading the rewrite as a repair.
@@ -5056,6 +5066,29 @@ Two classifications are the opposite of what the name suggests, and are worth re
 
 - `car://memory/fact/{id}` — `text/plain`
 - `car://memory/skill/{name}` — `application/json`
+
+**Tenant scoping.** `skill_list`, `resources/list`, `resources/read` and
+`completion/complete` take an optional `tenant_id` string. With one, only that
+tenant's facts and skills are listed, completed or readable; unscoped items are
+hidden too, the same strict rule memgine's scoped retrievals apply. Reading
+another tenant's URI answers with the same not-found error as an id that does
+not exist. Without one (absent, `null` or `""`), nothing is filtered. A
+non-string `tenant_id` is refused (`-32602`, or `isError` from `skill_list`)
+rather than read as unscoped, and so is one containing `:`. On the daemon's
+HTTP endpoint, an `X-Car-Tenant-Id` header binds the request to that tenant,
+as `session.auth { tenant_id }` binds a WebSocket session: a request that
+omits `tenant_id` is scoped to the header's tenant, a body `tenant_id` may only
+restate it, and a different one is refused (`-32602`, or `isError` from
+`skill_list`). `memory_update_status` is held to the same tenant, and so are
+`memory_query`, `skill_find`, the `car_context` prompt (which also takes a
+`tenant_id` argument and then assembles only that tenant's facts, constraints
+and skills) and the writes `memory_add_fact`, `memory_save_knowledge`,
+`memory_save_procedural` and `skill_ingest`, which store their node as that
+tenant's; a tenant `skill_ingest` may supersede only that tenant's skill
+(car#5086). A header
+that is not valid UTF-8 or contains `:` is refused rather than ignored. Without
+the header (and over stdio), `tenant_id` stays the caller's optional filter: it
+scopes what comes back and does not authenticate anyone (car#5037).
 
 `resources/list` is paginated: it returns at most **100 resources** per page,
 ordered by URI, plus an opaque `nextCursor` string. Pass that string back as
@@ -5081,13 +5114,13 @@ Every transport routes through one pure, transport-agnostic entry point — `car
 |--------|--------|--------|
 | `initialize` | `{protocolVersion?, capabilities?, clientInfo?}` — only `protocolVersion` is read | `protocolVersion` (negotiated), `capabilities`, `serverInfo` |
 | `ping` | — | `{}` |
-| `tools/list` | — | `{tools: […]}` — 16 built-ins on stdio, 19 on the daemon; every entry carries an `annotations` object |
+| `tools/list` | — | `{tools: […]}` — 17 built-ins on stdio, 20 on the daemon; every entry carries an `annotations` object |
 | `tools/call` | `{name, arguments}` | `{content:[{type:text,text}], isError:bool}` — `isError:true` when the tool ran and failed (see below) |
-| `resources/list` | `{cursor?}` | `{resources:[{uri,name,description,mimeType}], nextCursor?}` |
-| `resources/read` | `{uri}` | `{contents:[{uri,mimeType,text}]}` |
+| `resources/list` | `{cursor?, tenant_id?}` | `{resources:[{uri,name,description,mimeType}], nextCursor?}` |
+| `resources/read` | `{uri, tenant_id?}` | `{contents:[{uri,mimeType,text}]}` |
 | `prompts/list` | — | `{prompts:[car_context]}` |
 | `prompts/get` | `{name:"car_context", arguments:{query, mode}}` | `{description, messages:[{role:user, content:{type:text,text}}]}` |
-| `completion/complete` | `{ref:{type,…}, argument:{name, value?}}` | `{completion:{values:[…], total, hasMore}}` — `values` capped at 100 |
+| `completion/complete` | `{ref:{type,…}, argument:{name, value?}, tenant_id?}` | `{completion:{values:[…], total, hasMore}}` — `values` capped at 100 |
 
 `handle` recognizes `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, and `notifications/roots/list_changed`, and logs each by name — a cancellation logs the `requestId` and `reason` it carried. Every one of them, **and any notification method it does not recognize**, is answered with silence: JSON-RPC 2.0 forbids replying to a message with no `id`, so an unrecognized notification must not come back as `-32601` either.
 
@@ -5147,7 +5180,7 @@ async fn main() -> std::io::Result<()> {
 }
 ```
 
-Restart Claude Desktop; CAR's 16 tools appear automatically. Logs land at `~/Library/Logs/Claude/mcp-server-car.log`:
+Restart Claude Desktop; CAR's 17 tools appear automatically. Logs land at `~/Library/Logs/Claude/mcp-server-car.log`:
 
 ```bash
 tail -f ~/Library/Logs/Claude/mcp-server-car.log
@@ -5716,7 +5749,7 @@ supervisor.start_all().await;
 
 > **`~/.car/run/<id>.pid` is yours; `~/.car/run/<id>.supervisor.pid` is CAR's.** Use the plain path for your own exclusive lock if you want one — CAR reads it and will refuse to double-spawn on it, but never writes, truncates or removes it. Through 0.48 CAR wrote its own record there, and a singleton agent that read the file as its lock found a live pid that was *itself* (put there by the supervisor that had just spawned it), concluded another instance owned the lock, and exited — making it unstartable under supervision (car#931). Do not write `<id>.supervisor.pid`; treat the `.supervisor` infix as reserved.
 >
-> Because CAR will not unlink your file, **remove it yourself on clean shutdown**. One left behind by a killed agent stays forever, and if the OS later recycles that pid to an unrelated process the guard reads it as a live instance and parks your agent in `Backoff` until someone deletes the file by hand.
+> Because CAR will not unlink your file, **remove it yourself on clean shutdown**. One left behind by a killed agent stays forever. If the OS later recycles that pid to an unrelated process, CAR on macOS ignores the file when it was last written before that process started (its mtime against the kernel's start time, with 2 s of slack; car#5160), so write the file after your process starts, never copy or restore an older one. On Linux, and wherever the start time cannot be read, the guard stays conservative: Linux derives a process's wall-clock start from a boot time that moves whenever the clock is stepped, so it cannot tell a recycled pid from a real copy after a clock step. There CAR reads the pid as a live instance and parks your agent in `Backoff` until someone deletes the file.
 
 - **Child env injection (#172).** `set_default_child_env` replaces a table exported into every child **before** per-spec `spec.env` is merged on top (per-spec wins). At boot `car-server` injects `CAR_DAEMON_URL` (`ws://host:port`, with an IPv6 host bracketed: `ws://[::1]:port`) and `CAR_AUTH_TOKEN` (per-launch token when auth is enabled), so each language SDK reads two env vars and connects — no platform path lookup. The daemon-wide token is withheld, applied last so neither `default_env` nor `spec.env` can restore it, from every agent on Linux and, on any platform, from an agent whose spec has `method_allowlist` or `work_context` (`CAR_AUTH_TOKEN_FILE` and `CAR_HOST_TOKEN` too); `CAR_AGENT_ID` and `CAR_AGENT_TOKEN` stay. An unscoped agent on the Mac still receives it:
 
@@ -5844,7 +5877,7 @@ car-host approve <approval-id>      # / car-host deny <approval-id>
 car-host --start-server ...         # start car-server when the WS endpoint is unreachable
 ```
 
-Both await transport auth (when enabled), protocol-v3 range negotiation with
+Both await transport auth (when enabled), protocol-v4 range negotiation with
 the mandatory model-catalog and inference-identity capabilities, then
 `host.subscribe`/other host calls on each new WebSocket connection.
 
@@ -6833,7 +6866,7 @@ Five macOS-native crates expose Apple frameworks as on-device capabilities:
 |---|---|---|
 | `car-vision` | Vision.framework | OCR, face rectangles, barcodes/QR, whole-image classification |
 | `car-nlp` | NaturalLanguage | language ID, word tokenization, named-entity recognition |
-| `car-translate` | Translation.framework | on-device text translation (macOS 15.4+) |
+| `car-translate` | Translation.framework | on-device text translation (macOS 26+) |
 | `car-soundanalysis` | SoundAnalysis | audio-event classification (~300-class taxonomy) |
 | `car-automation` | osascript / shortcuts(1) | AppleScript/JXA + Shortcuts.app (the practical App Intents bridge) |
 
@@ -6903,7 +6936,7 @@ if car_translate::is_available() {
 }
 ```
 
-Requires macOS 15.4+, ~17 English-anchored pairs, and a **pre-installed language pack** (System Settings → Language & Region → Translation Languages; first call for an uninstalled pair returns `LanguagePackMissing`/`FrameworkError`).
+Requires macOS 26+, ~17 English-anchored pairs, and a **pre-installed language pack** (System Settings → Language & Region → Translation Languages; first call for an uninstalled pair returns `LanguagePackMissing`/`FrameworkError`).
 
 #### SoundAnalysis (Rust-library-only)
 
@@ -6961,7 +6994,7 @@ Only **Vision OCR** and **car-automation** cross the boundary:
 | NAPI (camelCase) | PyO3 (snake_case) | JSON-RPC method | Args object |
 |---|---|---|---|
 | `visionOcr(argsJson)` | `vision_ocr(args_json)` | `vision.ocr` | `{ image_path, fast_path?, languages?, language_correction?, minimum_text_height? }` |
-| `runApplescript(argsJson)` | `run_applescript(args_json)` | `automation.run_applescript` | `{ script, language?('applescript'|'javascript'|'jxa'), args?, timeout_ms? }` |
+| `runApplescript(argsJson)` | `run_applescript(args_json)` | `automation.run_applescript` | `{ script, language?('applescript'|'javascript'|'jxa'), args?, timeout_ms?, imessage_send?(null or { to, body }; not with args) }` |
 | `listShortcuts(argsJson)` | `list_shortcuts(args_json)` | `automation.shortcuts.list` | `{ folder?, with_identifiers? }` |
 | `runShortcut(argsJson)` | `run_shortcut(args_json)` | `automation.shortcuts.run` | `{ name_or_id, input?, output_type?, timeout_ms? }` |
 
@@ -7065,6 +7098,7 @@ fn cmd_daemon(port: u16) {
 | `car auth login` | `--api-base https://api.parslee.ai`, `--client-id parslee-car`, `--callback-port 53682`, `--provider <microsoft\|google>` | OAuth2+PKCE; validates the fresh session, then atomically publishes the V2 credential state |
 | `car auth status` | `--api-base <url>`, `--json` | Summary of the signed-in account: identity, active org + role, expiry, entitled products. `--json` prints the raw upstream session object (the Parslee API's shape, not a CAR contract) |
 | `car auth logout` | — | Clears keychain tokens |
+| `car sync enable` | — | Turns on Parslee sync for this machine (host-only `sync.enable_remote`). With a sync passphrase and a Parslee login, a journal whose history is encrypted under the local key stays local, and `sync.status` `local_reason` names this command; CAR never uploads it on its own. Running it moves the machine's `device-id` aside: the local journal stays on disk, but CAR no longer shows or syncs what is in it (knowledge, transcripts, coder conversations), and after a restart Parslee sync starts this machine as a new device. A journal already syncing through Parslee, or an empty one, needs no step (car#4209) |
 
 ```rust
 // parslee_login: loopback OAuth+PKCE
@@ -7357,7 +7391,7 @@ let handshake = serde_json::json!({
 socket.send(Message::Text(serde_json::to_string(&handshake)?.into())).await?;
 ```
 
-The helper then sends protocol-v3 `server.handshake` with both mandatory model
+The helper then sends protocol-v4 `server.handshake` with both mandatory model
 identity capabilities and validates the numeric version plus negotiated capabilities before returning; the excerpt above shows only its
 transport-auth half.
 
@@ -7611,7 +7645,7 @@ await rt.infer(
 
 `list_models`, `pull_model(name)->local path`, `remove_model` (daemon owns `models.json`), `list_models_unified` (fields `id,name,provider,capabilities,param_count,size_mb,context_length,available,is_local,max_output_tokens,public_benchmarks,cost`; `cost` is the declared USD/MTok price object — `null` rates mean unpriced, not free), `register_model(schema_json)` (proxies `models.register`), `recommend(use_case, tier, cloud_ok)`, `setup_plan(...)`, `detect_upgrades`, `check_upgrade_nudge(inference_active)`, `dismiss_upgrade(dismiss_key)`, `update_prefs_get` / `update_prefs_set(prefs_json)`.
 
-> **Gotcha:** a newly `register_model`'d model only becomes visible to `infer`/`models.list` on the **next daemon boot** (no live hot-update). Register before starting inference, or restart the daemon.
+> **Note:** a `register_model`'d model is visible to `infer`/`models.list` in the running daemon at once.
 
 #### 2.6 Tools, verification, and proposal execution
 
@@ -7948,8 +7982,8 @@ Every WebSocket connection MUST call `session.auth` as its **first** JSON-RPC fr
 // Server responds:
 {"jsonrpc":"2.0","id":0,"result":{"ok": true, "auth_enabled": true}}
 // Await auth success, then prove exact wire compatibility:
-{"jsonrpc":"2.0","id":1,"method":"server.handshake","params":{"protocol_version":3,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}}
-{"jsonrpc":"2.0","id":1,"result":{"protocol_version":3,"server_version":"0.51.0","client_protocol_version":3,"negotiated_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"]}}
+{"jsonrpc":"2.0","id":1,"method":"server.handshake","params":{"protocol_version":4,"required_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"],"optional_capabilities":[]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocol_version":4,"server_version":"0.51.0","client_protocol_version":4,"negotiated_capabilities":["infer.model-identity.v1","models.catalog-identity.v1"]}}
 // Subsequent calls work normally:
 {"jsonrpc":"2.0","id":2,"method":"infer","params":{...}}
 ```
@@ -8042,7 +8076,7 @@ On mobile, CAR runs as an **embedded library** via a fourth FFI crate, `car-ffi-
 **App Review sidestep.** One first-party signed host app per platform carries the runtime; agent bundles ship via the **CAR registry, not the App/Play Store**, so agent changes don't require App Review. Apple and Google permit this because bundles are pure data, not arbitrary executable code (the Pythonista/Scriptable/emoji-keyboard pattern).
 
 **OS-provided on-device inference routing.** Two new `ProtocolHandler` impls extend the adaptive router:
-- `AppleFoundationModelsHandler` — macOS 15+ / iOS 26+, A17+, Swift bridge to FoundationModels; route id `apple/foundation:default`.
+- `AppleFoundationModelsHandler` — macOS 26+ / iOS 26+, A17+, Swift bridge to FoundationModels; route id `apple/foundation:default`.
 - `AICoreHandler` — Android 14+, Gemini Nano via ML Kit GenAI.
 
 The adaptive router gains a `low_latency + private` tag bonus to prefer OS-provided local providers for cheap steps and remote Parslee models for larger reasoning. iOS selects `apple/foundation:default` once a runtime probe (Apple Intelligence enabled, A17+) returns true.
@@ -8471,7 +8505,7 @@ car-server --a2a-bind <ADDR>
 
 ### Apple frameworks, MCP, A2A, A2UI (cfg-target gated, each with `is_available()`)
 
-- **MCP:** `POST /mcp` (JSON-RPC 2.0), `GET /mcp/health` (`{"status":"ok","protocol_version":"2025-11-25","server_name":"car-mcp"}`). stdio variant is stateless (memory/skill/verification tools only, no proposal execution). Sixteen tools exposed incl. `memory_add_fact` plus proactive `memory_intervene` / `memory_evaluate` and the four verification tools `verify` / `simulate` / `equivalent` / `optimize`; facts land in the shared memgine and appear in WS `memory.query`.
+- **MCP:** `POST /mcp` (JSON-RPC 2.0), `GET /mcp/health` (`{"status":"ok","protocol_version":"2025-11-25","server_name":"car-mcp"}`). stdio variant is stateless (memory/skill/verification tools only, no proposal execution). Seventeen tools exposed incl. `memory_add_fact` plus proactive `memory_intervene` / `memory_peek` / `memory_evaluate` and the four verification tools `verify` / `simulate` / `equivalent` / `optimize`; facts land in the shared memgine and appear in WS `memory.query`.
 - **A2A v1.0:** `message/send`, `tasks/get|list|cancel`, `tasks/pushNotificationConfig/{set,get,list,delete}`, `agent/getAuthenticatedExtendedCard`; `message/stream` + `tasks/resubscribe` via SSE. HTTP: `GET /.well-known/agent.json`, `POST /` (JSON-RPC), `GET /a2a/stream/:task_id`. Mount via `car_a2a::serve(dispatcher, addr)` / `build_router(dispatcher)`.
 - **A2UI:** `a2ui_*` in-process (FFI parity added v0.15.x) + WS `a2ui.*`. Renderers: HTML (`car-server/static`), SwiftUI (`apps/host-macos`).
 

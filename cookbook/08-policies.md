@@ -84,7 +84,7 @@ Field names must be exact. An unknown field is a load error that names the field
 
 A missing `policies/` directory is fine — most setups have none. A **malformed** file fails the session: the daemon refuses the connection, `car do` exits 2, and the error names the file. That is deliberate. A security rule that silently fails to parse is a control you believe you have and do not.
 
-Six rule kinds. Three of them (`deny_tool`, `deny_keyword`, `deny_tool_param`) are the file-authored form of prohibitions you already know; three (`allow_tool_param`, `deny_tool_param_matching`, `rate_limit_tool`) exist only here. A worked file:
+Seven rule kinds. Three of them (`deny_tool`, `deny_keyword`, `deny_tool_param`) are the file-authored form of prohibitions you already know; four (`allow_tool_param`, `deny_tool_param_matching`, `deny_stale_write`, `rate_limit_tool`) exist only here. A worked file:
 
 ```toml
 # .car/policies/security.toml
@@ -150,6 +150,7 @@ matches = "(?i)demo-token-[A-Za-z0-9]{16,}"
 tool    = "http_request"
 param   = "body"
 matches = "sk-[A-Za-z0-9]{20,}"
+reason  = "API keys never leave in a request body; send a key reference instead"
 
 # The same matcher can enforce an open-ended allowlist. Docker removal is
 # denied unless the governed name starts with the trusted project prefix.
@@ -169,6 +170,52 @@ Three things to know:
 With the default `negate = false`, an absent parameter is not a violation — the rule only fires on what it can see. A negated rule fails closed: absence cannot prove the required pattern, so the tool call is denied. Use `allow_tool_param` instead when the safe values are finite and enumerable.
 
 The violation reason names the tool and the parameter but never the matched text: the matched text is precisely the secret the rule exists to catch, and denial reasons go to the event log.
+
+Give a rule an optional `reason` to tell the refused caller which rule fired and how to rewrite the call. It is appended verbatim to the refusal: `tool 'http_request' parameter 'body' matched a denied pattern: API keys never leave in a request body; send a key reference instead (deny_tool_param_matching in .car/policies/security.toml)`. That matters most in a file of several rules, where the file name alone does not say which one refused. The reason goes to the event log too, so write the explanation, never the secret. A rule without a `reason` refuses exactly as before.
+
+A negated rule on a URL is a destination allowlist: an agent may sign up or post on its approved sites and nowhere else. End the host at `/` or the end of the value, so `docs.example.org.evil.net` is not taken for `docs.example.org`. A rule sees the call, not who made it. A per-class allowlist therefore needs each class of agent to load its own folder, and only the surfaces rooted in a project do that: `car do`, the coder and the Claude Code/Codex hook read that project's `.car/policies/`. They also apply `~/.car/policies/` first, and the rules from both folders must all pass, so an allowlist in `~/.car/policies/` also limits every project's agents. The daemon loads one folder, `~/.car/policies/`, for every session it serves, so there one allowlist binds every agent connected to it.
+
+```toml
+[[deny_tool_param_matching]]
+tool    = "browser.navigate"
+param   = "url"
+matches = '^https://(docs\.example\.org|status\.example\.org)(/|$)'
+negate  = true
+```
+
+## `deny_stale_write` — refuse a write over a file that changed since it was read
+
+An agent that read a file, worked on it, then writes it back can overwrite an edit someone made in between. This rule refuses that write when the check sees it. The agent passes the sha256 of the file as it read it, and the call is denied when the file on disk no longer has that digest:
+
+```toml
+# .car/policies/files.toml
+[[deny_stale_write]]
+tool         = "write_file"
+path_param   = "path"
+digest_param = "base_sha256"
+filesystem   = "host"         # required: the tool writes this host's files
+```
+
+| Situation | Result |
+|-----------|--------|
+| the file still has the digest the agent read (exact hex, either case) | allowed |
+| the file doesn't exist yet, and its folder does | allowed: a new file can't be stale |
+| the file changed since it was read | denied |
+| the file exists and no digest was passed | denied |
+| it isn't a regular file, is over 16 MiB, or can't be read | denied: its version is unknown |
+| the call names no path, a relative one, or one with `..` | denied: the rule can't tell which file is meant |
+| the file's folder doesn't exist on this host | denied: the file may exist where the tool writes |
+| the path is a symlink to nothing | denied: the write goes wherever the link points |
+
+**The digest must be a parameter of the governed tool.** The hook maps Claude Code's `Write` and `Edit` and Codex's `apply_patch` onto `file_path`, and none of them carries a digest. A rule on them refuses every write over an existing file. Govern a tool whose own schema takes the digest the agent read.
+
+**The check runs before the tool writes, not with it.** A write that lands between the check and the tool's own write isn't caught. That includes two calls to the same path that both carry the old digest and run at once. Closing that window needs the tool itself to compare and swap.
+
+Give the tool an absolute path with no `..`. The rule sees the call, not the folder the tool resolves a relative path against, and a writer that creates folders turns `missing/../isa.md` into an existing file.
+
+**Only govern a tool that writes this host's files.** The rule reads the files of the host that runs the check, and it can't see which filesystem a tool writes. That's why `filesystem = "host"` is required, and a rule without it fails to load. A tool that writes a sandbox (`car do`'s container), a VM, a container or a remote MCP target must not be governed by `deny_stale_write`. A file there is invisible to the host, so a write to `/tmp/isa.md` in the VM would pass as a new file whenever the host has `/tmp` but no `isa.md`.
+
+**A check on a tool's result belongs outside policy.** Every rule kind judges a tool **call** before it runs, from the call alone. None can see what the tool returns. Refusing a result that carries a secret back into an agent's context is the job of the code that produces or relays that result, such as the tool itself or a harness's post-call hook, not of a `.car/policies` rule.
 
 ## `rate_limit_tool` — cap the volume, not the call
 

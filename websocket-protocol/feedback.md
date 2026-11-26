@@ -6,7 +6,7 @@
 
 The `feedback.*` namespace is CAR's in-app feedback intake (Parslee-ai/car#1137):
 compose a redacted diagnostic bundle, preview it, durably spool it, and read the
-local outbox. **All four methods first require the connection to negotiate the
+local outbox, then export or remove a saved report. **All six methods first require the connection to negotiate the
 optional `feedback.v1` capability in `server.handshake`**; protocol version
 alone is not consent to this surface. They also require the exact current
 protocol version (`car-proto::PROTOCOL_VERSION`) and return `-32005` (`protocol
@@ -16,9 +16,10 @@ authenticated client that negotiated the current protocol and `feedback.v1`
 may call them. Failures (spool I/O, invalid params, unknown ids, the throttle)
 surface as ordinary JSON-RPC errors whose message names the cause.
 
-**Closed world by construction**: no method on this surface accepts a path
-parameter, and unknown params are ignored — a client-sent `path` or
-`log_tails` field is inert. The log set is built daemon-side: the supervised
+**Closed world by construction**: no method that composes a bundle accepts a
+path parameter, and unknown params are ignored — a client-sent `path` or
+`log_tails` field is inert. The one path on this surface is `feedback.export`'s
+destination, which only receives a saved bundle and never selects a file to read. The log set is built daemon-side: the supervised
 agents' log files, as below (ids read from the `agents.json`
 registry manifest — only the `id` field; env maps never enter the bundle) plus
 the daemon stderr-tee file (`<CAR_HOME>/logs/car-server.stderr.log`). A client
@@ -66,14 +67,24 @@ A current-protocol session without `feedback.v1` gets the standard `protocol cap
 
 #### `feedback.status`
 - **Params**: `{ submission_id?: string, limit?: integer }`
-- **Returns**: `{ entries: [SpoolEntryRow], has_more: boolean, staleness: { pending_count, oldest_age_days } | null }` — filtered to the one entry when `submission_id` is given (unknown id → error; `limit` ignored), otherwise the same bounded rows as `feedback.list`. If the selected bundle is corrupt, its durable summary still returns with `description: null` instead of failing the RPC.
+- **Returns**: `{ entries: [SpoolEntryRow], has_more: boolean, staleness: { pending_count, oldest_age_days } | null }` — filtered to the one entry when `submission_id` is given (unknown id → error; `limit` ignored), otherwise the same bounded local rows as `feedback.list` before its server merge: every row is `source: "local"` and no network is touched. Use `feedback.list` for the merged view with server rows. If the selected bundle is corrupt, its durable summary still returns with `description: null` instead of failing the RPC.
+
+#### `feedback.export`
+- **Params**: `{ id: string, path: string, replace?: boolean = false }` — `id` is an outbox entry's `submission_id`; `path` must be absolute
+- **Returns**: `{ id, path, bytes }`
+- Writes the SAVED redacted bundle of that outbox entry to `path` — the bytes `car feedback --export <id> <path>` writes, never a fresh collection of diagnostics. The file is created owner-only: mode `0600` on Unix, and on Windows a protected ACL granting only the current user, set before anything is written, so the file never takes the access of the folder it is saved in. If that ACL cannot be set, the new file is removed and the call fails. An existing file at `path` is refused with an error saying so, unless `replace` is true (the host's save panel has already asked the user); `replace` writes a new file beside it and renames it over `path`, so a failed write never leaves the old file half-overwritten. An unknown `id` is an error (`unknown report id:`), and a relative `path` is refused. A session bound to a supervised agent is refused: this writes a file the caller names.
+
+#### `feedback.remove`
+- **Params**: `{ id: string }` — an outbox entry's `submission_id`
+- **Returns**: `{ removed: string }` — the id that was deleted
+- Deletes that one outbox entry (its saved bundle and state) on the user's request, whatever its state, so a report that cannot send can be cleared. An entry the drain is sending right now is refused (`is being sent right now`): it can be removed once it settles or returns to the queue. An unknown `id` is an error (`unknown report id:`) that touches nothing. A session bound to a supervised agent is refused.
 
 #### `feedback.list`
 - **Params**: `{ limit?: integer }`
 - **Returns**: `{ entries: [SpoolEntryRow], has_more: boolean, staleness }` — the newest `limit` merged local/server rows, kept in oldest-first order. `limit` defaults to 100 and is clamped to the hard maximum of 200; `has_more` says whether older rows were omitted.
 
 A `SpoolEntryRow` is
-`{ id, client_submission_id, state, lane, title, created_at, age_days, source: "local" | "server", note?, hold_reason? }`:
+`{ id, client_submission_id, state, lane, title, created_at, age_days, source: "local" | "server", note?, hold_reason?, server_status?, server_updated_at? }` for a local row (a local row whose acknowledged server counterpart was found also carries `source: "server"`, `server_status`, `server_updated_at` and a `note` of `server status: <status>`):
 `state` is the tagged spool lifecycle object — `{ state: "queued" }`,
 `{ state: "sending" }`, `{ state: "acknowledged", server_id }`,
 `{ state: "terminal_actionable", reason: "auth_required" | "reconsent_required" | "forbidden" }`
@@ -95,6 +106,10 @@ outage, or a failed renewal); they are retried, not marked `auth_required`.
 Anonymous entries never drain: this version sends signed-in reports only,
 whatever the probe says, and the lane is never rewritten.
 
+A server row (a report filed from another Mac, or one whose local copy was pruned) is
+`{ id: <server id>, title, source: "server", state: { state: "acknowledged", server_id }, created_at?, server_status, note: "server status: <status>", updated_at? }`:
+`created_at` is the server's creation time (its update time when absent) in unix seconds and is left out when the server sent no readable time. It has no `client_submission_id`, `lane` or `age_days`. The app shows `server_status` as a triage label: New is "Received"; Confirmed, Triaging and NeedsHuman are "In triage"; PrCreated and RevisionRequested are "Fix in progress"; Deployed is "Fixed & deployed"; any other status stays "Received" with its `server status:` note.
+
 `hold_reason` is present on a `queued` or `sending` local row that cannot send
 as things stand; `state` stays `queued`, nothing about the entry changes, and
 the field is absent on every other row:
@@ -115,10 +130,10 @@ the field is absent on every other row:
 The daemon reads the machine's signed-in logins (a local credential-store
 read, no network) only when some pending row was saved under one. When they
 cannot be read, or an environment bearer stands in for them, no row is
-marked `login_removed` or `sign_in_required`. `note?` carries per-row daemon annotations on TERMINAL settles (the
-drain persists upload-time omission notes when an entry settles
-terminal); for successful uploads, omissions surface at submit time in
-the manifest/UI warning, not as a persisted row note.
+marked `login_removed` or `sign_in_required`. `note?` is set only on server rows, as `server status: <status>`. The
+drain's upload-time omission notes ride the `message` of a
+`terminal_rejected` state instead; for successful uploads, omissions surface
+at submit time in the manifest/UI warning, not as a persisted row note.
 `staleness` is non-null when any pending entry that can still send (no
 `hold_reason`) has waited 2 days or more; held entries are never counted.
 
